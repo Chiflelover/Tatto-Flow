@@ -1,0 +1,119 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  padding: 1rem;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(57, 255, 136, 0.14), transparent 23rem), #040705;
+}
+
+.card {
+  width: min(100%, 25rem);
+  padding: clamp(1.25rem, 5vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--surface-raised);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.42);
+}
+
+.logo {
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  place-items: center;
+  border-radius: 1rem;
+  color: var(--on-accent);
+  background: var(--accent-strong);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 800;
+  box-shadow: 0 0.7rem 1.7rem rgba(0, 0, 0, 0.32);
+}
+
+.heading {
+  margin-top: 1.5rem;
+}
+
+.heading > span {
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heading h1 {
+  margin-top: 0.55rem;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.heading p {
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+.form label {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.form label span {
+  color: var(--muted-strong);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.form input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.75rem;
+  outline: none;
+  color: var(--foreground);
+  background: #080d0a;
+  font-size: 0.88rem;
+}
+
+.form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.2rem rgba(57, 255, 136, 0.18);
+}
+
+.form button {
+  min-height: 3rem;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--on-accent);
+  background: var(--accent-strong);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.error {
+  padding: 0.7rem;
+  border-radius: 0.7rem;
+  color: #f2aaa0;
+  border: 1px solid rgba(211, 91, 76, 0.24);
+  background: #321916;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}

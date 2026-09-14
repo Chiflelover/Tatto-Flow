@@ -1,0 +1,38 @@
+# Dependencies
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/.next/
+**/out/
+**/coverage/
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# Generated code
+backend/src/generated/prisma/
+
+# Environment files
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs
+**/logs/
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.pnpm-debug.log*
+
+# Local uploads
+**/uploads/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Deployment tooling
+**/.vercel/
