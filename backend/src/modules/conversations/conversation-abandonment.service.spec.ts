@@ -19,7 +19,7 @@ interface UpdateManyArguments {
   data: { status: ConversationStatus };
 }
 
-const NOW = new Date('2026-09-14T12:00:00.000Z');
+const NOW = new Date('2026-09-14T20:00:00.000Z');
 
 function createFixture(initialConversations: StoredConversation[]) {
   const conversations = structuredClone(initialConversations);
@@ -178,5 +178,39 @@ describe('ConversationAbandonmentService', () => {
 
     expect(count).toBe(0);
     expect(conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+  });
+
+  it('pauses the inactivity clock overnight and preserves the conversation next morning', async () => {
+    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
+    const { conversations, service } = createFixture([
+      {
+        id: 'paused-overnight',
+        customerId: 'customer-a',
+        status: ConversationStatus.ACTIVE,
+        lastActivityAt: new Date('2026-09-15T02:30:00.000Z'),
+      },
+    ]);
+
+    const count = await service.abandonInactive(nextMorningAt0630);
+
+    expect(count).toBe(0);
+    expect(conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+  });
+
+  it('abandons at two accumulated open hours even when a night occurred between them', async () => {
+    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
+    const { conversations, service } = createFixture([
+      {
+        id: 'expired-across-night',
+        customerId: 'customer-a',
+        status: ConversationStatus.ACTIVE,
+        lastActivityAt: new Date('2026-09-15T01:30:00.000Z'),
+      },
+    ]);
+
+    const count = await service.abandonInactive(nextMorningAt0630);
+
+    expect(count).toBe(1);
+    expect(conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
   });
 });

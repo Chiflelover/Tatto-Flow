@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { StorageService } from './storage.service.js';
 
@@ -18,7 +17,6 @@ export class LeadImageRetentionService {
     private readonly storage: StorageService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: 'lead-image-retention' })
   async cleanupExpiredImages(now = new Date()): Promise<RetentionCleanupResult> {
     const expiredImages = await this.prisma.leadImage.findMany({
       where: {

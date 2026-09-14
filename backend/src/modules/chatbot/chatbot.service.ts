@@ -16,11 +16,18 @@ import type {
   ChatbotResponse,
 } from './domain/chatbot.types.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 
 const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
   `Por lo que me indicaste, el precio aproximado estaría entre S/${minimum} y S/${maximum}. El precio final lo confirma el tatuador después de revisar el diseño.`;
 const REQUIRES_REVIEW_MESSAGE =
   'Perfecto. Ya tengo la información y la referencia. Un tatuador del estudio revisará tu idea para darte el precio exacto.';
+const OUT_OF_HOURS_MESSAGE =
+  'Hola 👋 En este momento estamos fuera de nuestro horario de atención.\nNuestro horario es de 6:00 a. m. a 10:00 p. m.\nEscríbenos nuevamente dentro de ese horario y Nita te ayudará con tu cotización.';
+
+type ConversationAccess =
+  | { conversation: Conversation; response?: never }
+  | { conversation?: never; response: ChatbotResponse };
 
 @Injectable()
 export class ChatbotService {
@@ -31,10 +38,17 @@ export class ChatbotService {
     private readonly conversationsService: ConversationsService,
     private readonly stateMachine: NitaStateMachine,
     private readonly imageAnalysisWorkflow: ImageAnalysisWorkflowService,
+    private readonly businessHours: NitaBusinessHoursService,
   ) {}
 
   async processStart(customerIdentifier: string): Promise<ChatbotResponse> {
-    const conversation = await this.getActiveConversation(customerIdentifier);
+    const access = await this.getConversationAccess(customerIdentifier);
+
+    if (access.response) {
+      return access.response;
+    }
+
+    const { conversation } = access;
 
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
@@ -62,7 +76,13 @@ export class ChatbotService {
     customerIdentifier: string,
     image: ChatbotImageInput,
   ): Promise<ChatbotResponse> {
-    const conversation = await this.getActiveConversation(customerIdentifier);
+    const access = await this.getConversationAccess(customerIdentifier);
+
+    if (access.response) {
+      return access.response;
+    }
+
+    const { conversation } = access;
 
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
@@ -149,7 +169,13 @@ export class ChatbotService {
     customerIdentifier: string,
     input: ChatbotInput,
   ): Promise<ChatbotResponse> {
-    const conversation = await this.getActiveConversation(customerIdentifier);
+    const access = await this.getConversationAccess(customerIdentifier);
+
+    if (access.response) {
+      return access.response;
+    }
+
+    const { conversation } = access;
 
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
@@ -160,11 +186,38 @@ export class ChatbotService {
     return this.applyDecision(conversation, decision);
   }
 
-  private async getActiveConversation(customerIdentifier: string): Promise<Conversation> {
+  private async getConversationAccess(
+    customerIdentifier: string,
+  ): Promise<ConversationAccess> {
+    const now = new Date();
     const customer = await this.customersService.findOrCreateByPhoneNumber(customerIdentifier);
+
+    if (!this.businessHours.isOpen(now)) {
+      const currentConversation = await this.conversationsService.findCurrentForCustomer(
+        customer.id,
+      );
+
+      if (currentConversation && this.isHandedOff(currentConversation)) {
+        return { response: this.silentHandoff() };
+      }
+
+      const shouldNotify = await this.customersService.claimOutOfHoursNotice(
+        customer.id,
+        this.businessHours.getClosedPeriodKey(now),
+      );
+
+      return {
+        response: {
+          state: currentConversation?.currentState ?? ConversationState.START,
+          messages: shouldNotify ? [{ type: 'text', text: OUT_OF_HOURS_MESSAGE }] : [],
+          options: [],
+        },
+      };
+    }
+
     const { conversation } = await this.conversationsService.getOrCreateActive(customer.id);
 
-    return conversation;
+    return { conversation };
   }
 
   private async applyDecision(

@@ -4,11 +4,12 @@ import { CustomersModule } from '../customers/customers.module.js';
 import { ImageAnalysisModule } from '../image-analysis/image-analysis.module.js';
 import { ChatbotService } from './chatbot.service.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { WhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
 
 @Module({
   imports: [CustomersModule, ConversationsModule, ImageAnalysisModule],
-  providers: [ChatbotService, NitaStateMachine, WhatsAppAdapter],
+  providers: [ChatbotService, NitaBusinessHoursService, NitaStateMachine, WhatsAppAdapter],
   exports: [ChatbotService, WhatsAppAdapter],
 })
 export class ChatbotModule {}

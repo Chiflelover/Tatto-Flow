@@ -91,12 +91,13 @@ model AuthSession {
 }
 
 model Customer {
-  id            String         @id @default(uuid()) @db.Uuid
-  phoneNumber   String         @unique @map("phone_number") @db.VarChar(20)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  conversations Conversation[]
-  leads         Lead[]
+  id                          String         @id @default(uuid()) @db.Uuid
+  phoneNumber                 String         @unique @map("phone_number") @db.VarChar(20)
+  lastOutOfHoursNoticeKey     String?        @map("last_out_of_hours_notice_key") @db.VarChar(10)
+  createdAt                   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  conversations               Conversation[]
+  leads                       Lead[]
 
   @@map("customers")
 }

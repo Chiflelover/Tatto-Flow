@@ -130,6 +130,34 @@ export class ConversationsService {
     }
   }
 
+  async findCurrentForCustomer(customerId: string): Promise<Conversation | null> {
+    const activeConversation = await this.prisma.conversation.findFirst({
+      where: {
+        customerId,
+        status: ConversationStatus.ACTIVE,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (activeConversation) {
+      return activeConversation;
+    }
+
+    return this.prisma.conversation.findFirst({
+      where: {
+        customerId,
+        status: ConversationStatus.COMPLETED,
+        currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+        lead: {
+          is: {
+            status: { not: LeadStatus.COMPLETED },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   async applyTransition(
     conversationId: string,
     expectedState: ConversationState,

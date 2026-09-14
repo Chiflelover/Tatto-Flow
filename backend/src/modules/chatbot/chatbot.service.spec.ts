@@ -13,6 +13,7 @@ import { ImageAnalysisWorkflowService } from '../image-analysis/image-analysis-w
 import { LeadImageStorageException } from '../storage/lead-image.service.js';
 import { ChatbotService } from './chatbot.service.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 
 describe('ChatbotService', () => {
   it('finds or creates the customer and starts an active conversation', async () => {
@@ -20,6 +21,7 @@ describe('ChatbotService', () => {
     const customer: Customer = {
       id: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
       phoneNumber: '+51999999999',
+      lastOutOfHoursNoticeKey: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -58,6 +60,7 @@ describe('ChatbotService', () => {
       conversationsService,
       new NitaStateMachine(),
       {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
     );
 
     const response = await service.processStart(customer.phoneNumber);
@@ -134,6 +137,7 @@ describe('ChatbotService', () => {
         } as unknown as ConversationsService,
         new NitaStateMachine(),
         imageAnalysisWorkflow,
+        openBusinessHours(),
       );
 
       const response = await service.processImageMessage(customer.phoneNumber, {
@@ -170,6 +174,7 @@ describe('ChatbotService', () => {
       } as unknown as ConversationsService,
       new NitaStateMachine(),
       {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
     );
 
     const response = await service.processTextMessage(
@@ -215,6 +220,7 @@ describe('ChatbotService', () => {
       {
         analyzeConversationImage: vi.fn().mockRejectedValue(new LeadImageStorageException()),
       } as unknown as ImageAnalysisWorkflowService,
+      openBusinessHours(),
     );
 
     const response = await service.processImageMessage(customer.phoneNumber, {
@@ -244,9 +250,17 @@ function makeCustomer(now: Date): Customer {
   return {
     id: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
     phoneNumber: '+51999999999',
+    lastOutOfHoursNoticeKey: null,
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function openBusinessHours(): NitaBusinessHoursService {
+  return {
+    isOpen: vi.fn().mockReturnValue(true),
+    getClosedPeriodKey: vi.fn(),
+  } as unknown as NitaBusinessHoursService;
 }
 
 function makeConversation(

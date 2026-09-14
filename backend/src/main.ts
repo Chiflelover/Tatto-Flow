@@ -7,7 +7,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
   const frontendUrl = configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-  const port = Number(configService.get<string>('PORT') ?? '3001');
+  const port = Number(process.env.PORT ?? '3001');
 
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error('PORT must be a valid TCP port.');
@@ -28,6 +28,6 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 }
 await bootstrap();
