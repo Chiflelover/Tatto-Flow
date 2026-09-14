@@ -1,4 +1,4 @@
-const DASHBOARD_API_BASE = '/backend';
+const DASHBOARD_API_BASE = '/api';
 
 export type LeadStatus =
   'ANALYZING' | 'VERIFIED' | 'REQUIRES_REVIEW' | 'HANDOFF_TO_TATTOO_ARTIST' | 'COMPLETED';
