@@ -8,6 +8,8 @@
     "backend": {
       "root": "backend/",
       "framework": "nestjs",
+      "buildCommand": "npm run build",
+      "entrypoint": "dist/main.js",
       "outputDirectory": "dist"
     }
   },
