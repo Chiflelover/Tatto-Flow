@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { LeadImage } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { TattooImageInput } from '../image-analysis/domain/image-analysis.types.js';
@@ -21,7 +21,9 @@ export class LeadImageService {
   private readonly logger = new Logger(LeadImageService.name);
 
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(StorageService)
     private readonly storage: StorageService,
   ) {}
 

@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Inject,
   Post,
   Query,
   Req,
@@ -16,7 +17,7 @@ import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 
 @Controller('whatsapp')
 export class WhatsAppController {
-  constructor(private readonly webhook: WhatsAppWebhookService) {}
+  constructor(@Inject(WhatsAppWebhookService) private readonly webhook: WhatsAppWebhookService) {}
 
   @Get('webhook')
   @Header('Content-Type', 'text/plain')

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { StorageService } from './storage.service.js';
 
@@ -13,7 +13,9 @@ export class LeadImageRetentionService {
   private readonly logger = new Logger(LeadImageRetentionService.name);
 
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(StorageService)
     private readonly storage: StorageService,
   ) {}
 

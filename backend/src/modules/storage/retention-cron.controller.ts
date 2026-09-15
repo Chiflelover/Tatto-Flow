@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, UseGuards } from '@nestjs/common';
 import { CronSecretGuard } from './cron-secret.guard.js';
 import {
   LeadImageRetentionService,
@@ -8,7 +8,10 @@ import {
 @Controller('cron')
 @UseGuards(CronSecretGuard)
 export class RetentionCronController {
-  constructor(private readonly retentionService: LeadImageRetentionService) {}
+  constructor(
+    @Inject(LeadImageRetentionService)
+    private readonly retentionService: LeadImageRetentionService,
+  ) {}
 
   @Get('cleanup-expired-images')
   cleanupExpiredImages(): Promise<RetentionCleanupResult> {

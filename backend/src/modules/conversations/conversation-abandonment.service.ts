@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConversationStatus } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { getConversationAbandonmentCutoff } from './conversation-abandonment.constants.js';
 
 @Injectable()
 export class ConversationAbandonmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   abandonInactive(now = new Date()): Promise<number> {
     return this.updateInactiveConversations(now);

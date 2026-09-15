@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
@@ -38,10 +44,15 @@ export class ImageAnalysisWorkflowService {
   private readonly logger = new Logger(ImageAnalysisWorkflowService.name);
 
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(ImageAnalysisService)
     private readonly imageAnalysisService: ImageAnalysisService,
+    @Inject(ValidationService)
     private readonly validationService: ValidationService,
+    @Inject(PricingService)
     private readonly pricingService: PricingService,
+    @Inject(LeadImageService)
     private readonly leadImageService: LeadImageService,
   ) {}
 

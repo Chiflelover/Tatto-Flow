@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
@@ -8,7 +8,7 @@ import { ImageAnalysisService } from './image-analysis.service.js';
 export class MockImageAnalysisService extends ImageAnalysisService {
   readonly providerName = 'mock';
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(@Inject(ConfigService) private readonly configService: ConfigService) {
     super();
   }
 

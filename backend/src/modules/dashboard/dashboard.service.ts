@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -50,9 +51,13 @@ const COMPLETABLE_LEAD_STATUSES = [
 @Injectable()
 export class DashboardService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(CustomerMessagingService)
     private readonly customerMessaging: CustomerMessagingService,
+    @Inject(PricingService)
     private readonly pricingService: PricingService,
+    @Inject(StorageService)
     private readonly storage: StorageService,
   ) {}
 

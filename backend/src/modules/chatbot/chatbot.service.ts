@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
@@ -34,10 +34,15 @@ export class ChatbotService {
   private readonly logger = new Logger(ChatbotService.name);
 
   constructor(
+    @Inject(CustomersService)
     private readonly customersService: CustomersService,
+    @Inject(ConversationsService)
     private readonly conversationsService: ConversationsService,
+    @Inject(NitaStateMachine)
     private readonly stateMachine: NitaStateMachine,
+    @Inject(ImageAnalysisWorkflowService)
     private readonly imageAnalysisWorkflow: ImageAnalysisWorkflowService,
+    @Inject(NitaBusinessHoursService)
     private readonly businessHours: NitaBusinessHoursService,
   ) {}
 
@@ -186,9 +191,7 @@ export class ChatbotService {
     return this.applyDecision(conversation, decision);
   }
 
-  private async getConversationAccess(
-    customerIdentifier: string,
-  ): Promise<ConversationAccess> {
+  private async getConversationAccess(customerIdentifier: string): Promise<ConversationAccess> {
     const now = new Date();
     const customer = await this.customersService.findOrCreateByPhoneNumber(customerIdentifier);
 

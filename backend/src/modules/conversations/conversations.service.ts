@@ -35,7 +35,9 @@ export interface ActiveConversationResult {
 @Injectable()
 export class ConversationsService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(ConversationAbandonmentService)
     private readonly abandonmentService: ConversationAbandonmentService,
     @Inject(TEMPORARY_IMAGE_STORAGE)
     private readonly temporaryImageStorage: TemporaryImageStorage,

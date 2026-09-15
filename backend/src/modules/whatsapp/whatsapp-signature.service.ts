@@ -1,11 +1,11 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getRequiredWhatsAppValue } from './whatsapp.config.js';
 
 @Injectable()
 export class WhatsAppSignatureService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
   verifyChallenge(mode: unknown, verifyToken: unknown, challenge: unknown): string {
     if (
@@ -32,10 +32,7 @@ export class WhatsAppSignatureService {
     }
 
     const supplied = Buffer.from(signature.slice('sha256='.length), 'hex');
-    const expected = createHmac(
-      'sha256',
-      getRequiredWhatsAppValue(this.config, 'META_APP_SECRET'),
-    )
+    const expected = createHmac('sha256', getRequiredWhatsAppValue(this.config, 'META_APP_SECRET'))
       .update(rawBody)
       .digest();
 

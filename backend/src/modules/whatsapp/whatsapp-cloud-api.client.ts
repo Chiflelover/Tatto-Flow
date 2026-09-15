@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAX_CHAT_IMAGE_SIZE_BYTES } from '../chatbot/chatbot.constants.js';
 import type { ChatbotImageInput } from '../chatbot/domain/chatbot.types.js';
@@ -20,7 +25,7 @@ class WhatsAppCloudApiError extends Error {
 
 @Injectable()
 export class WhatsAppCloudApiClient {
-  constructor(private readonly config: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
   async sendMessage(recipient: string, message: WhatsAppOutboundMessage): Promise<void> {
     const normalizedRecipient = this.normalizeRecipient(recipient);
@@ -62,8 +67,7 @@ export class WhatsAppCloudApiClient {
 
     if (
       (typeof metadata.file_size === 'number' && metadata.file_size < 0) ||
-      (typeof metadata.file_size === 'number' &&
-        metadata.file_size > MAX_CHAT_IMAGE_SIZE_BYTES)
+      (typeof metadata.file_size === 'number' && metadata.file_size > MAX_CHAT_IMAGE_SIZE_BYTES)
     ) {
       throw new BadRequestException('La imagen de WhatsApp no es válida o supera los 5 MB.');
     }

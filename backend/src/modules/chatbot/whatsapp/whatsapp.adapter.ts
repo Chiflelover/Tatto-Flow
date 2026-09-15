@@ -1,11 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
-import type {
-  ChatbotImageInput,
-  ChatbotOption,
-  ChatbotResponse,
-} from '../domain/chatbot.types.js';
+import type { ChatbotImageInput, ChatbotOption, ChatbotResponse } from '../domain/chatbot.types.js';
 
 export const WHATSAPP_BUTTON_IDS = {
   SMALL: 'nita_size_small',
@@ -55,7 +51,7 @@ export interface WhatsAppCapabilities {
 
 @Injectable()
 export class WhatsAppAdapter {
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(@Inject(ChatbotService) private readonly chatbotService: ChatbotService) {}
 
   async handleIncoming(
     message: WhatsAppInboundMessage,

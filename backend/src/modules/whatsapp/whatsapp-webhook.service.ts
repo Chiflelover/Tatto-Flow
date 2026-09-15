@@ -1,6 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { WhatsAppAdapter, type WhatsAppInboundMessage } from '../chatbot/whatsapp/whatsapp.adapter.js';
+import {
+  WhatsAppAdapter,
+  type WhatsAppInboundMessage,
+} from '../chatbot/whatsapp/whatsapp.adapter.js';
 import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 import { getRequiredWhatsAppValue } from './whatsapp.config.js';
 import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
@@ -27,10 +30,15 @@ interface MetaChangeValue {
 @Injectable()
 export class WhatsAppWebhookService {
   constructor(
+    @Inject(ConfigService)
     private readonly config: ConfigService,
+    @Inject(WhatsAppSignatureService)
     private readonly signatures: WhatsAppSignatureService,
+    @Inject(WhatsAppInboundMessageRepository)
     private readonly messages: WhatsAppInboundMessageRepository,
+    @Inject(WhatsAppAdapter)
     private readonly adapter: WhatsAppAdapter,
+    @Inject(WhatsAppCloudApiClient)
     private readonly cloudApi: WhatsAppCloudApiClient,
   ) {}
 
@@ -38,10 +46,7 @@ export class WhatsAppWebhookService {
     return this.signatures.verifyChallenge(mode, verifyToken, challenge);
   }
 
-  async handleWebhook(
-    rawBody: Buffer,
-    signature: string | undefined,
-  ): Promise<{ received: true }> {
+  async handleWebhook(rawBody: Buffer, signature: string | undefined): Promise<{ received: true }> {
     this.signatures.assertValidPayload(rawBody, signature);
     const payload = this.parsePayload(rawBody);
 
@@ -49,15 +54,16 @@ export class WhatsAppWebhookService {
       return { received: true };
     }
 
-    const businessAccountId = getRequiredWhatsAppValue(
-      this.config,
-      'WHATSAPP_BUSINESS_ACCOUNT_ID',
-    );
+    const businessAccountId = getRequiredWhatsAppValue(this.config, 'WHATSAPP_BUSINESS_ACCOUNT_ID');
     const phoneNumberId = getRequiredWhatsAppValue(this.config, 'WHATSAPP_PHONE_NUMBER_ID');
     const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
     for (const entry of entries) {
-      if (!this.isRecord(entry) || entry.id !== businessAccountId || !Array.isArray(entry.changes)) {
+      if (
+        !this.isRecord(entry) ||
+        entry.id !== businessAccountId ||
+        !Array.isArray(entry.changes)
+      ) {
         continue;
       }
 
@@ -78,7 +84,7 @@ export class WhatsAppWebhookService {
 
         for (const message of value.messages) {
           if (this.isRecord(message)) {
-            await this.processMessage(message as MetaMessage);
+            await this.processMessage(message);
           }
         }
       }

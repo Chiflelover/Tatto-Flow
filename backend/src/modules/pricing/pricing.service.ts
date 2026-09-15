@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
   type DetailLevel,
@@ -19,7 +19,7 @@ const MAX_PRICE = 99_999_999.99;
 
 @Injectable()
 export class PricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   listActiveRules(client: PricingClient = this.prisma): Promise<PricingRule[]> {
     return client.pricingRule.findMany({
