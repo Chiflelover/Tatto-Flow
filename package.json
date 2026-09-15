@@ -1,0 +1,8 @@
+{
+  "name": "tatto-flow",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
