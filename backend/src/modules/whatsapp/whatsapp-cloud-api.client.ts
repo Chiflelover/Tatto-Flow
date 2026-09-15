@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +18,14 @@ interface MetaMediaMetadata {
   file_size?: number;
 }
 
+interface MetaApiErrorDetails {
+  message: string | null;
+  type: string | null;
+  code: number | null;
+  errorSubcode: number | null;
+  fbtraceId: string | null;
+}
+
 class WhatsAppCloudApiError extends Error {
   constructor(readonly status: number) {
     super('WhatsApp Cloud API rechazó la solicitud.');
@@ -25,6 +34,8 @@ class WhatsAppCloudApiError extends Error {
 
 @Injectable()
 export class WhatsAppCloudApiClient {
+  private readonly logger = new Logger(WhatsAppCloudApiClient.name);
+
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
   async sendMessage(recipient: string, message: WhatsAppOutboundMessage): Promise<void> {
@@ -78,7 +89,7 @@ export class WhatsAppCloudApiClient {
     });
 
     if (!response.ok) {
-      throw new WhatsAppCloudApiError(response.status);
+      throw await this.createApiError(response);
     }
 
     const declaredLength = Number(response.headers.get('content-length'));
@@ -160,7 +171,7 @@ export class WhatsAppCloudApiClient {
     });
 
     if (!response.ok) {
-      throw new WhatsAppCloudApiError(response.status);
+      throw await this.createApiError(response);
     }
   }
 
@@ -168,7 +179,7 @@ export class WhatsAppCloudApiClient {
     const response = await this.safeFetch(url, init);
 
     if (!response.ok) {
-      throw new WhatsAppCloudApiError(response.status);
+      throw await this.createApiError(response);
     }
 
     try {
@@ -225,6 +236,75 @@ export class WhatsAppCloudApiClient {
 
   private authorizationHeaders(accessToken: string): Record<string, string> {
     return { Authorization: `Bearer ${accessToken}` };
+  }
+
+  private async createApiError(response: Response): Promise<WhatsAppCloudApiError> {
+    const details = await this.readMetaApiError(response);
+    const diagnostic = {
+      httpStatus: response.status,
+      'error.message': details.message,
+      'error.type': details.type,
+      'error.code': details.code,
+      'error.error_subcode': details.errorSubcode,
+      'error.fbtrace_id': details.fbtraceId,
+    };
+
+    this.logger.error(`WhatsApp Cloud API request failed: ${JSON.stringify(diagnostic)}`);
+
+    return new WhatsAppCloudApiError(response.status);
+  }
+
+  private async readMetaApiError(response: Response): Promise<MetaApiErrorDetails> {
+    const empty: MetaApiErrorDetails = {
+      message: null,
+      type: null,
+      code: null,
+      errorSubcode: null,
+      fbtraceId: null,
+    };
+
+    try {
+      const payload = (await response.json()) as unknown;
+
+      if (!this.isRecord(payload) || !this.isRecord(payload.error)) {
+        return empty;
+      }
+
+      const metaError = payload.error;
+      const accessToken = this.config.get<string>('WHATSAPP_ACCESS_TOKEN')?.trim() ?? '';
+
+      return {
+        message: this.safeMetaErrorText(metaError.message, accessToken, 1_000),
+        type: this.safeMetaErrorText(metaError.type, accessToken, 255),
+        code: this.safeMetaErrorNumber(metaError.code),
+        errorSubcode: this.safeMetaErrorNumber(metaError.error_subcode),
+        fbtraceId: this.safeMetaErrorText(metaError.fbtrace_id, accessToken, 255),
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  private safeMetaErrorText(value: unknown, accessToken: string, maxLength: number): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    let sanitized = value.replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]');
+
+    if (accessToken) {
+      sanitized = sanitized.replaceAll(accessToken, '[REDACTED]');
+    }
+
+    return sanitized.slice(0, maxLength);
+  }
+
+  private safeMetaErrorNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private graphBaseUrl(version: string): string {

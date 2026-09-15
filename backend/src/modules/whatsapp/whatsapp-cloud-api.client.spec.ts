@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAX_CHAT_IMAGE_SIZE_BYTES } from '../chatbot/chatbot.constants.js';
 import { WHATSAPP_BUTTON_IDS } from '../chatbot/whatsapp/whatsapp.adapter.js';
@@ -7,6 +7,7 @@ import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 const TEST_CONFIGURATION = {
   WHATSAPP_ACCESS_TOKEN: 'test-access-token',
   WHATSAPP_PHONE_NUMBER_ID: '1234567890',
+  WHATSAPP_BUSINESS_ACCOUNT_ID: '0987654321',
   WHATSAPP_GRAPH_API_VERSION: 'v99.0',
 };
 
@@ -24,6 +25,7 @@ function successfulResponse(): Response {
 describe('WhatsAppCloudApiClient', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('sends a text message through the configured Graph API version and phone number', async () => {
@@ -38,7 +40,12 @@ describe('WhatsAppCloudApiClient', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(String(url)).toBe('https://graph.facebook.com/v99.0/1234567890/messages');
+    expect(String(url)).not.toContain(TEST_CONFIGURATION.WHATSAPP_BUSINESS_ACCOUNT_ID);
     expect(init?.method).toBe('POST');
+    expect(init?.headers).toEqual({
+      Authorization: 'Bearer test-access-token',
+      'Content-Type': 'application/json',
+    });
     expect(JSON.parse(String(init?.body))).toEqual({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -47,6 +54,46 @@ describe('WhatsAppCloudApiClient', () => {
       text: { preview_url: false, body: 'Hola desde Nita' },
     });
     expect(JSON.stringify(init?.headers)).not.toContain('META_APP_SECRET');
+  });
+
+  it('logs only safe Meta error fields when Graph API rejects a message', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Invalid OAuth access token: test-access-token',
+            type: 'OAuthException',
+            code: 190,
+            error_subcode: 463,
+            fbtrace_id: 'safe-trace-id',
+            access_token: 'test-access-token',
+          },
+        }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const loggerError = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createClient().sendMessage('51999999999', {
+        type: 'text',
+        text: 'Hola desde Nita',
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(loggerError).toHaveBeenCalledOnce();
+    const logged = String(loggerError.mock.calls[0]?.[0]);
+    expect(logged).toContain('"httpStatus":401');
+    expect(logged).toContain('"error.message":"Invalid OAuth access token: [REDACTED]"');
+    expect(logged).toContain('"error.type":"OAuthException"');
+    expect(logged).toContain('"error.code":190');
+    expect(logged).toContain('"error.error_subcode":463');
+    expect(logged).toContain('"error.fbtrace_id":"safe-trace-id"');
+    expect(logged).not.toContain('test-access-token');
+    expect(logged).not.toContain('access_token');
+    expect(logged).not.toContain('Authorization');
+    expect(logged).not.toContain('META_APP_SECRET');
   });
 
   it('sends three stable reply buttons as an interactive WhatsApp message', async () => {
