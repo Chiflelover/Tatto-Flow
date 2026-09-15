@@ -117,3 +117,25 @@
   font-size: 0.72rem;
   line-height: 1.45;
 }
+
+.footer {
+  margin-top: 1.25rem;
+  text-align: center;
+}
+
+.footer a {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.2rem;
+  transition:
+    color 160ms ease,
+    text-decoration-color 160ms ease;
+}
+
+.footer a:hover,
+.footer a:focus-visible {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}

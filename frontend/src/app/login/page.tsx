@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { LoginForm } from './login-form';
 import styles from './login.module.css';
 
@@ -19,6 +20,9 @@ export default function LoginPage() {
           <p>Ingresa con la cuenta del estudio para revisar tus pedidos.</p>
         </div>
         <LoginForm />
+        <footer className={styles.footer}>
+          <Link href="/privacy">Política de privacidad</Link>
+        </footer>
       </section>
     </main>
   );

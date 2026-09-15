@@ -1,0 +1,151 @@
+.page {
+  min-height: 100dvh;
+  padding: clamp(1rem, 4vw, 3rem);
+  background:
+    radial-gradient(circle at 15% 5%, rgba(57, 255, 136, 0.12), transparent 25rem),
+    var(--background);
+}
+
+.policy {
+  width: min(100%, 48rem);
+  margin: 0 auto;
+  padding: clamp(1.25rem, 5vw, 3rem);
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--surface-raised);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.35);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.brand span {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: 0.75rem;
+  color: var(--on-accent);
+  background: var(--accent-strong);
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.eyebrow {
+  margin-top: 2rem;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.header h1 {
+  margin-top: 0.5rem;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.updated {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.intro {
+  max-width: 40rem;
+  margin-top: 1.5rem;
+  color: var(--muted-strong);
+  font-size: clamp(0.95rem, 2vw, 1.05rem);
+  line-height: 1.7;
+}
+
+.policy section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.policy h2 {
+  color: var(--foreground);
+  font-size: 1.08rem;
+  line-height: 1.35;
+}
+
+.policy section p,
+.policy li {
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.policy section > p {
+  margin-top: 0.75rem;
+}
+
+.policy ul {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+  padding-left: 1.25rem;
+}
+
+.policy li::marker {
+  color: var(--accent);
+}
+
+.contact {
+  display: inline-block;
+  margin-top: 0.9rem;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.missingContact {
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 205, 86, 0.25);
+  border-radius: 0.75rem;
+  color: #ffe49a !important;
+  background: rgba(111, 77, 0, 0.22);
+}
+
+.missingContact code {
+  font-size: 0.82em;
+}
+
+.footer {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.footer a {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.footer a:hover,
+.footer a:focus-visible,
+.brand:hover,
+.brand:focus-visible {
+  color: var(--accent);
+}
+
+@media (min-width: 42rem) {
+  .policy {
+    border-radius: 1.75rem;
+  }
+}
