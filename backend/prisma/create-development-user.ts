@@ -22,20 +22,27 @@ if (!password || password.length < PASSWORD_MIN_LENGTH || password.length > PASS
   );
 }
 
+const tattooArtistEmail = email;
+const tattooArtistPassword = password;
+
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
-try {
-  const passwordHash = await hashPassword(password);
+async function main(): Promise<void> {
+  try {
+    const passwordHash = await hashPassword(tattooArtistPassword);
 
-  await prisma.user.upsert({
-    where: { email },
-    update: { passwordHash },
-    create: { email, passwordHash },
-  });
+    await prisma.user.upsert({
+      where: { email: tattooArtistEmail },
+      update: { passwordHash },
+      create: { email: tattooArtistEmail, passwordHash },
+    });
 
-  console.info('Development tattoo artist user is ready.');
-} finally {
-  await prisma.$disconnect();
+    console.info('Development tattoo artist user is ready.');
+  } finally {
+    await prisma.$disconnect();
+  }
 }
+
+void main();

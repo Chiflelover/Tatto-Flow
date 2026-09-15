@@ -33,76 +33,83 @@ let customerId: string | undefined;
 let leadId: string | undefined;
 let storagePath: string | undefined;
 
-try {
-  await storage.verifyPrivateBucket();
+async function main(): Promise<void> {
+  try {
+    await storage.verifyPrivateBucket();
 
-  const customer = await prisma.customer.create({
-    data: { phoneNumber: `test-${randomUUID().slice(0, 15)}` },
-  });
-  customerId = customer.id;
+    const customer = await prisma.customer.create({
+      data: { phoneNumber: `test-${randomUUID().slice(0, 15)}` },
+    });
+    customerId = customer.id;
 
-  const lead = await prisma.lead.create({
-    data: {
-      customerId,
-      selectedSize: 'SMALL',
-      selectedDetail: 'LIGHT',
-      bodyPart: 'Prueba',
-    },
-  });
-  leadId = lead.id;
+    const lead = await prisma.lead.create({
+      data: {
+        customerId,
+        selectedSize: 'SMALL',
+        selectedDetail: 'LIGHT',
+        bodyPart: 'Prueba',
+      },
+    });
+    leadId = lead.id;
 
-  const image = await leadImages.ensureStored(leadId, {
-    content: ONE_PIXEL_PNG,
-    mimeType: 'image/png',
-    fileName: 'ignored-client-name.png',
-  });
-  storagePath = image.storagePath;
+    const image = await leadImages.ensureStored(leadId, {
+      content: ONE_PIXEL_PNG,
+      mimeType: 'image/png',
+      fileName: 'ignored-client-name.png',
+    });
+    storagePath = image.storagePath;
 
-  const persistedImage = await prisma.leadImage.findUnique({ where: { id: image.id } });
+    const persistedImage = await prisma.leadImage.findUnique({ where: { id: image.id } });
 
-  if (!persistedImage || persistedImage.leadId !== leadId || persistedImage.deletedAt !== null) {
-    throw new Error('LeadImage no quedó persistido correctamente.');
-  }
-
-  if (persistedImage.expiresAt.getTime() - persistedImage.createdAt.getTime() !== FIFTEEN_DAYS_MS) {
-    throw new Error('La retención de LeadImage no es exactamente de 15 días.');
-  }
-
-  if (!(await storage.exists(storagePath))) {
-    throw new Error('El objeto de prueba no existe después del upload.');
-  }
-
-  const signedUrl = await storage.createSignedUrl(storagePath, 5 * 60);
-  const response = await fetch(signedUrl, { cache: 'no-store' });
-
-  if (!response.ok) {
-    throw new Error('La URL firmada no permitió descargar la imagen.');
-  }
-
-  await storage.delete(storagePath);
-
-  if (await storage.exists(storagePath)) {
-    throw new Error('El objeto de prueba no pudo eliminarse.');
-  }
-
-  storagePath = undefined;
-  console.info('Supabase Storage smoke test: OK; test artifacts removed.');
-} finally {
-  if (storagePath) {
-    try {
-      await storage.delete(storagePath);
-    } catch {
-      console.error('No se pudo confirmar la limpieza del objeto aislado de prueba.');
+    if (!persistedImage || persistedImage.leadId !== leadId || persistedImage.deletedAt !== null) {
+      throw new Error('LeadImage no quedó persistido correctamente.');
     }
-  }
 
-  if (leadId) {
-    await prisma.lead.deleteMany({ where: { id: leadId } });
-  }
+    if (
+      persistedImage.expiresAt.getTime() - persistedImage.createdAt.getTime() !==
+      FIFTEEN_DAYS_MS
+    ) {
+      throw new Error('La retención de LeadImage no es exactamente de 15 días.');
+    }
 
-  if (customerId) {
-    await prisma.customer.deleteMany({ where: { id: customerId } });
-  }
+    if (!(await storage.exists(storagePath))) {
+      throw new Error('El objeto de prueba no existe después del upload.');
+    }
 
-  await prisma.$disconnect();
+    const signedUrl = await storage.createSignedUrl(storagePath, 5 * 60);
+    const response = await fetch(signedUrl, { cache: 'no-store' });
+
+    if (!response.ok) {
+      throw new Error('La URL firmada no permitió descargar la imagen.');
+    }
+
+    await storage.delete(storagePath);
+
+    if (await storage.exists(storagePath)) {
+      throw new Error('El objeto de prueba no pudo eliminarse.');
+    }
+
+    storagePath = undefined;
+    console.info('Supabase Storage smoke test: OK; test artifacts removed.');
+  } finally {
+    if (storagePath) {
+      try {
+        await storage.delete(storagePath);
+      } catch {
+        console.error('No se pudo confirmar la limpieza del objeto aislado de prueba.');
+      }
+    }
+
+    if (leadId) {
+      await prisma.lead.deleteMany({ where: { id: leadId } });
+    }
+
+    if (customerId) {
+      await prisma.customer.deleteMany({ where: { id: customerId } });
+    }
+
+    await prisma.$disconnect();
+  }
 }
+
+void main();

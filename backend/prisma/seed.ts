@@ -30,9 +30,13 @@ async function seed() {
   );
 }
 
-try {
-  await seed();
-  console.info('Pricing rules seeded successfully.');
-} finally {
-  await prisma.$disconnect();
+async function main(): Promise<void> {
+  try {
+    await seed();
+    console.info('Pricing rules seeded successfully.');
+  } finally {
+    await prisma.$disconnect();
+  }
 }
+
+void main();
