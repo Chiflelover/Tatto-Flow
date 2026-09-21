@@ -1,4 +1,5 @@
 import { DetailLevel, ReviewReason, TattooSize } from '../../generated/prisma/client.js';
+import { ImageAmbiguityLevel } from '../image-analysis/domain/image-analysis.types.js';
 import { ValidationService } from './validation.service.js';
 
 const service = new ValidationService();
@@ -19,6 +20,9 @@ function validate(
       sizeConfidence: 0.95,
       detectedDetail: DetailLevel.LIGHT,
       detailConfidence: 0.95,
+      tattooOnSkin: true,
+      referenceAnalyzable: true,
+      ambiguityLevel: ImageAmbiguityLevel.NONE,
       ...overrides,
     },
   });

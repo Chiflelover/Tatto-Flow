@@ -29,7 +29,8 @@ export function LeadCard({ lead }: { lead: LeadSummary }) {
           <StatusBadge status={lead.status} label={lead.statusLabel} />
         </div>
         <p className={styles.leadDescription}>
-          {lead.selectedSizeLabel} · {lead.selectedDetailLabel} · {lead.bodyPart}
+          {lead.selectedSizeLabel ?? 'Tamaño pendiente'} ·{' '}
+          {lead.selectedDetailLabel ?? 'Detalle pendiente'} · {lead.bodyPart ?? 'Zona pendiente'}
         </p>
         <div className={styles.leadBottomline}>
           <span>{DATE_FORMATTER.format(new Date(lead.createdAt))}</span>

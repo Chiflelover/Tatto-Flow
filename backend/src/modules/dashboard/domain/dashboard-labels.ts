@@ -42,6 +42,7 @@ const REVIEW_MESSAGES: Record<ReviewReason, string> = {
   [ReviewReason.AI_ERROR]: 'No se pudo analizar la referencia automáticamente.',
   [ReviewReason.PRICING_RULE_NOT_FOUND]:
     'No hay una regla de precios activa para esta combinación.',
+  [ReviewReason.NOT_ON_SKIN]: 'La referencia no muestra un tatuaje aplicado sobre piel.',
 };
 
 export function sizeLabel(size: TattooSize): string {

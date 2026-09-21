@@ -3,6 +3,23 @@ const DASHBOARD_API_BASE = '/api';
 export type LeadStatus =
   'ANALYZING' | 'VERIFIED' | 'REQUIRES_REVIEW' | 'HANDOFF_TO_TATTOO_ARTIST' | 'COMPLETED';
 
+export type ReadinessStatus = 'LISTO' | 'REVISAR' | 'INCOMPLETO';
+export type TattooSize = 'SMALL' | 'MEDIUM' | 'LARGE';
+export type DetailLevel = 'LIGHT' | 'MEDIUM' | 'DETAILED';
+export type LeadSortField = 'readinessScore' | 'price' | 'createdAt' | 'size' | 'detail' | 'status';
+export type SortOrder = 'asc' | 'desc';
+
+export interface LeadScoringContribution {
+  ruleId: string;
+  points: number;
+  reason: string;
+}
+
+export interface LeadScoringBlocker {
+  ruleId: string;
+  reason: string;
+}
+
 export interface PriceRange {
   minimum: string;
   maximum: string;
@@ -11,27 +28,48 @@ export interface PriceRange {
 export interface LeadSummary {
   id: string;
   customerPhoneNumber: string;
-  selectedSize: 'SMALL' | 'MEDIUM' | 'LARGE';
-  selectedSizeLabel: string;
-  selectedDetail: 'LIGHT' | 'MEDIUM' | 'DETAILED';
-  selectedDetailLabel: string;
-  bodyPart: string;
+  selectedSize: TattooSize | null;
+  selectedSizeLabel: string | null;
+  selectedDetail: DetailLevel | null;
+  selectedDetailLabel: string | null;
+  bodyPart: string | null;
   status: LeadStatus;
   statusLabel: string;
   createdAt: string;
+  archivedAt: string | null;
   price: PriceRange | null;
+  readiness: {
+    status: ReadinessStatus;
+    score: number;
+    rawScore: number;
+    rulesVersion: number;
+  } | null;
+  confidence: {
+    size: number;
+    detail: number;
+  } | null;
 }
 
 export interface LeadDetail extends LeadSummary {
   analysis: {
-    detectedSize: 'SMALL' | 'MEDIUM' | 'LARGE';
+    detectedSize: TattooSize;
     detectedSizeLabel: string;
     sizeConfidence: number;
-    detectedDetail: 'LIGHT' | 'MEDIUM' | 'DETAILED';
+    detectedDetail: DetailLevel;
     detectedDetailLabel: string;
     detailConfidence: number;
   } | null;
   reviewMessages: string[];
+  evaluation: {
+    rawScore: number;
+    maxPositiveScore: number;
+    readinessScore: number;
+    status: ReadinessStatus;
+    rulesVersion: number;
+    contributions: LeadScoringContribution[];
+    blockers: LeadScoringBlocker[];
+    evaluatedAt: string;
+  } | null;
   priceSentAt: string | null;
   whatsappUrl: string | null;
 }
@@ -85,6 +123,30 @@ export interface SendPriceResult {
   alreadySent: boolean;
   confirmation: string;
   priceSentAt: string;
+}
+
+export interface LeadListQuery {
+  status?: ReadinessStatus;
+  archived?: boolean;
+  size?: TattooSize;
+  detail?: DetailLevel;
+  search?: string;
+  sortBy?: LeadSortField;
+  sortOrder?: SortOrder;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface LeadPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface LeadListResult {
+  leads: LeadSummary[];
+  pagination: LeadPagination;
 }
 
 export class DashboardApiError extends Error {
@@ -141,7 +203,11 @@ async function dashboardRequest<T>(path: string, init: RequestInit = {}): Promis
   return (await response.json()) as T;
 }
 
-function jsonRequest<T>(path: string, method: 'POST' | 'PATCH', body?: object): Promise<T> {
+function jsonRequest<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: object,
+): Promise<T> {
   return dashboardRequest<T>(path, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -165,8 +231,17 @@ export function getDashboardMetrics(): Promise<DashboardMetrics> {
   return dashboardRequest('dashboard/metrics');
 }
 
-export function listLeads(filter: string): Promise<{ leads: LeadSummary[] }> {
-  return dashboardRequest(`dashboard/leads?filter=${encodeURIComponent(filter)}`);
+export function listLeads(query: LeadListQuery = {}): Promise<LeadListResult> {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '' && value !== false) {
+      params.set(key, String(value));
+    }
+  }
+
+  const search = params.toString();
+  return dashboardRequest(`dashboard/leads${search ? `?${search}` : ''}`);
 }
 
 export function getLead(leadId: string): Promise<LeadDetail> {
@@ -194,6 +269,18 @@ export function sendPrice(leadId: string): Promise<SendPriceResult> {
 
 export function completeLead(leadId: string): Promise<LeadDetail> {
   return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/complete`, 'PATCH');
+}
+
+export function archiveLead(leadId: string): Promise<LeadDetail> {
+  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/archive`, 'PATCH');
+}
+
+export function restoreLead(leadId: string): Promise<LeadDetail> {
+  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/restore`, 'PATCH');
+}
+
+export function deleteLead(leadId: string): Promise<{ deleted: true; leadId: string }> {
+  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}`, 'DELETE');
 }
 
 export function getPricingRules(): Promise<{ rules: PricingRuleView[] }> {

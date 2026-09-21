@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
 import { validateEnvironment } from '../../config/environment.validation.js';
-import type { TattooImageInput } from './domain/image-analysis.types.js';
+import { ImageAmbiguityLevel, type TattooImageInput } from './domain/image-analysis.types.js';
 import { MockImageAnalysisService } from './mock-image-analysis.service.js';
 
 const TEST_IMAGE: TattooImageInput = {
@@ -53,5 +53,15 @@ describe('MockImageAnalysisService', () => {
 
     expect(result.sizeConfidence).toBe(0.9);
     expect(result.detailConfidence).toBe(0.9);
+  });
+
+  it('uses safe readiness defaults without making a scoring decision', async () => {
+    const result = await createService({}).analyzeTattooImage(TEST_IMAGE);
+
+    expect(result).toMatchObject({
+      tattooOnSkin: true,
+      referenceAnalyzable: true,
+      ambiguityLevel: ImageAmbiguityLevel.NONE,
+    });
   });
 });

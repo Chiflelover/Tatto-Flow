@@ -172,6 +172,19 @@ describe('PricingService', () => {
     },
   );
 
+  it('remains deterministic and independent from the lead scoring engine', async () => {
+    const fixture = createFixture();
+
+    const rule = await fixture.service.findActiveRule(TattooSize.SMALL, DetailLevel.LIGHT);
+
+    expect(rule).toMatchObject({
+      size: TattooSize.SMALL,
+      detail: DetailLevel.LIGHT,
+      minPrice: new Prisma.Decimal(70),
+      maxPrice: new Prisma.Decimal(80),
+    });
+  });
+
   it('updates prices, increments the version and records the complete history', async () => {
     const fixture = createFixture();
     const original = fixture.getRules()[0];

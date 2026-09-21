@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AiMode } from '../../config/environment.validation.js';
+import { LeadScoringModule } from '../lead-scoring/lead-scoring.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { ValidationModule } from '../validation/validation.module.js';
 import { ImageAnalysisWorkflowService } from './image-analysis-workflow.service.js';
@@ -8,7 +9,7 @@ import { ImageAnalysisService } from './image-analysis.service.js';
 import { MockImageAnalysisService } from './mock-image-analysis.service.js';
 
 @Module({
-  imports: [PricingModule, ValidationModule],
+  imports: [LeadScoringModule, PricingModule, ValidationModule],
   providers: [
     MockImageAnalysisService,
     ImageAnalysisWorkflowService,

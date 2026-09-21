@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
-import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import {
+  ImageAmbiguityLevel,
+  type ImageAnalysisResult,
+  type TattooImageInput,
+} from './domain/image-analysis.types.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
 
 @Injectable()
@@ -20,6 +24,9 @@ export class MockImageAnalysisService extends ImageAnalysisService {
       sizeConfidence: this.configService.getOrThrow<number>('AI_MOCK_SIZE_CONFIDENCE'),
       detectedDetail: this.configService.getOrThrow<DetailLevel>('AI_MOCK_DETAIL'),
       detailConfidence: this.configService.getOrThrow<number>('AI_MOCK_DETAIL_CONFIDENCE'),
+      tattooOnSkin: true,
+      referenceAnalyzable: true,
+      ambiguityLevel: ImageAmbiguityLevel.NONE,
     });
   }
 }

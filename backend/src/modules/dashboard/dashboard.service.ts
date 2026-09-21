@@ -7,8 +7,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  ConversationStatus,
   LeadStatus,
   Prisma,
+  ReadinessStatus,
   type PricingRule,
   type ReviewReason,
 } from '../../generated/prisma/client.js';
@@ -25,15 +27,28 @@ import {
   sizeRangeLabel,
   statusLabel,
 } from './domain/dashboard-labels.js';
-import type { LeadFilter } from './dto/dashboard.dto.js';
+import type {
+  LeadFilter,
+  LeadListQueryDto,
+  LeadSortField,
+  SortOrder,
+} from './dto/dashboard.dto.js';
 
 const SUMMARY_INCLUDE = {
   customer: { select: { phoneNumber: true } },
+  evaluation: true,
+  aiAnalysis: {
+    select: {
+      sizeConfidence: true,
+      detailConfidence: true,
+    },
+  },
 } satisfies Prisma.LeadInclude;
 
 const DETAIL_INCLUDE = {
   customer: { select: { phoneNumber: true } },
   aiAnalysis: true,
+  evaluation: true,
 } satisfies Prisma.LeadInclude;
 
 type SummaryLead = Prisma.LeadGetPayload<{ include: typeof SUMMARY_INCLUDE }>;
@@ -65,15 +80,19 @@ export class DashboardService {
     const [newOrders, verified, requiresReview, completed, recentLeads] = await Promise.all([
       this.prisma.lead.count({
         where: {
+          archivedAt: null,
           status: {
             in: [LeadStatus.ANALYZING, LeadStatus.VERIFIED, LeadStatus.REQUIRES_REVIEW],
           },
         },
       }),
-      this.prisma.lead.count({ where: { status: LeadStatus.VERIFIED } }),
-      this.prisma.lead.count({ where: { status: LeadStatus.REQUIRES_REVIEW } }),
-      this.prisma.lead.count({ where: { status: LeadStatus.COMPLETED } }),
+      this.prisma.lead.count({ where: { archivedAt: null, status: LeadStatus.VERIFIED } }),
+      this.prisma.lead.count({
+        where: { archivedAt: null, status: LeadStatus.REQUIRES_REVIEW },
+      }),
+      this.prisma.lead.count({ where: { archivedAt: null, status: LeadStatus.COMPLETED } }),
       this.prisma.lead.findMany({
+        where: { archivedAt: null },
         include: SUMMARY_INCLUDE,
         orderBy: { createdAt: 'desc' },
         take: 5,
@@ -86,14 +105,29 @@ export class DashboardService {
     };
   }
 
-  async listLeads(filter: LeadFilter) {
-    const leads = await this.prisma.lead.findMany({
-      where: this.filterWhere(filter),
-      include: SUMMARY_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+  async listLeads(query: LeadListQueryDto) {
+    const where = this.filterWhere(query);
+    const skip = (query.page - 1) * query.pageSize;
+    const [leads, total] = await Promise.all([
+      this.prisma.lead.findMany({
+        where,
+        include: SUMMARY_INCLUDE,
+        orderBy: this.orderBy(query.sortBy, query.sortOrder),
+        skip,
+        take: query.pageSize,
+      }),
+      this.prisma.lead.count({ where }),
+    ]);
 
-    return { leads: leads.map((lead) => this.toSummary(lead)) };
+    return {
+      leads: leads.map((lead) => this.toSummary(lead)),
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.ceil(total / query.pageSize),
+      },
+    };
   }
 
   async getLead(leadId: string) {
@@ -307,6 +341,83 @@ export class DashboardService {
     return this.getLead(leadId);
   }
 
+  async archiveLead(leadId: string) {
+    await this.ensureLeadExists(leadId);
+    await this.prisma.lead.updateMany({
+      where: { id: leadId, archivedAt: null },
+      data: { archivedAt: new Date() },
+    });
+
+    return this.getLead(leadId);
+  }
+
+  async restoreLead(leadId: string) {
+    await this.ensureLeadExists(leadId);
+    await this.prisma.lead.updateMany({
+      where: { id: leadId, archivedAt: { not: null } },
+      data: { archivedAt: null },
+    });
+
+    return this.getLead(leadId);
+  }
+
+  async deleteIncompleteLead(leadId: string) {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: {
+        id: true,
+        conversationId: true,
+        status: true,
+        calculatedMinPrice: true,
+        calculatedMaxPrice: true,
+        priceSentAt: true,
+        evaluation: { select: { readinessStatus: true } },
+        images: { select: { storagePath: true } },
+      },
+    });
+
+    if (!lead) {
+      throw new NotFoundException('No encontramos ese pedido.');
+    }
+
+    const isValidIncompleteLead =
+      lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
+      lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
+      lead.status !== LeadStatus.COMPLETED &&
+      lead.calculatedMinPrice === null &&
+      lead.calculatedMaxPrice === null &&
+      lead.priceSentAt === null;
+
+    if (!isValidIncompleteLead) {
+      throw new ConflictException('Solo se pueden eliminar leads incompletos sin cotización.');
+    }
+
+    try {
+      for (const image of lead.images) {
+        await this.storage.delete(image.storagePath);
+      }
+    } catch {
+      throw new ServiceUnavailableException(
+        'No pudimos limpiar la imagen del lead. Inténtalo nuevamente.',
+      );
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.lead.delete({ where: { id: lead.id } });
+
+      if (lead.conversationId) {
+        await transaction.conversation.deleteMany({
+          where: {
+            id: lead.conversationId,
+            status: ConversationStatus.ABANDONED,
+          },
+        });
+      }
+    });
+
+    return { deleted: true, leadId: lead.id };
+  }
+
   async getPricingRules() {
     const rules = await this.pricingService.listActiveRules();
 
@@ -325,15 +436,45 @@ export class DashboardService {
     };
   }
 
-  private filterWhere(filter: LeadFilter): Prisma.LeadWhereInput | undefined {
+  private filterWhere(query: LeadListQueryDto): Prisma.LeadWhereInput {
     const statusByFilter: Partial<Record<LeadFilter, LeadStatus>> = {
       verified: LeadStatus.VERIFIED,
       'requires-review': LeadStatus.REQUIRES_REVIEW,
       completed: LeadStatus.COMPLETED,
     };
-    const status = statusByFilter[filter];
+    const operationalStatus = statusByFilter[query.filter];
 
-    return status ? { status } : undefined;
+    return {
+      archivedAt: query.archived ? { not: null } : null,
+      ...(operationalStatus ? { status: operationalStatus } : {}),
+      ...(query.status ? { evaluation: { is: { readinessStatus: query.status } } } : {}),
+      ...(query.size ? { selectedSize: query.size } : {}),
+      ...(query.detail ? { selectedDetail: query.detail } : {}),
+      ...(query.search ? { customer: { is: { phoneNumber: { contains: query.search } } } } : {}),
+    };
+  }
+
+  private orderBy(
+    sortBy: LeadSortField | undefined,
+    sortOrder: SortOrder,
+  ): Prisma.LeadOrderByWithRelationInput[] {
+    if (!sortBy) {
+      return [
+        { evaluation: { readinessStatus: 'asc' } },
+        { evaluation: { readinessScore: 'desc' } },
+      ];
+    }
+
+    const orderByField: Record<LeadSortField, Prisma.LeadOrderByWithRelationInput> = {
+      readinessScore: { evaluation: { readinessScore: sortOrder } },
+      price: { calculatedMinPrice: sortOrder },
+      createdAt: { createdAt: sortOrder },
+      size: { selectedSize: sortOrder },
+      detail: { selectedDetail: sortOrder },
+      status: { evaluation: { readinessStatus: sortOrder } },
+    };
+
+    return [orderByField[sortBy], { createdAt: 'desc' }];
   }
 
   private toSummary(lead: SummaryLead) {
@@ -341,14 +482,29 @@ export class DashboardService {
       id: lead.id,
       customerPhoneNumber: lead.customer.phoneNumber,
       selectedSize: lead.selectedSize,
-      selectedSizeLabel: sizeLabel(lead.selectedSize),
+      selectedSizeLabel: lead.selectedSize ? sizeLabel(lead.selectedSize) : null,
       selectedDetail: lead.selectedDetail,
-      selectedDetailLabel: detailLabel(lead.selectedDetail),
+      selectedDetailLabel: lead.selectedDetail ? detailLabel(lead.selectedDetail) : null,
       bodyPart: lead.bodyPart,
       status: lead.status,
       statusLabel: statusLabel(lead.status),
       createdAt: lead.createdAt.toISOString(),
+      archivedAt: lead.archivedAt?.toISOString() ?? null,
       price: this.priceRange(lead.calculatedMinPrice, lead.calculatedMaxPrice),
+      readiness: lead.evaluation
+        ? {
+            status: lead.evaluation.readinessStatus,
+            score: Math.round(lead.evaluation.readinessScore.toNumber()),
+            rawScore: lead.evaluation.rawScore,
+            rulesVersion: lead.evaluation.rulesVersion,
+          }
+        : null,
+      confidence: lead.aiAnalysis
+        ? {
+            size: lead.aiAnalysis.sizeConfidence.toNumber(),
+            detail: lead.aiAnalysis.detailConfidence.toNumber(),
+          }
+        : null,
     };
   }
 
@@ -366,6 +522,18 @@ export class DashboardService {
           }
         : null,
       reviewMessages: lead.reviewReasons.map((reason: ReviewReason) => reviewReasonMessage(reason)),
+      evaluation: lead.evaluation
+        ? {
+            rawScore: lead.evaluation.rawScore,
+            maxPositiveScore: lead.evaluation.maxPositiveScore,
+            readinessScore: Math.round(lead.evaluation.readinessScore.toNumber()),
+            status: lead.evaluation.readinessStatus,
+            rulesVersion: lead.evaluation.rulesVersion,
+            contributions: lead.evaluation.contributions,
+            blockers: lead.evaluation.blockers,
+            evaluatedAt: lead.evaluation.evaluatedAt.toISOString(),
+          }
+        : null,
       priceSentAt: lead.priceSentAt?.toISOString() ?? null,
       whatsappUrl: buildWhatsappUrl(lead.customer.phoneNumber),
     };
@@ -378,6 +546,17 @@ export class DashboardService {
       expiresInSeconds: null,
       message: RETAINED_IMAGE_MESSAGE,
     };
+  }
+
+  private async ensureLeadExists(leadId: string): Promise<void> {
+    const exists = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { id: true },
+    });
+
+    if (!exists) {
+      throw new NotFoundException('No encontramos ese pedido.');
+    }
   }
 
   private priceRange(minimum: Prisma.Decimal | null, maximum: Prisma.Decimal | null) {

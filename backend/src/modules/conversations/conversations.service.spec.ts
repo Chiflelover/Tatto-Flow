@@ -7,7 +7,6 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
 import { ConversationsService, type ActiveConversationResult } from './conversations.service.js';
-import type { TemporaryImageStorage } from './ports/temporary-image-storage.port.js';
 
 interface DeleteManyArguments {
   where: {
@@ -158,11 +157,7 @@ function createFixture() {
   const abandonmentService = {
     abandonInactiveForCustomer,
   } as unknown as ConversationAbandonmentService;
-  const deleteForConversation = vi
-    .fn<TemporaryImageStorage['deleteForConversation']>()
-    .mockResolvedValue(undefined);
-  const temporaryImageStorage: TemporaryImageStorage = { deleteForConversation };
-  const service = new ConversationsService(prisma, abandonmentService, temporaryImageStorage);
+  const service = new ConversationsService(prisma, abandonmentService);
 
   return {
     conversations,
@@ -175,7 +170,6 @@ function createFixture() {
     findFirst,
     deleteCustomer,
     deleteLead,
-    deleteForConversation,
   };
 }
 
@@ -212,11 +206,11 @@ describe('ConversationsService abandoned conversation cleanup', () => {
 
     expect(result.created).toBe(true);
     expect(result.conversation.currentState).toBe(ConversationState.START);
-    expect(fixture.conversations).not.toContainEqual(expired);
-    expect(fixture.deleteForConversation).toHaveBeenCalledWith(expired.id);
+    expect(fixture.conversations).toContainEqual(expired);
+    expect(expired.status).toBe(ConversationStatus.ABANDONED);
   });
 
-  it('deletes the abandoned draft and creates a fresh START conversation', async () => {
+  it('preserves the abandoned conversation and creates a fresh START conversation', async () => {
     const fixture = createFixture();
 
     const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
@@ -227,9 +221,11 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     expect(result.conversation.selectedSize).toBeNull();
     expect(result.conversation.selectedDetail).toBeNull();
     expect(result.conversation.bodyPart).toBeNull();
-    expect(fixture.conversations).toHaveLength(1);
-    expect(fixture.conversations[0]?.id).toBe('new-conversation');
-    expect(fixture.deleteForConversation).toHaveBeenCalledWith(ABANDONED_CONVERSATION_ID);
+    expect(fixture.conversations).toHaveLength(2);
+    expect(fixture.conversations.map(({ id }) => id)).toEqual([
+      ABANDONED_CONVERSATION_ID,
+      'new-conversation',
+    ]);
     expect(fixture.create).toHaveBeenCalledOnce();
   });
 
@@ -239,34 +235,17 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     await fixture.service.getOrCreateActive(CUSTOMER_ID);
 
     expect(fixture.deleteCustomer).not.toHaveBeenCalled();
-    expect(fixture.findMany).toHaveBeenCalledWith({
-      where: {
-        customerId: CUSTOMER_ID,
-        status: ConversationStatus.ABANDONED,
-        OR: [
-          { lead: null },
-          { lead: { is: { status: LeadStatus.ANALYZING } } },
-        ],
-      },
-      select: { id: true },
-    });
+    expect(fixture.findMany).not.toHaveBeenCalled();
   });
 
-  it('preserves prior leads and only deletes abandoned conversations without a lead', async () => {
+  it('preserves prior leads and never deletes the abandoned history', async () => {
     const fixture = createFixture();
 
     await fixture.service.getOrCreateActive(CUSTOMER_ID);
 
     expect(fixture.leads).toEqual([{ id: 'historical-lead', customerId: CUSTOMER_ID }]);
     expect(fixture.deleteLead).not.toHaveBeenCalled();
-    expect(fixture.deleteMany).toHaveBeenCalledWith({
-      where: {
-        id: { in: [ABANDONED_CONVERSATION_ID] },
-        customerId: CUSTOMER_ID,
-        status: ConversationStatus.ABANDONED,
-        lead: null,
-      },
-    });
+    expect(fixture.deleteMany).not.toHaveBeenCalled();
   });
 
   it('returns the handed-off conversation instead of starting another quotation', async () => {

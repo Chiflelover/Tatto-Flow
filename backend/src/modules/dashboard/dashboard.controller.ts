@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -32,7 +33,7 @@ export class DashboardController {
 
   @Get('leads')
   listLeads(@Query() query: LeadListQueryDto) {
-    return this.dashboardService.listLeads(query.filter);
+    return this.dashboardService.listLeads(query);
   }
 
   @Get('leads/:id')
@@ -61,6 +62,21 @@ export class DashboardController {
   @Patch('leads/:id/complete')
   completeLead(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
     return this.dashboardService.completeLead(leadId);
+  }
+
+  @Patch('leads/:id/archive')
+  archiveLead(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
+    return this.dashboardService.archiveLead(leadId);
+  }
+
+  @Patch('leads/:id/restore')
+  restoreLead(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
+    return this.dashboardService.restoreLead(leadId);
+  }
+
+  @Delete('leads/:id')
+  deleteIncompleteLead(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
+    return this.dashboardService.deleteIncompleteLead(leadId);
   }
 
   @Get('pricing')

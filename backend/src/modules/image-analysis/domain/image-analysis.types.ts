@@ -6,9 +6,18 @@ export interface TattooImageInput {
   fileName?: string;
 }
 
+export enum ImageAmbiguityLevel {
+  NONE = 'NONE',
+  MINOR = 'MINOR',
+  MAJOR = 'MAJOR',
+}
+
 export interface ImageAnalysisResult {
   detectedSize: TattooSize;
   sizeConfidence: number;
   detectedDetail: DetailLevel;
   detailConfidence: number;
+  tattooOnSkin: boolean;
+  referenceAnalyzable: boolean;
+  ambiguityLevel: ImageAmbiguityLevel;
 }

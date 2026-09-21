@@ -8,7 +8,6 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
 import { ConversationsService, type ConversationUpdate } from './conversations.service.js';
-import type { TemporaryImageStorage } from './ports/temporary-image-storage.port.js';
 
 const CUSTOMER_A = '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e';
 const CUSTOMER_B = 'b1988d82-056f-4510-9259-0d09bb096923';
@@ -67,11 +66,7 @@ function transitionFixture(initialConversations: Conversation[]) {
   const prisma = {
     conversation: { updateMany, findUniqueOrThrow },
   } as unknown as PrismaService;
-  const service = new ConversationsService(
-    prisma,
-    {} as ConversationAbandonmentService,
-    {} as TemporaryImageStorage,
-  );
+  const service = new ConversationsService(prisma, {} as ConversationAbandonmentService);
 
   return { conversations, service };
 }
@@ -133,13 +128,9 @@ describe('conversation concurrency', () => {
       },
       $transaction: vi.fn().mockRejectedValue(conflict),
     } as unknown as PrismaService;
-    const service = new ConversationsService(
-      prisma,
-      {
-        abandonInactiveForCustomer: vi.fn().mockResolvedValue(0),
-      } as unknown as ConversationAbandonmentService,
-      { deleteForConversation: vi.fn() },
-    );
+    const service = new ConversationsService(prisma, {
+      abandonInactiveForCustomer: vi.fn().mockResolvedValue(0),
+    } as unknown as ConversationAbandonmentService);
 
     await expect(service.getOrCreateActive(CUSTOMER_A)).resolves.toEqual({
       conversation: activeConversation,

@@ -3,10 +3,12 @@ import {
   DetailLevel,
   LeadStatus,
   Prisma,
+  ReadinessStatus,
   ReviewReason,
   TattooSize,
   type AiAnalysis,
   type Lead,
+  type LeadEvaluation,
   type LeadImage,
   type PricingRule,
 } from '../../generated/prisma/client.js';
@@ -15,10 +17,12 @@ import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { CustomerMessagingService } from './customer-messaging.service.js';
 import { DashboardService } from './dashboard.service.js';
+import type { LeadListQueryDto } from './dto/dashboard.dto.js';
 
 type DashboardLead = Lead & {
   customer: { phoneNumber: string };
   aiAnalysis: AiAnalysis | null;
+  evaluation: LeadEvaluation | null;
   images: LeadImage[];
 };
 
@@ -42,6 +46,7 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     pricingRuleId: 'ce16a85c-cc5b-43de-8a56-1b2ef568fd39',
     pricingRuleVersion: 1,
     priceSentAt: null,
+    archivedAt: null,
     createdAt: now,
     updatedAt: now,
     customer: { phoneNumber: '+51 999999999' },
@@ -55,9 +60,33 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
       rawResponse: null,
       createdAt: now,
     },
+    evaluation: {
+      id: '4a0ec352-1674-45e1-b6af-41748736da76',
+      leadId: LEAD_ID,
+      rawScore: 250,
+      maxPositiveScore: 250,
+      readinessScore: new Prisma.Decimal(100),
+      readinessStatus: ReadinessStatus.LISTO,
+      rulesVersion: 1,
+      contributions: [],
+      blockers: [],
+      evaluatedAt: now,
+      updatedAt: now,
+    },
     images: [],
     ...overrides,
   };
+}
+
+function leadQuery(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto {
+  return {
+    filter: 'all',
+    archived: false,
+    sortOrder: 'desc',
+    page: 1,
+    pageSize: 20,
+    ...overrides,
+  } as LeadListQueryDto;
 }
 
 function serviceWith(
@@ -106,14 +135,26 @@ describe('DashboardService', () => {
     ['requires-review' as const, LeadStatus.REQUIRES_REVIEW, 'Requiere revisión'],
   ])('lists the %s lead filter', async (filter, status, expectedLabel) => {
     const findMany = vi.fn().mockResolvedValue([makeLead({ status })]);
-    const { service } = serviceWith({ lead: { findMany } });
+    const count = vi.fn().mockResolvedValue(1);
+    const { service } = serviceWith({ lead: { findMany, count } });
 
-    const result = await service.listLeads(filter);
+    const result = await service.listLeads(leadQuery({ filter }));
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { status },
-      include: { customer: { select: { phoneNumber: true } } },
-      orderBy: { createdAt: 'desc' },
+      where: { archivedAt: null, status },
+      include: {
+        customer: { select: { phoneNumber: true } },
+        evaluation: true,
+        aiAnalysis: {
+          select: { sizeConfidence: true, detailConfidence: true },
+        },
+      },
+      orderBy: [
+        { evaluation: { readinessStatus: 'asc' } },
+        { evaluation: { readinessScore: 'desc' } },
+      ],
+      skip: 0,
+      take: 20,
     });
     expect(result.leads[0]?.statusLabel).toBe(expectedLabel);
   });
@@ -602,15 +643,16 @@ describe('DashboardService', () => {
 
   it('never lists an incomplete conversation without a Lead', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
     const conversationFindMany = vi
       .fn()
       .mockResolvedValue([{ id: 'draft', currentState: 'ASK_BODY_PART' }]);
     const { service } = serviceWith({
-      lead: { findMany },
+      lead: { findMany, count },
       conversation: { findMany: conversationFindMany },
     });
 
-    const result = await service.listLeads('all');
+    const result = await service.listLeads(leadQuery());
 
     expect(result.leads).toEqual([]);
     expect(findMany).toHaveBeenCalledOnce();

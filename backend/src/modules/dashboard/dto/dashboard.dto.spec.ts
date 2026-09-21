@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { SaveManualPriceDto, UpdatePricingRulesDto } from './dashboard.dto.js';
+import { LeadListQueryDto, SaveManualPriceDto, UpdatePricingRulesDto } from './dashboard.dto.js';
 
 const RULE_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -19,6 +19,44 @@ function validateManualPrice(payload: object) {
     whitelist: true,
   });
 }
+
+function validateLeadQuery(payload: object) {
+  return validate(plainToInstance(LeadListQueryDto, payload), {
+    forbidNonWhitelisted: true,
+    whitelist: true,
+  });
+}
+
+describe('LeadListQueryDto', () => {
+  it('accepts readiness, archive, sorting, pagination and phone search', async () => {
+    await expect(
+      validateLeadQuery({
+        status: 'REVISAR',
+        size: 'SMALL',
+        detail: 'LIGHT',
+        archived: 'true',
+        sortBy: 'readinessScore',
+        sortOrder: 'asc',
+        page: '2',
+        pageSize: '25',
+        search: '+51999',
+      }),
+    ).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    [{ status: 'VERIFIED' }],
+    [{ size: 'TINY' }],
+    [{ detail: 'EXTREME' }],
+    [{ archived: 'yes' }],
+    [{ sortBy: 'city' }],
+    [{ page: 0 }],
+    [{ pageSize: 101 }],
+    [{ search: '123456789012345678901' }],
+  ])('rejects unsupported lead query values', async (payload) => {
+    await expect(validateLeadQuery(payload)).resolves.not.toHaveLength(0);
+  });
+});
 
 describe('SaveManualPriceDto', () => {
   it('accepts finite non-negative numeric prices', async () => {

@@ -16,10 +16,12 @@ import {
   type Lead,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { LeadImageService } from '../storage/lead-image.service.js';
 import { ValidationService } from '../validation/validation.service.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import { toImageAnalysisResult } from './domain/persisted-image-analysis.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
 
 export interface QuotationPricingSnapshot {
@@ -54,6 +56,8 @@ export class ImageAnalysisWorkflowService {
     private readonly pricingService: PricingService,
     @Inject(LeadImageService)
     private readonly leadImageService: LeadImageService,
+    @Inject(LeadScoringService)
+    private readonly leadScoringService: LeadScoringService,
   ) {}
 
   async analyzeConversationImage(
@@ -80,7 +84,7 @@ export class ImageAnalysisWorkflowService {
       return this.persistAnalysisAndFinalize(
         conversation,
         storedAnalysis.leadId,
-        this.toAnalysisResult(storedAnalysis),
+        toImageAnalysisResult(storedAnalysis),
       );
     }
 
@@ -201,7 +205,19 @@ export class ImageAnalysisWorkflowService {
         },
       });
 
-      const persistedAnalysis = this.toAnalysisResult(analysis);
+      const persistedAnalysis = toImageAnalysisResult(analysis);
+      const evaluation = await this.leadScoringService.evaluateAndPersist(
+        leadId,
+        {
+          selectedSize,
+          selectedDetail,
+          bodyPart: conversation.bodyPart,
+          referenceReceived: true,
+          conversationStatus: conversation.status,
+          analysis: persistedAnalysis,
+        },
+        transaction,
+      );
       const validation = this.validationService.validate({
         selectedSize,
         selectedDetail,
@@ -210,8 +226,16 @@ export class ImageAnalysisWorkflowService {
       let status = validation.verified ? LeadStatus.VERIFIED : LeadStatus.REQUIRES_REVIEW;
       let reviewReasons = validation.reviewReasons;
       let pricingRule = null;
+      const referenceIsNotOnSkin = evaluation.blockers.some(
+        (blocker) => blocker.ruleId === 'NOT_ON_SKIN',
+      );
 
-      if (validation.verified) {
+      if (referenceIsNotOnSkin) {
+        status = LeadStatus.REQUIRES_REVIEW;
+        reviewReasons = Array.from(new Set([...reviewReasons, ReviewReason.NOT_ON_SKIN]));
+      }
+
+      if (validation.verified && !referenceIsNotOnSkin) {
         pricingRule = await this.pricingService.findActiveRule(
           selectedSize,
           selectedDetail,
@@ -280,7 +304,7 @@ export class ImageAnalysisWorkflowService {
   ): CompletedImageAnalysis {
     return {
       conversation,
-      analysis: this.toAnalysisResult(analysis),
+      analysis: toImageAnalysisResult(analysis),
       quotation: {
         status: lead.status,
         reviewReasons: lead.reviewReasons,
@@ -297,15 +321,6 @@ export class ImageAnalysisWorkflowService {
               }
             : null,
       },
-    };
-  }
-
-  private toAnalysisResult(analysis: AiAnalysis): ImageAnalysisResult {
-    return {
-      detectedSize: analysis.detectedSize,
-      sizeConfidence: analysis.sizeConfidence.toNumber(),
-      detectedDetail: analysis.detectedDetail,
-      detailConfidence: analysis.detailConfidence.toNumber(),
     };
   }
 

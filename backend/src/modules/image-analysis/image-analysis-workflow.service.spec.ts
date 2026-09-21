@@ -12,10 +12,12 @@ import {
   type PricingRule,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { LEAD_SCORING_CONFIG_V1 } from '../lead-scoring/lead-scoring.config.js';
+import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { LeadImageService } from '../storage/lead-image.service.js';
 import { ValidationService } from '../validation/validation.service.js';
-import type { ImageAnalysisResult } from './domain/image-analysis.types.js';
+import { ImageAmbiguityLevel, type ImageAnalysisResult } from './domain/image-analysis.types.js';
 import {
   type CompletedImageAnalysis,
   ImageAnalysisWorkflowService,
@@ -79,6 +81,9 @@ function createFixture(options: FixtureOptions = {}) {
     sizeConfidence: 0.95,
     detectedDetail: selectedDetail,
     detailConfidence: 0.95,
+    tattooOnSkin: true,
+    referenceAnalyzable: true,
+    ambiguityLevel: ImageAmbiguityLevel.NONE,
     ...options.analysis,
   };
   let conversation: Conversation = {
@@ -117,6 +122,7 @@ function createFixture(options: FixtureOptions = {}) {
         pricingRuleId: null,
         pricingRuleVersion: null,
         priceSentAt: null,
+        archivedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -198,6 +204,7 @@ function createFixture(options: FixtureOptions = {}) {
           : null,
       ),
   );
+  const upsertEvaluation = vi.fn().mockResolvedValue({ id: 'evaluation-id' });
   const transactionClient = {
     aiAnalysis: { upsert: upsertAnalysis },
     lead: { updateMany: updateLead, findUniqueOrThrow: findLeadOrThrow },
@@ -206,6 +213,7 @@ function createFixture(options: FixtureOptions = {}) {
       findUniqueOrThrow: findConversationOrThrow,
     },
     pricingRule: { findFirst: findPricingRule },
+    leadEvaluation: { upsert: upsertEvaluation },
   };
   const runTransaction = vi.fn(
     (callback: (transaction: typeof transactionClient) => Promise<CompletedImageAnalysis>) =>
@@ -229,6 +237,7 @@ function createFixture(options: FixtureOptions = {}) {
     new ValidationService(),
     new PricingService(prisma),
     { ensureStored } as unknown as LeadImageService,
+    new LeadScoringService(LEAD_SCORING_CONFIG_V1),
   );
 
   return {
@@ -246,6 +255,7 @@ function createFixture(options: FixtureOptions = {}) {
     },
     upsertLead,
     upsertAnalysis,
+    upsertEvaluation,
     analyzeTattooImage,
     findPricingRule,
     ensureStored,
@@ -285,6 +295,7 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(fixture.upsertLead).toHaveBeenCalledOnce();
     expect(fixture.ensureStored).toHaveBeenCalledWith(LEAD_ID, TEST_IMAGE);
     expect(fixture.upsertAnalysis).toHaveBeenCalledOnce();
+    expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
     expect(fixture.getLead().conversationId).toBe(CONVERSATION_ID);
   });
 
@@ -327,6 +338,19 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(lead.calculatedMinPrice).toBeNull();
     expect(lead.calculatedMaxPrice).toBeNull();
     expect(lead.pricingRuleId).toBeNull();
+    expect(fixture.findPricingRule).not.toHaveBeenCalled();
+  });
+
+  it('never calculates an automatic price when the reference is not on skin', async () => {
+    const fixture = createFixture({ analysis: { tattooOnSkin: false } });
+
+    await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
+    const lead = fixture.getLead();
+
+    expect(lead.status).toBe(LeadStatus.REQUIRES_REVIEW);
+    expect(lead.reviewReasons).toContain(ReviewReason.NOT_ON_SKIN);
+    expect(lead.calculatedMinPrice).toBeNull();
+    expect(lead.calculatedMaxPrice).toBeNull();
     expect(fixture.findPricingRule).not.toHaveBeenCalled();
   });
 
@@ -380,6 +404,7 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(first.quotation).toEqual(second.quotation);
     expect(fixture.upsertLead).toHaveBeenCalledOnce();
     expect(fixture.upsertAnalysis).toHaveBeenCalledOnce();
+    expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
     expect(fixture.analyzeTattooImage).toHaveBeenCalledOnce();
     expect(fixture.findPricingRule).toHaveBeenCalledOnce();
     expect(fixture.ensureStored).toHaveBeenCalledOnce();

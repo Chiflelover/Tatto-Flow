@@ -1,6 +1,20 @@
 .dashboardLayout {
+  --background: #f5f7f6;
+  --foreground: #17221b;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-soft: #f0f4f1;
+  --muted: #66736b;
+  --muted-strong: #455249;
+  --border: #e1e7e3;
+  --border-strong: #cbd5ce;
+  --accent: #157347;
+  --accent-strong: #168553;
+  --on-accent: #ffffff;
   min-height: 100dvh;
+  color: var(--foreground);
   background: var(--background);
+  color-scheme: light;
 }
 
 .sidebar {
@@ -17,7 +31,7 @@
   min-height: 4.6rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(13, 19, 15, 0.95);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(1rem);
 }
 
@@ -38,7 +52,7 @@
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 0.86rem;
   font-weight: 800;
-  box-shadow: 0 0.45rem 1.2rem rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0.45rem 1.2rem rgba(22, 133, 83, 0.18);
 }
 
 .brand div {
@@ -56,7 +70,7 @@
 }
 
 .dashboardContent {
-  width: min(100%, 70rem);
+  width: min(100%, 88rem);
   min-height: calc(100dvh - 4.6rem);
   margin: 0 auto;
   padding: 1.35rem 1rem 6.6rem;
@@ -78,8 +92,8 @@
   padding: 0.45rem max(0.35rem, env(safe-area-inset-right))
     calc(0.45rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
-  background: rgba(13, 19, 15, 0.98);
-  box-shadow: 0 -0.8rem 2rem rgba(0, 0, 0, 0.24);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -0.8rem 2rem rgba(36, 55, 43, 0.1);
   backdrop-filter: blur(1rem);
 }
 
@@ -121,7 +135,7 @@
 
 .navLinkActive {
   color: var(--accent);
-  background: rgba(57, 255, 136, 0.12);
+  background: rgba(22, 133, 83, 0.1);
 }
 
 .logoutButton,
@@ -199,7 +213,7 @@
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.16);
+  box-shadow: 0 0.6rem 1.6rem rgba(36, 55, 43, 0.07);
 }
 
 .metricCard span {
@@ -250,7 +264,7 @@
   border: 1px solid var(--border);
   border-radius: 0.95rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.16);
+  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.07);
 }
 
 .leadLink {
@@ -301,28 +315,28 @@
 }
 
 .statusVerified {
-  color: #9ad5aa;
-  background: #173322;
+  color: #17663d;
+  background: #e1f4e8;
 }
 
 .statusReview {
-  color: #e4bc78;
-  background: #3a2913;
+  color: #7a5412;
+  background: #fff1c9;
 }
 
 .statusAttention {
-  color: #9ac8e8;
-  background: #173148;
+  color: #245b7c;
+  background: #e1f0f8;
 }
 
 .statusCompleted {
-  color: #c5bbb6;
-  background: #252d28;
+  color: #5f6a63;
+  background: #edf0ee;
 }
 
 .statusAnalyzing {
-  color: #c3a7e2;
-  background: #312243;
+  color: #65458b;
+  background: #eee5f8;
 }
 
 .filterBar {
@@ -379,7 +393,7 @@
 .loader {
   width: 1.7rem;
   height: 1.7rem;
-  border: 3px solid rgba(57, 255, 136, 0.2);
+  border: 3px solid rgba(22, 133, 83, 0.18);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 700ms linear infinite;
@@ -392,8 +406,8 @@
 }
 
 .errorState {
-  color: #efa398;
-  background: #2d1714;
+  color: #9d352c;
+  background: #fff1ef;
 }
 
 .errorState button {
@@ -433,7 +447,7 @@
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.16);
+  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.07);
 }
 
 .panelHeader {
@@ -522,9 +536,9 @@
 }
 
 .reviewBox {
-  color: #e4bd7a;
+  color: #77500d;
   border: 1px solid rgba(206, 156, 79, 0.3);
-  background: #352613;
+  background: #fff6dc;
 }
 
 .reviewBox ul {
@@ -534,9 +548,9 @@
 }
 
 .verifiedBox {
-  color: #9ed5ae;
+  color: #17663d;
   border: 1px solid rgba(99, 174, 120, 0.28);
-  background: #173022;
+  background: #e8f6ed;
   font-weight: 750;
 }
 
@@ -589,7 +603,7 @@
   border-radius: 0.7rem;
   outline: none;
   color: var(--foreground);
-  background: #080d0a;
+  background: #ffffff;
 }
 
 .priceForm input:focus {
@@ -625,9 +639,9 @@
 }
 
 .whatsappButton {
-  border: 1px solid #397e53;
-  color: #9ed8b1;
-  background: #173222;
+  border: 1px solid #88c9a0;
+  color: #17663d;
+  background: #e7f7ed;
 }
 
 .primaryButton:disabled,
@@ -642,13 +656,13 @@
 }
 
 .confirmation {
-  color: #9ed5ae;
+  color: #17663d;
   border: 1px solid rgba(99, 174, 120, 0.28);
-  background: #173022;
+  background: #e8f6ed;
 }
 
 .formError {
-  color: #f0a49a;
+  color: #a33a30;
   font-size: 0.72rem;
   line-height: 1.45;
 }
@@ -768,7 +782,7 @@
   border-radius: 0.7rem;
   outline: none;
   color: var(--foreground);
-  background: #080d0a;
+  background: #ffffff;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
@@ -785,7 +799,7 @@
 
 .pricingFieldError,
 .pricingSaveError {
-  color: #f0a49a;
+  color: #a33a30;
   font-size: 0.7rem;
   line-height: 1.45;
 }
@@ -800,21 +814,21 @@
   padding: 0.85rem;
   border: 1px solid rgba(57, 255, 136, 0.22);
   border-radius: 0.8rem;
-  color: #a7f4bf;
-  background: #12301e;
+  color: #17663d;
+  background: #e8f6ed;
   font-size: 0.73rem;
   line-height: 1.45;
 }
 
 .pricingSuccess span {
-  color: #83c899;
+  color: #4c795d;
 }
 
 .pricingSaveError {
   padding: 0.8rem;
   border: 1px solid rgba(216, 101, 88, 0.25);
   border-radius: 0.75rem;
-  background: #2d1714;
+  background: #fff1ef;
 }
 
 .pricingActions {
@@ -828,8 +842,8 @@
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.9rem;
-  background: rgba(13, 19, 15, 0.96);
-  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.28);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0.8rem 2rem rgba(36, 55, 43, 0.12);
   backdrop-filter: blur(1rem);
 }
 
@@ -842,6 +856,499 @@
   flex: 0 0 auto;
 }
 
+.leadTabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 -1rem 1rem;
+  padding: 0 1rem 0.35rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.leadTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.leadTabs button {
+  flex: 0 0 auto;
+  min-height: 2.45rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  color: var(--muted-strong);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.leadTabs button:hover {
+  background: var(--surface-soft);
+}
+
+.leadTabs .leadTabActive {
+  color: var(--accent);
+  border-color: #b9dcc7;
+  background: #eaf7ef;
+}
+
+.leadFilters {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+  box-shadow: 0 0.4rem 1.3rem rgba(36, 55, 43, 0.05);
+}
+
+.leadFilters > label,
+.phoneSearch {
+  display: grid;
+  align-content: end;
+  gap: 0.35rem;
+}
+
+.leadFilters label > span,
+.phoneSearch > label {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.leadFilters select,
+.phoneSearch input {
+  width: 100%;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.58rem;
+  outline: none;
+  color: var(--foreground);
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.leadFilters select:focus,
+.phoneSearch input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.18rem rgba(22, 133, 83, 0.13);
+}
+
+.phoneSearch > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.phoneSearch input {
+  border-radius: 0.58rem 0 0 0.58rem;
+}
+
+.phoneSearch button,
+.sortDirection {
+  min-height: 2.55rem;
+  padding: 0.58rem 0.75rem;
+  border: 1px solid var(--accent-strong);
+  color: var(--on-accent);
+  background: var(--accent-strong);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.phoneSearch button {
+  border-radius: 0 0.58rem 0.58rem 0;
+}
+
+.sortDirection {
+  align-self: end;
+  border-color: var(--border-strong);
+  border-radius: 0.58rem;
+  color: var(--muted-strong);
+  background: var(--surface-soft);
+}
+
+.sortDirection:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.inlineError {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #efc0bb;
+  border-radius: 0.7rem;
+  color: #92372e;
+  background: #fff3f1;
+  font-size: 0.74rem;
+}
+
+.leadTableShell {
+  display: none;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.06);
+}
+
+.leadTable {
+  width: 100%;
+  min-width: 58rem;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+}
+
+.leadTable th,
+.leadTable td {
+  padding: 0.78rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.leadTable th {
+  color: var(--muted);
+  background: #f7f9f8;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.leadTable th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.leadTable th button:hover {
+  color: var(--accent);
+}
+
+.leadTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.leadTable tbody tr:hover {
+  background: #f9fbfa;
+}
+
+.customerCell,
+.priceCell {
+  color: var(--foreground);
+  font-weight: 750;
+}
+
+.readinessBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.6rem;
+  padding: 0.3rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.61rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+.readinessReady {
+  color: #17663d;
+  background: #dcf4e5;
+}
+
+.readinessReview {
+  color: #7a5412;
+  background: #fff0be;
+}
+
+.readinessIncomplete {
+  color: #8f3e37;
+  background: #f8e5e2;
+}
+
+.readinessUnrated {
+  color: #606a64;
+  background: #e9edeb;
+}
+
+.readinessScore {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(3rem, 1fr);
+  align-items: center;
+  gap: 0.48rem;
+  width: 7rem;
+}
+
+.readinessScore strong {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreTrack {
+  display: block;
+  height: 0.38rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e9e6;
+}
+
+.scoreFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2aa866, #157347);
+}
+
+.scoreUnavailable {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rowActions a,
+.rowActions button {
+  min-height: 1.95rem;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  color: var(--muted-strong);
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.rowActions .viewAction {
+  color: #17663d;
+  border-color: #a9d5ba;
+  background: #eef9f2;
+}
+
+.rowActions .deleteAction {
+  color: #a13e35;
+  border-color: #efc2bd;
+  background: #fff5f3;
+}
+
+.rowActions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.mobileLeadTable {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.mobileLeadRow {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface-raised);
+  box-shadow: 0 0.4rem 1.3rem rgba(36, 55, 43, 0.05);
+}
+
+.mobileLeadTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.mobileLeadTopline strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileLeadRow dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.mobileLeadRow dl > div {
+  padding: 0.6rem;
+  border-radius: 0.6rem;
+  background: var(--surface-soft);
+}
+
+.mobileLeadRow dt {
+  color: var(--muted);
+  font-size: 0.61rem;
+}
+
+.mobileLeadRow dd {
+  margin-top: 0.2rem;
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.paginationBar {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.paginationBar nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.paginationBar button {
+  min-width: 2.1rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  color: var(--muted-strong);
+  background: #ffffff;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.paginationBar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.paginationBar .currentPage {
+  color: var(--on-accent);
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.dangerButton {
+  min-height: 2.85rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #b84b40;
+  border-radius: 0.75rem;
+  color: #ffffff;
+  background: #b84b40;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dangerButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.evaluationContent,
+.evaluationGroup {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.evaluationSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.evaluationSummary > div {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 4.8rem;
+  padding: 0.75rem;
+  border-radius: 0.72rem;
+  background: var(--surface-soft);
+}
+
+.evaluationSummary > div > span,
+.evaluationGroup h3 {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.evaluationGroup {
+  padding-top: 0.2rem;
+}
+
+.contributionList,
+.blockerList {
+  display: grid;
+  gap: 0.42rem;
+  list-style: none;
+}
+
+.contributionList li,
+.blockerList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.contributionList strong {
+  min-width: 2.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.positivePoints {
+  color: #17663d;
+}
+
+.negativePoints,
+.blockerList li {
+  color: #983e35;
+}
+
+.blockerList li {
+  border-color: #f0cbc7;
+  background: #fff6f4;
+}
+
+.unevaluatedDetail {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .modalBackdrop {
   position: fixed;
   z-index: 100;
@@ -849,7 +1356,7 @@
   display: grid;
   padding: 1rem;
   place-items: center;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(24, 35, 28, 0.48);
   backdrop-filter: blur(0.35rem);
 }
 
@@ -859,7 +1366,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.48);
+  box-shadow: 0 1.5rem 4rem rgba(24, 35, 28, 0.22);
 }
 
 .confirmationModal h2 {
@@ -932,6 +1439,27 @@
   .leadLink {
     padding: 1.15rem;
   }
+
+  .leadFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .phoneSearch {
+    grid-column: 1 / -1;
+  }
+
+  .leadTableShell {
+    display: block;
+  }
+
+  .mobileLeadTable {
+    display: none;
+  }
+
+  .paginationBar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
 }
 
 @media (min-width: 62rem) {
@@ -964,7 +1492,18 @@
 
   .navLink:hover,
   .leadCard:hover {
-    border-color: rgba(57, 255, 136, 0.42);
+    border-color: rgba(22, 133, 83, 0.34);
+  }
+
+  .leadFilters {
+    grid-template-columns:
+      minmax(15rem, 1.7fr) repeat(3, minmax(7rem, 0.75fr)) minmax(9rem, 1fr)
+      auto;
+    align-items: end;
+  }
+
+  .phoneSearch {
+    grid-column: auto;
   }
 
   .detailGrid {

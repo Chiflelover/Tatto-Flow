@@ -1,216 +1,214 @@
-import { ConversationStatus } from '../../generated/prisma/client.js';
+import {
+  ConversationState,
+  ConversationStatus,
+  Prisma,
+  ReadinessStatus,
+  TattooSize,
+  type Conversation,
+} from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { LEAD_SCORING_CONFIG_V1 } from '../lead-scoring/lead-scoring.config.js';
+import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { CONVERSATION_ABANDONMENT_TIMEOUT_MS } from './conversation-abandonment.constants.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
 
-interface StoredConversation {
-  id: string;
-  customerId: string;
-  status: ConversationStatus;
-  lastActivityAt: Date;
-}
-
-interface UpdateManyArguments {
-  where: {
-    customerId?: string;
-    status: ConversationStatus;
-    lastActivityAt: { lte: Date };
-  };
-  data: { status: ConversationStatus };
-}
-
 const NOW = new Date('2026-09-14T20:00:00.000Z');
-
-function createFixture(initialConversations: StoredConversation[]) {
-  const conversations = structuredClone(initialConversations);
-  const updateMany = vi.fn<(arguments_: UpdateManyArguments) => Promise<{ count: number }>>(
-    (arguments_) => {
-      let count = 0;
-
-      for (const conversation of conversations) {
-        const matchesCustomer =
-          arguments_.where.customerId === undefined ||
-          conversation.customerId === arguments_.where.customerId;
-        const matchesStatus = conversation.status === arguments_.where.status;
-        const isInactive =
-          conversation.lastActivityAt.getTime() <= arguments_.where.lastActivityAt.lte.getTime();
-
-        if (matchesCustomer && matchesStatus && isInactive) {
-          conversation.status = arguments_.data.status;
-          count += 1;
-        }
-      }
-
-      return Promise.resolve({ count });
-    },
-  );
-  const prisma = { conversation: { updateMany } } as unknown as PrismaService;
-
-  return {
-    conversations,
-    service: new ConversationAbandonmentService(prisma),
-    updateMany,
-  };
-}
+const CUSTOMER_A = '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e';
 
 function inactiveSince(milliseconds: number): Date {
   return new Date(NOW.getTime() - milliseconds);
 }
 
-describe('ConversationAbandonmentService', () => {
-  it('keeps an active conversation with less than two hours of inactivity active', async () => {
-    const { conversations, service } = createFixture([
-      {
-        id: 'recent',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS - 1),
-      },
-    ]);
+function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
+  const createdAt = new Date('2026-09-14T12:00:00.000Z');
 
-    const count = await service.abandonInactive(NOW);
+  return {
+    id: crypto.randomUUID(),
+    customerId: CUSTOMER_A,
+    currentState: ConversationState.ASK_SIZE,
+    status: ConversationStatus.ACTIVE,
+    selectedSize: null,
+    selectedDetail: null,
+    bodyPart: null,
+    lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+}
 
-    expect(count).toBe(0);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
-  });
+function createFixture(initialConversations: Conversation[]) {
+  const conversations = structuredClone(initialConversations);
+  const leads = new Map<string, Record<string, unknown>>();
+  const evaluations = new Map<string, Record<string, unknown>>();
+  const findMany = vi.fn(
+    ({
+      where,
+    }: {
+      where: { customerId?: string; status: ConversationStatus; lastActivityAt: { lte: Date } };
+    }) =>
+      Promise.resolve(
+        conversations
+          .filter(
+            (conversation) =>
+              (!where.customerId || conversation.customerId === where.customerId) &&
+              conversation.status === where.status &&
+              conversation.lastActivityAt <= where.lastActivityAt.lte,
+          )
+          .map((conversation) => ({ ...conversation, lead: null })),
+      ),
+  );
+  const updateMany = vi.fn(
+    ({
+      where,
+      data,
+    }: {
+      where: { id: string; status: ConversationStatus; lastActivityAt: { lte: Date } };
+      data: { status: ConversationStatus };
+    }) => {
+      const conversation = conversations.find(
+        (candidate) =>
+          candidate.id === where.id &&
+          candidate.status === where.status &&
+          candidate.lastActivityAt <= where.lastActivityAt.lte,
+      );
 
-  it('abandons active conversations with exactly two hours or more of inactivity', async () => {
-    const { conversations, service } = createFixture([
-      {
-        id: 'exact-cutoff',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
-      },
-      {
-        id: 'older-than-cutoff',
-        customerId: 'customer-b',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS + 1),
-      },
-    ]);
-
-    const count = await service.abandonInactive(NOW);
-
-    expect(count).toBe(2);
-    expect(conversations.every(({ status }) => status === ConversationStatus.ABANDONED)).toBe(true);
-  });
-
-  it('never abandons a completed conversation', async () => {
-    const { conversations, service } = createFixture([
-      {
-        id: 'completed',
-        customerId: 'customer-a',
-        status: ConversationStatus.COMPLETED,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS * 2),
-      },
-    ]);
-
-    const count = await service.abandonInactive(NOW);
-
-    expect(count).toBe(0);
-    expect(conversations[0]?.status).toBe(ConversationStatus.COMPLETED);
-  });
-
-  it('does not modify a conversation that is already abandoned', async () => {
-    const { conversations, service } = createFixture([
-      {
-        id: 'already-abandoned',
-        customerId: 'customer-a',
-        status: ConversationStatus.ABANDONED,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS * 2),
-      },
-    ]);
-
-    const count = await service.abandonInactive(NOW);
-
-    expect(count).toBe(0);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
-  });
-
-  it('limits customer-scoped abandonment to the requested customer', async () => {
-    const { conversations, service, updateMany } = createFixture([
-      {
-        id: 'customer-a-conversation',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
-      },
-      {
-        id: 'customer-b-conversation',
-        customerId: 'customer-b',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
-      },
-    ]);
-
-    const count = await service.abandonInactiveForCustomer('customer-a', NOW);
-
-    expect(count).toBe(1);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
-    expect(conversations[1]?.status).toBe(ConversationStatus.ACTIVE);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: {
-          lte: new Date(NOW.getTime() - CONVERSATION_ABANDONMENT_TIMEOUT_MS),
-        },
-      },
-      data: { status: ConversationStatus.ABANDONED },
-    });
-  });
-
-  it('does not abandon activity updated just before the job update', async () => {
-    const { conversations, service } = createFixture([
-      {
-        id: 'updated-before-job',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
-      },
-    ]);
-    conversations[0].lastActivityAt = new Date(
-      NOW.getTime() - CONVERSATION_ABANDONMENT_TIMEOUT_MS + 1,
+      if (!conversation) return Promise.resolve({ count: 0 });
+      conversation.status = data.status;
+      return Promise.resolve({ count: 1 });
+    },
+  );
+  const upsertLead = vi.fn(({ where, create, update }: Prisma.LeadUpsertArgs) => {
+    const existing = [...leads.values()].find(
+      (lead) => lead.conversationId === where.conversationId,
     );
+    const lead = existing
+      ? { ...existing, ...update }
+      : {
+          id: crypto.randomUUID(),
+          ...create,
+          aiAnalysis: null,
+          images: [],
+        };
+    leads.set(String(lead.id), lead);
+    return Promise.resolve(lead);
+  });
+  const upsertEvaluation = vi.fn(({ create }: Prisma.LeadEvaluationUpsertArgs) => {
+    if (typeof create.leadId !== 'string') {
+      throw new Error('The fixture requires a scalar leadId.');
+    }
 
-    const count = await service.abandonInactive(NOW);
+    evaluations.set(create.leadId, { ...create });
+    return Promise.resolve(create);
+  });
+  const transaction = {
+    conversation: { updateMany },
+    lead: { upsert: upsertLead },
+    leadEvaluation: { upsert: upsertEvaluation },
+  };
+  const prisma = {
+    conversation: { findMany },
+    $transaction: vi.fn((callback: (client: typeof transaction) => Promise<boolean>) =>
+      callback(transaction),
+    ),
+  } as unknown as PrismaService;
+  const service = new ConversationAbandonmentService(
+    prisma,
+    new LeadScoringService(LEAD_SCORING_CONFIG_V1),
+  );
 
-    expect(count).toBe(0);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+  return { conversations, evaluations, leads, service, upsertLead, upsertEvaluation };
+}
+
+describe('ConversationAbandonmentService', () => {
+  it('keeps an active incomplete conversation under two hours unchanged', async () => {
+    const conversation = makeConversation({
+      lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS - 1),
+    });
+    const fixture = createFixture([conversation]);
+
+    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(0);
+    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+    expect(fixture.upsertLead).not.toHaveBeenCalled();
   });
 
-  it('pauses the inactivity clock overnight and preserves the conversation next morning', async () => {
-    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
-    const { conversations, service } = createFixture([
+  it('abandons at exactly two hours and persists a partial INCOMPLETO evaluation', async () => {
+    const conversation = makeConversation({
+      currentState: ConversationState.ASK_DETAIL,
+      selectedSize: TattooSize.SMALL,
+    });
+    const fixture = createFixture([conversation]);
+
+    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(1);
+    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
+    expect(fixture.leads.size).toBe(1);
+    const evaluation = [...fixture.evaluations.values()][0];
+    expect(evaluation).toMatchObject({
+      rawScore: 25,
+      readinessStatus: ReadinessStatus.INCOMPLETO,
+      rulesVersion: 1,
+    });
+    expect(evaluation?.contributions).toEqual([
       {
-        id: 'paused-overnight',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: new Date('2026-09-15T02:30:00.000Z'),
+        ruleId: 'SIZE_PROVIDED',
+        points: 25,
+        reason: 'El cliente indicó el tamaño',
       },
     ]);
-
-    const count = await service.abandonInactive(nextMorningAt0630);
-
-    expect(count).toBe(0);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+    expect(evaluation?.blockers).toEqual([
+      {
+        ruleId: 'FLOW_INCOMPLETE',
+        reason: 'La cotización está incompleta o la conversación fue abandonada',
+      },
+    ]);
   });
 
-  it('abandons at two accumulated open hours even when a night occurred between them', async () => {
-    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
-    const { conversations, service } = createFixture([
-      {
-        id: 'expired-across-night',
-        customerId: 'customer-a',
-        status: ConversationStatus.ACTIVE,
-        lastActivityAt: new Date('2026-09-15T01:30:00.000Z'),
-      },
+  it('does not call image analysis when an abandoned lead has no image', async () => {
+    const fixture = createFixture([makeConversation()]);
+
+    await fixture.service.abandonInactive(NOW);
+
+    expect(fixture.upsertLead).toHaveBeenCalledOnce();
+    expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
+    expect([...fixture.leads.values()][0]?.images).toEqual([]);
+  });
+
+  it('never modifies completed or already abandoned conversations', async () => {
+    const fixture = createFixture([
+      makeConversation({ status: ConversationStatus.COMPLETED }),
+      makeConversation({ status: ConversationStatus.ABANDONED }),
     ]);
 
-    const count = await service.abandonInactive(nextMorningAt0630);
+    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(0);
+    expect(fixture.upsertLead).not.toHaveBeenCalled();
+  });
 
-    expect(count).toBe(1);
-    expect(conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
+  it('limits abandonment to the requested customer', async () => {
+    const other = makeConversation({ customerId: crypto.randomUUID() });
+    const fixture = createFixture([makeConversation(), other]);
+
+    await expect(fixture.service.abandonInactiveForCustomer(CUSTOMER_A, NOW)).resolves.toBe(1);
+    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
+    expect(fixture.conversations[1]?.status).toBe(ConversationStatus.ACTIVE);
+  });
+
+  it('pauses the inactivity clock overnight and continues the next morning', async () => {
+    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
+    const fixture = createFixture([
+      makeConversation({ lastActivityAt: new Date('2026-09-15T02:30:00.000Z') }),
+    ]);
+
+    await expect(fixture.service.abandonInactive(nextMorningAt0630)).resolves.toBe(0);
+    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
+  });
+
+  it('abandons after two accumulated open hours across the night', async () => {
+    const nextMorningAt0630 = new Date('2026-09-15T11:30:00.000Z');
+    const fixture = createFixture([
+      makeConversation({ lastActivityAt: new Date('2026-09-15T01:30:00.000Z') }),
+    ]);
+
+    await expect(fixture.service.abandonInactive(nextMorningAt0630)).resolves.toBe(1);
+    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
   });
 });

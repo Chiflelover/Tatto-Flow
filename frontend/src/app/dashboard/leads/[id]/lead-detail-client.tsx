@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
 import { StatusBadge } from '@/components/dashboard/lead-card';
+import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
 import {
   completeLead,
   dashboardErrorMessage,
@@ -235,15 +236,15 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             <dl className={styles.dataList}>
               <div>
                 <dt>Tamaño</dt>
-                <dd>{lead.selectedSizeLabel}</dd>
+                <dd>{lead.selectedSizeLabel ?? 'Pendiente'}</dd>
               </div>
               <div>
                 <dt>Nivel de detalle</dt>
-                <dd>{lead.selectedDetailLabel}</dd>
+                <dd>{lead.selectedDetailLabel ?? 'Pendiente'}</dd>
               </div>
               <div>
                 <dt>Zona corporal</dt>
-                <dd>{lead.bodyPart}</dd>
+                <dd>{lead.bodyPart ?? 'Pendiente'}</dd>
               </div>
               <div>
                 <dt>Precio aproximado</dt>
@@ -252,6 +253,68 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 </dd>
               </div>
             </dl>
+          </section>
+
+          <section className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <h2>Evaluación del lead</h2>
+            </div>
+            {lead.evaluation ? (
+              <div className={styles.evaluationContent}>
+                <div className={styles.evaluationSummary}>
+                  <div>
+                    <span>Confianza</span>
+                    <ReadinessScore readiness={lead.readiness} />
+                  </div>
+                  <div>
+                    <span>Estado</span>
+                    <ReadinessBadge status={lead.evaluation.status} />
+                  </div>
+                </div>
+
+                {lead.evaluation.contributions.length > 0 && (
+                  <div className={styles.evaluationGroup}>
+                    <h3>Contribuciones</h3>
+                    <ul className={styles.contributionList}>
+                      {lead.evaluation.contributions.map((contribution) => (
+                        <li key={contribution.ruleId}>
+                          <strong
+                            className={
+                              contribution.points >= 0
+                                ? styles.positivePoints
+                                : styles.negativePoints
+                            }
+                          >
+                            {contribution.points > 0 ? '+' : ''}
+                            {contribution.points}
+                          </strong>
+                          <span>{contribution.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {lead.evaluation.blockers.length > 0 && (
+                  <div className={styles.evaluationGroup}>
+                    <h3>Bloqueos</h3>
+                    <ul className={styles.blockerList}>
+                      {lead.evaluation.blockers.map((blocker) => (
+                        <li key={blocker.ruleId}>
+                          <span aria-hidden="true">⚠</span>
+                          {blocker.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={styles.unevaluatedDetail}>
+                <ReadinessBadge status={null} />
+                <p>Este lead histórico todavía no tiene una evaluación de preparación.</p>
+              </div>
+            )}
           </section>
 
           <section className={styles.panel}>
@@ -265,7 +328,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                   <div className={styles.comparisonValues}>
                     <div>
                       <small>Cliente</small>
-                      <strong>{lead.selectedSizeLabel}</strong>
+                      <strong>{lead.selectedSizeLabel ?? 'Pendiente'}</strong>
                     </div>
                     <div>
                       <small>IA</small>
@@ -281,7 +344,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                   <div className={styles.comparisonValues}>
                     <div>
                       <small>Cliente</small>
-                      <strong>{lead.selectedDetailLabel}</strong>
+                      <strong>{lead.selectedDetailLabel ?? 'Pendiente'}</strong>
                     </div>
                     <div>
                       <small>IA</small>

@@ -10,10 +10,6 @@ import {
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
-import {
-  TEMPORARY_IMAGE_STORAGE,
-  type TemporaryImageStorage,
-} from './ports/temporary-image-storage.port.js';
 
 export interface ConversationUpdate {
   currentState?: ConversationState;
@@ -39,8 +35,6 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     @Inject(ConversationAbandonmentService)
     private readonly abandonmentService: ConversationAbandonmentService,
-    @Inject(TEMPORARY_IMAGE_STORAGE)
-    private readonly temporaryImageStorage: TemporaryImageStorage,
   ) {}
 
   async getOrCreateActive(customerId: string): Promise<ActiveConversationResult> {
@@ -48,34 +42,8 @@ export class ConversationsService {
 
     await this.abandonmentService.abandonInactiveForCustomer(customerId, now);
 
-    const abandonedConversations = await this.prisma.conversation.findMany({
-      where: {
-        customerId,
-        status: ConversationStatus.ABANDONED,
-        OR: [{ lead: null }, { lead: { is: { status: LeadStatus.ANALYZING } } }],
-      },
-      select: { id: true },
-    });
-
-    await Promise.all(
-      abandonedConversations.map(({ id }) => this.temporaryImageStorage.deleteForConversation(id)),
-    );
-
-    const abandonedConversationIds = abandonedConversations.map(({ id }) => id);
-
     try {
       return await this.prisma.$transaction(async (transaction) => {
-        if (abandonedConversationIds.length > 0) {
-          await transaction.conversation.deleteMany({
-            where: {
-              id: { in: abandonedConversationIds },
-              customerId,
-              status: ConversationStatus.ABANDONED,
-              lead: null,
-            },
-          });
-        }
-
         const activeConversation = await transaction.conversation.findFirst({
           where: {
             customerId,

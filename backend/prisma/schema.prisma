@@ -55,6 +55,14 @@ enum LeadStatus {
   @@map("lead_status")
 }
 
+enum ReadinessStatus {
+  LISTO
+  REVISAR
+  INCOMPLETO
+
+  @@map("readiness_status")
+}
+
 enum ReviewReason {
   SIZE_MISMATCH
   DETAIL_MISMATCH
@@ -62,6 +70,7 @@ enum ReviewReason {
   LOW_DETAIL_CONFIDENCE
   AI_ERROR
   PRICING_RULE_NOT_FOUND
+  NOT_ON_SKIN
 
   @@map("review_reason")
 }
@@ -92,13 +101,13 @@ model AuthSession {
 }
 
 model Customer {
-  id                          String         @id @default(uuid()) @db.Uuid
-  phoneNumber                 String         @unique @map("phone_number") @db.VarChar(20)
-  lastOutOfHoursNoticeKey     String?        @map("last_out_of_hours_notice_key") @db.VarChar(10)
-  createdAt                   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  conversations               Conversation[]
-  leads                       Lead[]
+  id                      String         @id @default(uuid()) @db.Uuid
+  phoneNumber             String         @unique @map("phone_number") @db.VarChar(20)
+  lastOutOfHoursNoticeKey String?        @map("last_out_of_hours_notice_key") @db.VarChar(10)
+  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  conversations           Conversation[]
+  leads                   Lead[]
 
   @@map("customers")
 }
@@ -122,34 +131,54 @@ model Conversation {
   @@map("conversations")
 }
 
-/// Represents a complete quotation intake and is only created after a valid
-/// reference image has been received. Image storage is attached separately.
+/// Represents a quotation candidate. Incomplete candidates are preserved when
+/// their conversation is abandoned and are classified by LeadEvaluation.
 model Lead {
-  id                 String         @id @default(uuid()) @db.Uuid
-  customerId         String         @map("customer_id") @db.Uuid
-  conversationId     String?        @unique @map("conversation_id") @db.Uuid
-  selectedSize       TattooSize     @map("selected_size")
-  selectedDetail     DetailLevel    @map("selected_detail")
-  bodyPart           String         @map("body_part") @db.VarChar(10)
-  status             LeadStatus     @default(ANALYZING)
-  reviewReasons      ReviewReason[] @default([]) @map("review_reasons")
-  calculatedMinPrice Decimal?       @map("calculated_min_price") @db.Decimal(10, 2)
-  calculatedMaxPrice Decimal?       @map("calculated_max_price") @db.Decimal(10, 2)
-  pricingRuleId      String?        @map("pricing_rule_id") @db.Uuid
-  pricingRuleVersion Int?           @map("pricing_rule_version")
-  priceSentAt        DateTime?      @map("price_sent_at") @db.Timestamptz(3)
-  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer           Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  conversation       Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  pricingRule        PricingRule?   @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
+  id                 String          @id @default(uuid()) @db.Uuid
+  customerId         String          @map("customer_id") @db.Uuid
+  conversationId     String?         @unique @map("conversation_id") @db.Uuid
+  selectedSize       TattooSize?     @map("selected_size")
+  selectedDetail     DetailLevel?    @map("selected_detail")
+  bodyPart           String?         @map("body_part") @db.VarChar(10)
+  status             LeadStatus      @default(ANALYZING)
+  reviewReasons      ReviewReason[]  @default([]) @map("review_reasons")
+  calculatedMinPrice Decimal?        @map("calculated_min_price") @db.Decimal(10, 2)
+  calculatedMaxPrice Decimal?        @map("calculated_max_price") @db.Decimal(10, 2)
+  pricingRuleId      String?         @map("pricing_rule_id") @db.Uuid
+  pricingRuleVersion Int?            @map("pricing_rule_version")
+  priceSentAt        DateTime?       @map("price_sent_at") @db.Timestamptz(3)
+  archivedAt         DateTime?       @map("archived_at") @db.Timestamptz(3)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer           Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  conversation       Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  pricingRule        PricingRule?    @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
   images             LeadImage[]
   aiAnalysis         AiAnalysis?
+  evaluation         LeadEvaluation?
 
   @@index([customerId])
   @@index([status, createdAt])
   @@index([pricingRuleId])
+  @@index([archivedAt])
   @@map("leads")
+}
+
+model LeadEvaluation {
+  id               String          @id @default(uuid()) @db.Uuid
+  leadId           String          @unique @map("lead_id") @db.Uuid
+  rawScore         Int             @map("raw_score")
+  maxPositiveScore Int             @map("max_positive_score")
+  readinessScore   Decimal         @map("readiness_score") @db.Decimal(5, 2)
+  readinessStatus  ReadinessStatus @map("readiness_status")
+  rulesVersion     Int             @map("rules_version")
+  contributions    Json            @db.JsonB
+  blockers         Json            @db.JsonB
+  evaluatedAt      DateTime        @default(now()) @map("evaluated_at") @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lead             Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_evaluations")
 }
 
 model LeadImage {
