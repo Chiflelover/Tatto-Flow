@@ -10,8 +10,8 @@
     "prebuild": "prisma generate",
     "build": "nest build",
     "postbuild": "node scripts/prepare-esm-output.mjs",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" \"scripts/**/*.mjs\" \"*.{ts,mjs,json}\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" \"scripts/**/*.mjs\" \"*.{ts,mjs,json}\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" \"scripts/**/*.{ts,mjs}\" \"*.{ts,mjs,json}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" \"scripts/**/*.{ts,mjs}\" \"*.{ts,mjs,json}\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -23,6 +23,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "gemini:smoke": "tsx scripts/smoke-gemini-image.ts",
     "prisma:generate": "prisma generate",
     "prisma:format": "prisma format",
     "prisma:validate": "prisma validate",
@@ -32,6 +33,7 @@
     "user:create": "tsx prisma/create-development-user.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",

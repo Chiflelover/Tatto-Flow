@@ -27,7 +27,7 @@ export interface ChatbotResponse {
   options: ChatbotOption[];
   state: ConversationState;
   development?: {
-    imageAnalysis: ImageAnalysisResult;
+    imageAnalysis: ImageAnalysisResult | null;
     quotation: {
       status: LeadStatus;
       reviewReasons: ReviewReason[];

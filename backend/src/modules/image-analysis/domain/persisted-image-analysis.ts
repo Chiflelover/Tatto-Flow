@@ -10,10 +10,12 @@ export function toImageAnalysisResult(analysis: AiAnalysis): ImageAnalysisResult
     detectedDetail: analysis.detectedDetail,
     detailConfidence: analysis.detailConfidence.toNumber(),
     tattooOnSkin: typeof rawResponse?.tattooOnSkin === 'boolean' ? rawResponse.tattooOnSkin : true,
+    tattooOnSkinConfidence: toConfidence(rawResponse?.tattooOnSkinConfidence),
     referenceAnalyzable:
       typeof rawResponse?.referenceAnalyzable === 'boolean'
         ? rawResponse.referenceAnalyzable
         : true,
+    analyzabilityConfidence: toConfidence(rawResponse?.analyzabilityConfidence),
     ambiguityLevel: toAmbiguityLevel(rawResponse?.ambiguityLevel),
   };
 }
@@ -26,4 +28,10 @@ function toAmbiguityLevel(value: unknown): ImageAmbiguityLevel {
   return Object.values(ImageAmbiguityLevel).includes(value as ImageAmbiguityLevel)
     ? (value as ImageAmbiguityLevel)
     : ImageAmbiguityLevel.NONE;
+}
+
+function toConfidence(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : 1;
 }

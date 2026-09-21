@@ -34,6 +34,7 @@ interface FixtureOptions {
   analysis?: Partial<ImageAnalysisResult>;
   priceRange?: readonly [number, number];
   pricingRuleMissing?: boolean;
+  analysisError?: Error;
 }
 
 interface AnalysisUpsertArguments {
@@ -82,7 +83,9 @@ function createFixture(options: FixtureOptions = {}) {
     detectedDetail: selectedDetail,
     detailConfidence: 0.95,
     tattooOnSkin: true,
+    tattooOnSkinConfidence: 0.98,
     referenceAnalyzable: true,
+    analyzabilityConfidence: 0.97,
     ambiguityLevel: ImageAmbiguityLevel.NONE,
     ...options.analysis,
   };
@@ -128,7 +131,7 @@ function createFixture(options: FixtureOptions = {}) {
       };
     }
 
-    return Promise.resolve(lead);
+    return Promise.resolve({ ...lead, aiAnalysis: analysis });
   });
   const upsertAnalysis = vi.fn((arguments_: AnalysisUpsertArguments) => {
     if (!analysis) {
@@ -225,7 +228,9 @@ function createFixture(options: FixtureOptions = {}) {
     pricingRule: { findFirst: findPricingRule },
     $transaction: runTransaction,
   } as unknown as PrismaService;
-  const analyzeTattooImage = vi.fn(() => Promise.resolve(providerResult));
+  const analyzeTattooImage = vi.fn(() =>
+    options.analysisError ? Promise.reject(options.analysisError) : Promise.resolve(providerResult),
+  );
   const provider = {
     providerName: 'mock',
     analyzeTattooImage,
@@ -421,5 +426,24 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(lead.reviewReasons).toEqual([ReviewReason.PRICING_RULE_NOT_FOUND]);
     expect(lead.calculatedMinPrice).toBeNull();
     expect(lead.calculatedMaxPrice).toBeNull();
+  });
+
+  it('finishes a provider failure as safe review without inventing analysis or price', async () => {
+    const fixture = createFixture({ analysisError: new Error('provider unavailable') });
+
+    const result = await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
+    const lead = fixture.getLead();
+
+    expect(result.analysis).toBeNull();
+    expect(result.quotation.status).toBe(LeadStatus.REQUIRES_REVIEW);
+    expect(lead.reviewReasons).toEqual([ReviewReason.AI_ERROR]);
+    expect(lead.calculatedMinPrice).toBeNull();
+    expect(lead.calculatedMaxPrice).toBeNull();
+    expect(fixture.upsertAnalysis).not.toHaveBeenCalled();
+    expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
+    expect(fixture.getConversation()).toMatchObject({
+      currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+      status: ConversationStatus.COMPLETED,
+    });
   });
 });

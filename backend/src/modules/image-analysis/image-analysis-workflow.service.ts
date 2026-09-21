@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
@@ -32,7 +26,7 @@ export interface QuotationPricingSnapshot {
 }
 
 export interface CompletedImageAnalysis {
-  analysis: ImageAnalysisResult;
+  analysis: ImageAnalysisResult | null;
   conversation: Conversation;
   quotation: {
     status: LeadStatus;
@@ -118,9 +112,7 @@ export class ImageAnalysisWorkflowService {
       result = await this.imageAnalysisService.analyzeTattooImage(image);
     } catch {
       this.logger.error(`Image analysis failed for lead ${lead.id}.`);
-      throw new ServiceUnavailableException(
-        'No fue posible analizar la imagen. La información del lead quedó guardada.',
-      );
+      return this.persistFailedAnalysisAndFinalize(conversation, lead.id);
     }
 
     return this.persistAnalysisAndFinalize(conversation, lead.id, result);
@@ -141,7 +133,7 @@ export class ImageAnalysisWorkflowService {
       include: { aiAnalysis: true },
     });
 
-    if (!lead?.aiAnalysis || !this.isFinalLeadStatus(lead.status)) {
+    if (!lead || !this.isFinalLeadStatus(lead.status)) {
       return null;
     }
 
@@ -300,11 +292,11 @@ export class ImageAnalysisWorkflowService {
   private toCompletedResult(
     conversation: Conversation,
     lead: Lead,
-    analysis: AiAnalysis,
+    analysis: AiAnalysis | null,
   ): CompletedImageAnalysis {
     return {
       conversation,
-      analysis: toImageAnalysisResult(analysis),
+      analysis: analysis ? toImageAnalysisResult(analysis) : null,
       quotation: {
         status: lead.status,
         reviewReasons: lead.reviewReasons,
@@ -322,6 +314,73 @@ export class ImageAnalysisWorkflowService {
             : null,
       },
     };
+  }
+
+  private async persistFailedAnalysisAndFinalize(
+    conversation: Conversation,
+    leadId: string,
+  ): Promise<CompletedImageAnalysis> {
+    return this.prisma.$transaction(async (transaction) => {
+      const leadUpdate = await transaction.lead.updateMany({
+        where: {
+          id: leadId,
+          status: LeadStatus.ANALYZING,
+        },
+        data: {
+          status: LeadStatus.REQUIRES_REVIEW,
+          reviewReasons: [ReviewReason.AI_ERROR],
+          calculatedMinPrice: null,
+          calculatedMaxPrice: null,
+          pricingRuleId: null,
+          pricingRuleVersion: null,
+        },
+      });
+
+      if (leadUpdate.count > 0) {
+        await this.leadScoringService.evaluateAndPersist(
+          leadId,
+          {
+            selectedSize: conversation.selectedSize,
+            selectedDetail: conversation.selectedDetail,
+            bodyPart: conversation.bodyPart,
+            referenceReceived: true,
+            conversationStatus: conversation.status,
+            analysis: null,
+          },
+          transaction,
+        );
+
+        await transaction.conversation.updateMany({
+          where: {
+            id: conversation.id,
+            status: ConversationStatus.ACTIVE,
+            currentState: {
+              in: [ConversationState.ANALYZING, ConversationState.VALIDATING],
+            },
+          },
+          data: {
+            currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+            status: ConversationStatus.COMPLETED,
+            lastActivityAt: new Date(),
+          },
+        });
+      }
+
+      const finalizedLead = await transaction.lead.findUniqueOrThrow({
+        where: { id: leadId },
+        include: { aiAnalysis: true },
+      });
+
+      if (!this.isFinalLeadStatus(finalizedLead.status)) {
+        throw new ConflictException('El lead no pudo enviarse a revisión de forma consistente.');
+      }
+
+      const finalizedConversation = await transaction.conversation.findUniqueOrThrow({
+        where: { id: conversation.id },
+      });
+
+      return this.toCompletedResult(finalizedConversation, finalizedLead, finalizedLead.aiAnalysis);
+    });
   }
 
   private formatMoney(value: Prisma.Decimal): string {

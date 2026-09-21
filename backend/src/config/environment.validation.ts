@@ -1,6 +1,6 @@
 import { DetailLevel, TattooSize } from '../generated/prisma/client.js';
 
-export type AiMode = 'mock' | 'openai';
+export type AiMode = 'mock' | 'gemini';
 export type StorageMode = 'memory' | 'supabase';
 
 const DEFAULT_AI_MODE: AiMode = 'mock';
@@ -8,6 +8,7 @@ const DEFAULT_MOCK_SIZE = TattooSize.MEDIUM;
 const DEFAULT_MOCK_SIZE_CONFIDENCE = 0.95;
 const DEFAULT_MOCK_DETAIL = DetailLevel.DETAILED;
 const DEFAULT_MOCK_DETAIL_CONFIDENCE = 0.96;
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 const DEFAULT_SESSION_TTL_HOURS = 168;
 const DEFAULT_STORAGE_MODE: StorageMode = 'supabase';
 const DEFAULT_STORAGE_BUCKET = 'tattoo-references';
@@ -25,8 +26,8 @@ function parseString(name: string, value: unknown, defaultValue: string): string
 function parseAiMode(value: unknown): AiMode {
   const mode = parseString('AI_MODE', value, DEFAULT_AI_MODE).toLowerCase();
 
-  if (mode !== 'mock' && mode !== 'openai') {
-    throw new Error('AI_MODE debe ser "mock" u "openai".');
+  if (mode !== 'mock' && mode !== 'gemini') {
+    throw new Error('AI_MODE debe ser "mock" o "gemini".');
   }
 
   return mode;
@@ -111,11 +112,12 @@ function parsePositiveInteger(name: string, value: unknown, defaultValue: number
 }
 
 export function validateEnvironment(environment: Record<string, unknown>): Record<string, unknown> {
+  const aiMode = parseAiMode(environment.AI_MODE);
   const storageMode = parseStorageMode(environment.STORAGE_MODE);
 
   return {
     ...environment,
-    AI_MODE: parseAiMode(environment.AI_MODE),
+    AI_MODE: aiMode,
     AI_MOCK_SIZE: parseEnumValue(
       'AI_MOCK_SIZE',
       environment.AI_MOCK_SIZE,
@@ -138,6 +140,12 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
       environment.AI_MOCK_DETAIL_CONFIDENCE,
       DEFAULT_MOCK_DETAIL_CONFIDENCE,
     ),
+    GEMINI_MODEL: parseString('GEMINI_MODEL', environment.GEMINI_MODEL, DEFAULT_GEMINI_MODEL),
+    ...(aiMode === 'gemini'
+      ? {
+          GEMINI_API_KEY: parseRequiredAiString('GEMINI_API_KEY', environment.GEMINI_API_KEY),
+        }
+      : {}),
     SESSION_TTL_HOURS: parsePositiveInteger(
       'SESSION_TTL_HOURS',
       environment.SESSION_TTL_HOURS,
@@ -159,4 +167,14 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
         }
       : {}),
   };
+}
+
+function parseRequiredAiString(name: string, value: unknown): string {
+  const parsedValue = parseString(name, value, '');
+
+  if (!parsedValue) {
+    throw new Error(`${name} es obligatorio cuando AI_MODE=gemini.`);
+  }
+
+  return parsedValue;
 }

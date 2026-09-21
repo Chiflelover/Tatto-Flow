@@ -25,7 +25,9 @@ export class MockImageAnalysisService extends ImageAnalysisService {
       detectedDetail: this.configService.getOrThrow<DetailLevel>('AI_MOCK_DETAIL'),
       detailConfidence: this.configService.getOrThrow<number>('AI_MOCK_DETAIL_CONFIDENCE'),
       tattooOnSkin: true,
+      tattooOnSkinConfidence: 1,
       referenceAnalyzable: true,
+      analyzabilityConfidence: 1,
       ambiguityLevel: ImageAmbiguityLevel.NONE,
     });
   }

@@ -1,6 +1,38 @@
 import { validateEnvironment } from './environment.validation.js';
 
 describe('AI environment validation', () => {
+  it('keeps mock as the default without requiring a Gemini key', () => {
+    const result = validateEnvironment({ STORAGE_MODE: 'memory' });
+
+    expect(result.AI_MODE).toBe('mock');
+    expect(result.GEMINI_MODEL).toBe('gemini-3.8-flash');
+    expect(result.GEMINI_API_KEY).toBeUndefined();
+  });
+
+  it('requires a backend-only Gemini key when gemini mode is selected', () => {
+    expect(() => validateEnvironment({ AI_MODE: 'gemini', STORAGE_MODE: 'memory' })).toThrow(
+      'GEMINI_API_KEY es obligatorio cuando AI_MODE=gemini.',
+    );
+  });
+
+  it('accepts Gemini mode and a configurable model', () => {
+    const result = validateEnvironment({
+      AI_MODE: 'gemini',
+      GEMINI_API_KEY: 'test-only-key',
+      GEMINI_MODEL: 'gemini-test-model',
+      STORAGE_MODE: 'memory',
+    });
+
+    expect(result.AI_MODE).toBe('gemini');
+    expect(result.GEMINI_MODEL).toBe('gemini-test-model');
+  });
+
+  it('rejects unsupported providers', () => {
+    expect(() => validateEnvironment({ AI_MODE: 'openai', STORAGE_MODE: 'memory' })).toThrow(
+      'AI_MODE debe ser "mock" o "gemini".',
+    );
+  });
+
   it('rejects a mock confidence lower than zero', () => {
     expect(() =>
       validateEnvironment({

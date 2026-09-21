@@ -22,7 +22,9 @@ const PERFECT_INPUT: LeadScoringInput = {
     detectedDetail: DetailLevel.DETAILED,
     detailConfidence: 0.95,
     tattooOnSkin: true,
+    tattooOnSkinConfidence: 0.98,
     referenceAnalyzable: true,
+    analyzabilityConfidence: 0.97,
     ambiguityLevel: ImageAmbiguityLevel.NONE,
   },
 };

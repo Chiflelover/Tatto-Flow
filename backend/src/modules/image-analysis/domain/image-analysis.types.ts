@@ -18,6 +18,8 @@ export interface ImageAnalysisResult {
   detectedDetail: DetailLevel;
   detailConfidence: number;
   tattooOnSkin: boolean;
+  tattooOnSkinConfidence: number;
   referenceAnalyzable: boolean;
+  analyzabilityConfidence: number;
   ambiguityLevel: ImageAmbiguityLevel;
 }

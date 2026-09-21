@@ -60,7 +60,9 @@ describe('MockImageAnalysisService', () => {
 
     expect(result).toMatchObject({
       tattooOnSkin: true,
+      tattooOnSkinConfidence: 1,
       referenceAnalyzable: true,
+      analyzabilityConfidence: 1,
       ambiguityLevel: ImageAmbiguityLevel.NONE,
     });
   });
