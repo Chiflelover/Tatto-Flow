@@ -1,20 +1,20 @@
 .dashboardLayout {
-  --background: #f5f7f6;
-  --foreground: #17221b;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-soft: #f0f4f1;
-  --muted: #66736b;
-  --muted-strong: #455249;
-  --border: #e1e7e3;
-  --border-strong: #cbd5ce;
-  --accent: #157347;
-  --accent-strong: #168553;
-  --on-accent: #ffffff;
+  --background: #070a08;
+  --foreground: #eef7f1;
+  --surface: #0b100d;
+  --surface-raised: #101712;
+  --surface-soft: #172019;
+  --muted: #89988e;
+  --muted-strong: #c2cec6;
+  --border: #223027;
+  --border-strong: #354a3b;
+  --accent: #39ff88;
+  --accent-strong: #2ee878;
+  --on-accent: #041108;
   min-height: 100dvh;
   color: var(--foreground);
   background: var(--background);
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 .sidebar {
@@ -31,7 +31,7 @@
   min-height: 4.6rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(11, 16, 13, 0.96);
   backdrop-filter: blur(1rem);
 }
 
@@ -52,7 +52,7 @@
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 0.86rem;
   font-weight: 800;
-  box-shadow: 0 0.45rem 1.2rem rgba(22, 133, 83, 0.18);
+  box-shadow: 0 0 1.4rem rgba(57, 255, 136, 0.22);
 }
 
 .brand div {
@@ -92,8 +92,8 @@
   padding: 0.45rem max(0.35rem, env(safe-area-inset-right))
     calc(0.45rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 -0.8rem 2rem rgba(36, 55, 43, 0.1);
+  background: rgba(11, 16, 13, 0.98);
+  box-shadow: 0 -0.8rem 2rem rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(1rem);
 }
 
@@ -135,7 +135,7 @@
 
 .navLinkActive {
   color: var(--accent);
-  background: rgba(22, 133, 83, 0.1);
+  background: rgba(57, 255, 136, 0.1);
 }
 
 .logoutButton,
@@ -213,7 +213,7 @@
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.6rem 1.6rem rgba(36, 55, 43, 0.07);
+  box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.28);
 }
 
 .metricCard span {
@@ -264,7 +264,7 @@
   border: 1px solid var(--border);
   border-radius: 0.95rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.07);
+  box-shadow: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.28);
 }
 
 .leadLink {
@@ -315,28 +315,28 @@
 }
 
 .statusVerified {
-  color: #17663d;
-  background: #e1f4e8;
+  color: #75ffa9;
+  background: rgba(57, 255, 136, 0.12);
 }
 
 .statusReview {
-  color: #7a5412;
-  background: #fff1c9;
+  color: #ffd36b;
+  background: rgba(255, 190, 63, 0.14);
 }
 
 .statusAttention {
-  color: #245b7c;
-  background: #e1f0f8;
+  color: #8bd5ff;
+  background: rgba(70, 169, 230, 0.14);
 }
 
 .statusCompleted {
-  color: #5f6a63;
-  background: #edf0ee;
+  color: #b8c3bc;
+  background: #202a23;
 }
 
 .statusAnalyzing {
-  color: #65458b;
-  background: #eee5f8;
+  color: #d2a7ff;
+  background: rgba(154, 93, 214, 0.16);
 }
 
 .filterBar {
@@ -393,7 +393,7 @@
 .loader {
   width: 1.7rem;
   height: 1.7rem;
-  border: 3px solid rgba(22, 133, 83, 0.18);
+  border: 3px solid rgba(57, 255, 136, 0.18);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 700ms linear infinite;
@@ -406,8 +406,8 @@
 }
 
 .errorState {
-  color: #9d352c;
-  background: #fff1ef;
+  color: #ffaaa1;
+  background: #2d1714;
 }
 
 .errorState button {
@@ -447,7 +447,7 @@
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.07);
+  box-shadow: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.28);
 }
 
 .panelHeader {
@@ -536,9 +536,9 @@
 }
 
 .reviewBox {
-  color: #77500d;
+  color: #ffd579;
   border: 1px solid rgba(206, 156, 79, 0.3);
-  background: #fff6dc;
+  background: #2d2413;
 }
 
 .reviewBox ul {
@@ -548,9 +548,9 @@
 }
 
 .verifiedBox {
-  color: #17663d;
+  color: #82ffae;
   border: 1px solid rgba(99, 174, 120, 0.28);
-  background: #e8f6ed;
+  background: #112a1b;
   font-weight: 750;
 }
 
@@ -603,7 +603,7 @@
   border-radius: 0.7rem;
   outline: none;
   color: var(--foreground);
-  background: #ffffff;
+  background: #080d0a;
 }
 
 .priceForm input:focus {
@@ -639,9 +639,9 @@
 }
 
 .whatsappButton {
-  border: 1px solid #88c9a0;
-  color: #17663d;
-  background: #e7f7ed;
+  border: 1px solid rgba(57, 255, 136, 0.38);
+  color: #7dffaa;
+  background: rgba(57, 255, 136, 0.1);
 }
 
 .primaryButton:disabled,
@@ -656,13 +656,13 @@
 }
 
 .confirmation {
-  color: #17663d;
+  color: #82ffae;
   border: 1px solid rgba(99, 174, 120, 0.28);
-  background: #e8f6ed;
+  background: #112a1b;
 }
 
 .formError {
-  color: #a33a30;
+  color: #ffaaa1;
   font-size: 0.72rem;
   line-height: 1.45;
 }
@@ -782,7 +782,7 @@
   border-radius: 0.7rem;
   outline: none;
   color: var(--foreground);
-  background: #ffffff;
+  background: #080d0a;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
@@ -799,7 +799,7 @@
 
 .pricingFieldError,
 .pricingSaveError {
-  color: #a33a30;
+  color: #ffaaa1;
   font-size: 0.7rem;
   line-height: 1.45;
 }
@@ -814,21 +814,21 @@
   padding: 0.85rem;
   border: 1px solid rgba(57, 255, 136, 0.22);
   border-radius: 0.8rem;
-  color: #17663d;
-  background: #e8f6ed;
+  color: #82ffae;
+  background: #112a1b;
   font-size: 0.73rem;
   line-height: 1.45;
 }
 
 .pricingSuccess span {
-  color: #4c795d;
+  color: #94bca2;
 }
 
 .pricingSaveError {
   padding: 0.8rem;
   border: 1px solid rgba(216, 101, 88, 0.25);
   border-radius: 0.75rem;
-  background: #fff1ef;
+  background: #2d1714;
 }
 
 .pricingActions {
@@ -842,8 +842,8 @@
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.9rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 0.8rem 2rem rgba(36, 55, 43, 0.12);
+  background: rgba(16, 23, 18, 0.96);
+  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(1rem);
 }
 
@@ -889,8 +889,8 @@
 
 .leadTabs .leadTabActive {
   color: var(--accent);
-  border-color: #b9dcc7;
-  background: #eaf7ef;
+  border-color: rgba(57, 255, 136, 0.38);
+  background: rgba(57, 255, 136, 0.1);
 }
 
 .leadFilters {
@@ -901,7 +901,7 @@
   border: 1px solid var(--border);
   border-radius: 0.9rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.4rem 1.3rem rgba(36, 55, 43, 0.05);
+  box-shadow: 0 0.4rem 1.3rem rgba(0, 0, 0, 0.25);
 }
 
 .leadFilters > label,
@@ -927,7 +927,7 @@
   border-radius: 0.58rem;
   outline: none;
   color: var(--foreground);
-  background: #ffffff;
+  background: #080d0a;
   font: inherit;
   font-size: 0.75rem;
 }
@@ -935,7 +935,7 @@
 .leadFilters select:focus,
 .phoneSearch input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 0.18rem rgba(22, 133, 83, 0.13);
+  box-shadow: 0 0 0 0.18rem rgba(57, 255, 136, 0.14);
 }
 
 .phoneSearch > div {
@@ -982,8 +982,8 @@
   padding: 0.75rem 0.9rem;
   border: 1px solid #efc0bb;
   border-radius: 0.7rem;
-  color: #92372e;
-  background: #fff3f1;
+  color: #ffaaa1;
+  background: #2d1714;
   font-size: 0.74rem;
 }
 
@@ -993,7 +993,7 @@
   border: 1px solid var(--border);
   border-radius: 0.9rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.6rem rgba(36, 55, 43, 0.06);
+  box-shadow: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.28);
 }
 
 .leadTable {
@@ -1014,7 +1014,7 @@
 
 .leadTable th {
   color: var(--muted);
-  background: #f7f9f8;
+  background: #0d1510;
   font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.035em;
@@ -1044,7 +1044,7 @@
 }
 
 .leadTable tbody tr:hover {
-  background: #f9fbfa;
+  background: #131d16;
 }
 
 .customerCell,
@@ -1067,23 +1067,23 @@
 }
 
 .readinessReady {
-  color: #17663d;
-  background: #dcf4e5;
+  color: #75ffa9;
+  background: rgba(57, 255, 136, 0.12);
 }
 
 .readinessReview {
-  color: #7a5412;
-  background: #fff0be;
+  color: #ffd36b;
+  background: rgba(255, 190, 63, 0.14);
 }
 
 .readinessIncomplete {
-  color: #8f3e37;
-  background: #f8e5e2;
+  color: #ffaaa1;
+  background: rgba(220, 86, 72, 0.15);
 }
 
 .readinessUnrated {
-  color: #606a64;
-  background: #e9edeb;
+  color: #aebbb3;
+  background: #222c25;
 }
 
 .readinessScore {
@@ -1104,14 +1104,14 @@
   height: 0.38rem;
   overflow: hidden;
   border-radius: 999px;
-  background: #e4e9e6;
+  background: #29362e;
 }
 
 .scoreFill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2aa866, #157347);
+  background: linear-gradient(90deg, #1abf63, #39ff88);
 }
 
 .scoreUnavailable {
@@ -1133,7 +1133,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 0.48rem;
   color: var(--muted-strong);
-  background: #ffffff;
+  background: #0b100d;
   font: inherit;
   font-size: 0.66rem;
   font-weight: 800;
@@ -1141,15 +1141,15 @@
 }
 
 .rowActions .viewAction {
-  color: #17663d;
-  border-color: #a9d5ba;
-  background: #eef9f2;
+  color: #75ffa9;
+  border-color: rgba(57, 255, 136, 0.34);
+  background: rgba(57, 255, 136, 0.08);
 }
 
 .rowActions .deleteAction {
-  color: #a13e35;
-  border-color: #efc2bd;
-  background: #fff5f3;
+  color: #ffaaa1;
+  border-color: rgba(236, 104, 90, 0.35);
+  background: rgba(220, 86, 72, 0.1);
 }
 
 .rowActions button:disabled {
@@ -1169,7 +1169,7 @@
   border: 1px solid var(--border);
   border-radius: 0.85rem;
   background: var(--surface-raised);
-  box-shadow: 0 0.4rem 1.3rem rgba(36, 55, 43, 0.05);
+  box-shadow: 0 0.4rem 1.3rem rgba(0, 0, 0, 0.25);
 }
 
 .mobileLeadTopline {
@@ -1231,7 +1231,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 0.48rem;
   color: var(--muted-strong);
-  background: #ffffff;
+  background: #0b100d;
   font: inherit;
   font-weight: 750;
   cursor: pointer;
@@ -1324,17 +1324,17 @@
 }
 
 .positivePoints {
-  color: #17663d;
+  color: #75ffa9;
 }
 
 .negativePoints,
 .blockerList li {
-  color: #983e35;
+  color: #ffaaa1;
 }
 
 .blockerList li {
-  border-color: #f0cbc7;
-  background: #fff6f4;
+  border-color: rgba(236, 104, 90, 0.35);
+  background: rgba(220, 86, 72, 0.1);
 }
 
 .unevaluatedDetail {
@@ -1356,7 +1356,7 @@
   display: grid;
   padding: 1rem;
   place-items: center;
-  background: rgba(24, 35, 28, 0.48);
+  background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(0.35rem);
 }
 
@@ -1366,7 +1366,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 1rem;
   background: var(--surface-raised);
-  box-shadow: 0 1.5rem 4rem rgba(24, 35, 28, 0.22);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.55);
 }
 
 .confirmationModal h2 {
@@ -1492,7 +1492,7 @@
 
   .navLink:hover,
   .leadCard:hover {
-    border-color: rgba(22, 133, 83, 0.34);
+    border-color: rgba(57, 255, 136, 0.38);
   }
 
   .leadFilters {
