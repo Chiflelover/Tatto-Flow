@@ -3,10 +3,10 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import { initialPricingRules } from './pricing-rules.seed-data.js';
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL is required to seed the database.');
+  throw new Error('DIRECT_URL or DATABASE_URL is required to seed the database.');
 }
 
 const prisma = new PrismaClient({

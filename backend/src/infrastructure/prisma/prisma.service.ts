@@ -9,7 +9,10 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     const connectionString = configService.getOrThrow<string>('DATABASE_URL');
 
     super({
-      adapter: new PrismaPg({ connectionString }),
+      adapter: new PrismaPg({
+        connectionString,
+        max: 1,
+      }),
     });
   }
 

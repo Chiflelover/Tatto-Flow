@@ -4,12 +4,12 @@ import { hashPassword } from '../src/modules/auth/password-hasher.js';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../src/modules/auth/password-policy.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 const email = process.env.TATTOO_ARTIST_EMAIL?.trim().toLowerCase();
 const password = process.env.TATTOO_ARTIST_PASSWORD;
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL is required to create the development user.');
+  throw new Error('DIRECT_URL or DATABASE_URL is required to create the development user.');
 }
 
 if (!email || !email.includes('@')) {
