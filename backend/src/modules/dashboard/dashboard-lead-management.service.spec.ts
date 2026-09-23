@@ -25,7 +25,7 @@ function query(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto {
     page: 1,
     pageSize: 20,
     ...overrides,
-  } as LeadListQueryDto;
+  };
 }
 
 function createService(prismaShape: object, storageShape: object = {}) {
@@ -162,10 +162,11 @@ describe('DashboardService lead management', () => {
     const service = createService({ lead: { findUnique, updateMany } });
 
     await service.archiveLead(LEAD_ID);
+    const anyDate: unknown = expect.any(Date);
 
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: LEAD_ID, archivedAt: null },
-      data: { archivedAt: expect.any(Date) },
+      data: { archivedAt: anyDate },
     });
   });
 

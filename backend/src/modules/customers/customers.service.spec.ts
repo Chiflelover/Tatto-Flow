@@ -3,7 +3,10 @@ import { CustomersService } from './customers.service.js';
 
 describe('CustomersService out-of-hours notice', () => {
   it('claims one notice atomically for a closed period', async () => {
-    const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const updateMany = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
     const service = new CustomersService({
       customer: { updateMany },
     } as unknown as PrismaService);
@@ -13,10 +16,7 @@ describe('CustomersService out-of-hours notice', () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: {
         id: 'customer-id',
-        OR: [
-          { lastOutOfHoursNoticeKey: null },
-          { lastOutOfHoursNoticeKey: { not: '2026-09-14' } },
-        ],
+        OR: [{ lastOutOfHoursNoticeKey: null }, { lastOutOfHoursNoticeKey: { not: '2026-09-14' } }],
       },
       data: { lastOutOfHoursNoticeKey: '2026-09-14' },
     });

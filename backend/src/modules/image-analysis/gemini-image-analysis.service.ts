@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError, type GenerateContentParameters } from '@google/genai';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
 import {
   ImageAmbiguityLevel,
@@ -10,7 +11,7 @@ import {
 } from './domain/image-analysis.types.js';
 import { GEMINI_ANALYSIS_PROMPT } from './gemini-analysis.prompt.js';
 import { GEMINI_ANALYSIS_RESPONSE_SCHEMA } from './gemini-analysis.schema.js';
-import { ImageAnalysisService } from './image-analysis.service.js';
+import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysis.service.js';
 
 const GEMINI_TIMEOUT_MS = 20_000;
 const GEMINI_RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
@@ -47,6 +48,7 @@ export class GeminiImageAnalysisError extends Error {
 @Injectable()
 export class GeminiImageAnalysisService extends ImageAnalysisService {
   readonly providerName = 'gemini';
+  private readonly logger = new SafeStructuredLogger(GeminiImageAnalysisService.name);
 
   constructor(
     @Inject(ConfigService) private readonly configService: ConfigService,
@@ -55,7 +57,10 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
     super();
   }
 
-  async analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
+  async analyzeTattooImage(
+    image: TattooImageInput,
+    context: ImageAnalysisContext = {},
+  ): Promise<ImageAnalysisResult> {
     let contentType: 'image/jpeg' | 'image/png' | 'image/webp';
 
     try {
@@ -68,46 +73,60 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       throw new GeminiImageAnalysisError('API_ERROR');
     }
 
-    let response: { readonly text?: string };
-
-    try {
-      response = await this.client.models.generateContent({
-        model: this.configService.getOrThrow<string>('GEMINI_MODEL'),
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: GEMINI_ANALYSIS_PROMPT },
-              {
-                inlineData: {
-                  mimeType: contentType,
-                  data: Buffer.from(image.content).toString('base64'),
-                },
+    const parameters: GenerateContentParameters = {
+      model: this.configService.getOrThrow<string>('GEMINI_MODEL'),
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: GEMINI_ANALYSIS_PROMPT },
+            {
+              inlineData: {
+                mimeType: contentType,
+                data: Buffer.from(image.content).toString('base64'),
               },
-            ],
-          },
-        ],
-        config: {
-          temperature: 0,
-          maxOutputTokens: 512,
-          responseMimeType: 'application/json',
-          responseJsonSchema: GEMINI_ANALYSIS_RESPONSE_SCHEMA,
-          httpOptions: {
-            timeout: GEMINI_TIMEOUT_MS,
-            retryOptions: {
-              attempts: 2,
-              initialDelay: 0.5,
-              maxDelay: 1,
-              httpStatusCodes: GEMINI_RETRYABLE_STATUS_CODES,
             },
+          ],
+        },
+      ],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 512,
+        responseMimeType: 'application/json',
+        responseJsonSchema: GEMINI_ANALYSIS_RESPONSE_SCHEMA,
+        httpOptions: {
+          timeout: GEMINI_TIMEOUT_MS,
+          retryOptions: {
+            attempts: 1,
+            initialDelay: 0.5,
+            maxDelay: 1,
+            httpStatusCodes: GEMINI_RETRYABLE_STATUS_CODES,
           },
         },
-      });
-    } catch (error: unknown) {
-      throw this.toControlledError(error);
+      },
+    };
+    let response: { readonly text?: string } | undefined;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        response = await this.client.models.generateContent(parameters);
+        break;
+      } catch (error: unknown) {
+        if (attempt === 1 && this.isRetryable(error)) {
+          this.logger.warn('ai.analysis.retry', {
+            provider: this.providerName,
+            leadId: context.leadId ?? null,
+            attempt: 2,
+            reason: this.toControlledError(error).code,
+          });
+          continue;
+        }
+
+        throw this.toControlledError(error);
+      }
     }
 
-    return this.parseResponse(response.text);
+    return this.parseResponse(response?.text);
   }
 
   private parseResponse(text: string | undefined): ImageAnalysisResult {
@@ -173,7 +192,18 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       return undefined;
     }
 
-    const status = Reflect.get(error, 'status');
+    const status: unknown = Reflect.get(error, 'status');
     return typeof status === 'number' ? status : undefined;
+  }
+
+  private isRetryable(error: unknown): boolean {
+    const status = error instanceof ApiError ? error.status : this.readStatus(error);
+    const name = error instanceof Error ? error.name : '';
+
+    return (
+      (typeof status === 'number' && GEMINI_RETRYABLE_STATUS_CODES.includes(status)) ||
+      name === 'AbortError' ||
+      name === 'TimeoutError'
+    );
   }
 }

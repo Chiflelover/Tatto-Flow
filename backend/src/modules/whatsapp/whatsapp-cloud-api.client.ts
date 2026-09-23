@@ -2,10 +2,10 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { MAX_CHAT_IMAGE_SIZE_BYTES } from '../chatbot/chatbot.constants.js';
 import type { ChatbotImageInput } from '../chatbot/domain/chatbot.types.js';
 import type { WhatsAppOutboundMessage } from '../chatbot/whatsapp/whatsapp.adapter.js';
@@ -34,7 +34,7 @@ class WhatsAppCloudApiError extends Error {
 
 @Injectable()
 export class WhatsAppCloudApiClient {
-  private readonly logger = new Logger(WhatsAppCloudApiClient.name);
+  private readonly logger = new SafeStructuredLogger(WhatsAppCloudApiClient.name);
 
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
@@ -242,14 +242,14 @@ export class WhatsAppCloudApiClient {
     const details = await this.readMetaApiError(response);
     const diagnostic = {
       httpStatus: response.status,
-      'error.message': details.message,
-      'error.type': details.type,
-      'error.code': details.code,
-      'error.error_subcode': details.errorSubcode,
-      'error.fbtrace_id': details.fbtraceId,
+      metaErrorMessage: details.message,
+      metaErrorType: details.type,
+      metaErrorCode: details.code,
+      metaErrorSubcode: details.errorSubcode,
+      fbtraceId: details.fbtraceId,
     };
 
-    this.logger.error(`WhatsApp Cloud API request failed: ${JSON.stringify(diagnostic)}`);
+    this.logger.error('whatsapp.meta.error', diagnostic);
 
     return new WhatsAppCloudApiError(response.status);
   }

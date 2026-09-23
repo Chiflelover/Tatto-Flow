@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
 import { ImageAmbiguityLevel, type TattooImageInput } from './domain/image-analysis.types.js';
@@ -26,12 +27,15 @@ const VALID_RESPONSE = {
 };
 
 function createFixture(response: object | string | Error = VALID_RESPONSE) {
-  const generateContent =
-    response instanceof Error
-      ? vi.fn().mockRejectedValue(response)
-      : vi.fn().mockResolvedValue({
-          text: typeof response === 'string' ? response : JSON.stringify(response),
-        });
+  const generateContent = vi.fn<GeminiClient['models']['generateContent']>();
+
+  if (response instanceof Error) {
+    generateContent.mockRejectedValue(response);
+  } else {
+    generateContent.mockResolvedValue({
+      text: typeof response === 'string' ? response : JSON.stringify(response),
+    });
+  }
   const client = { models: { generateContent } } as unknown as GeminiClient;
   const service = new GeminiImageAnalysisService(
     new ConfigService({ GEMINI_MODEL: 'gemini-test-model' }),
@@ -49,6 +53,10 @@ async function expectErrorCode(
 }
 
 describe('GeminiImageAnalysisService', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns a valid structured response without making business decisions', async () => {
     const { service } = createFixture();
 
@@ -60,21 +68,17 @@ describe('GeminiImageAnalysisService', () => {
 
     await service.analyzeTattooImage(VALID_PNG);
 
-    expect(generateContent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: 'gemini-test-model',
-        config: expect.objectContaining({
-          responseMimeType: 'application/json',
-          responseJsonSchema: expect.objectContaining({ additionalProperties: false }),
-          httpOptions: expect.objectContaining({
-            timeout: 20_000,
-            retryOptions: expect.objectContaining({ attempts: 2 }),
-          }),
-        }),
-      }),
-    );
+    expect(generateContent).toHaveBeenCalledOnce();
     const request = generateContent.mock.calls[0]?.[0];
     const serialized = JSON.stringify(request);
+
+    expect(request?.model).toBe('gemini-test-model');
+    expect(request?.config?.responseMimeType).toBe('application/json');
+    expect(request?.config?.responseJsonSchema).toMatchObject({ additionalProperties: false });
+    expect(request?.config?.httpOptions).toMatchObject({
+      timeout: 20_000,
+      retryOptions: { attempts: 1 },
+    });
 
     expect(serialized).toContain(Buffer.from(VALID_PNG.content).toString('base64'));
     expect(serialized).not.toContain('http://');
@@ -123,8 +127,29 @@ describe('GeminiImageAnalysisService', () => {
 
   it('maps rate limits to a controlled error', async () => {
     const error = Object.assign(new Error('quota unavailable'), { status: 429 });
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
     await expectErrorCode(createFixture(error).service, 'RATE_LIMITED');
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"event":"ai.analysis.retry"'));
+  });
+
+  it('retries a transient error only once and succeeds safely', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const fixture = createFixture();
+    fixture.generateContent
+      .mockRejectedValueOnce(Object.assign(new Error('temporary quota'), { status: 429 }))
+      .mockResolvedValueOnce({ text: JSON.stringify(VALID_RESPONSE) });
+
+    await expect(
+      fixture.service.analyzeTattooImage(VALID_PNG, { leadId: 'lead-1' }),
+    ).resolves.toEqual(VALID_RESPONSE);
+
+    expect(fixture.generateContent).toHaveBeenCalledTimes(2);
+    const retryLog = warn.mock.calls.flat().join(' ');
+    expect(retryLog).toContain('ai.analysis.retry');
+    expect(retryLog).toContain('lead-1');
+    expect(retryLog).not.toContain('temporary quota');
   });
 
   it('maps other API failures without leaking the upstream payload', async () => {

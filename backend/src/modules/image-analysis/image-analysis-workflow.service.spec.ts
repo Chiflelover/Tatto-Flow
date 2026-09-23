@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
@@ -23,6 +24,7 @@ import {
   ImageAnalysisWorkflowService,
 } from './image-analysis-workflow.service.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
+import { GeminiImageAnalysisError } from './gemini-image-analysis.service.js';
 
 const CONVERSATION_ID = 'a459f257-b03c-48f4-9091-2dc37871ef81';
 const LEAD_ID = '290f2044-e63c-4e49-8847-067cd62426e4';
@@ -292,6 +294,10 @@ const TEST_IMAGE = {
 };
 
 describe('ImageAnalysisWorkflowService quotation finalization', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('persists the complete lead and its AI analysis once', async () => {
     const fixture = createFixture();
 
@@ -303,6 +309,38 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
     expect(fixture.getLead().conversationId).toBe(CONVERSATION_ID);
   });
+
+  it('logs successful AI duration without changing the workflow result', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const fixture = createFixture();
+
+    const result = await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
+
+    expect(result.quotation.status).toBe(LeadStatus.VERIFIED);
+    const messages = log.mock.calls.flat().join(' ');
+    expect(messages).toContain('ai.analysis.completed');
+    expect(messages).toContain('durationMs');
+    expect(messages).toContain(LEAD_ID);
+  });
+
+  it.each([
+    ['RATE_LIMITED', 'ai.analysis.rate_limited'],
+    ['TIMEOUT', 'ai.analysis.timeout'],
+  ] as const)(
+    'logs a safe %s provider failure and preserves review fallback',
+    async (code, event) => {
+      const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const fixture = createFixture({ analysisError: new GeminiImageAnalysisError(code) });
+
+      const result = await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
+
+      expect(result.quotation.status).toBe(LeadStatus.REQUIRES_REVIEW);
+      const messages = errorLog.mock.calls.flat().join(' ');
+      expect(messages).toContain(event);
+      expect(messages).toContain(LEAD_ID);
+      expect(messages).not.toContain('GEMINI_API_KEY');
+    },
+  );
 
   it('copies the verified price and rule version into the lead', async () => {
     const fixture = createFixture();

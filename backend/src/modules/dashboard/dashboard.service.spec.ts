@@ -86,7 +86,7 @@ function leadQuery(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto 
     page: 1,
     pageSize: 20,
     ...overrides,
-  } as LeadListQueryDto;
+  };
 }
 
 function serviceWith(

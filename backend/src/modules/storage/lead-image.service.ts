@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { LeadImage } from '../../generated/prisma/client.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { TattooImageInput } from '../image-analysis/domain/image-analysis.types.js';
 import { validateLeadImageFile } from './lead-image-file.js';
@@ -18,7 +19,7 @@ export class LeadImageStorageException extends ServiceUnavailableException {
 
 @Injectable()
 export class LeadImageService {
-  private readonly logger = new Logger(LeadImageService.name);
+  private readonly logger = new SafeStructuredLogger(LeadImageService.name);
 
   constructor(
     @Inject(PrismaService)
@@ -43,6 +44,7 @@ export class LeadImageService {
     }
 
     const storagePath = createLeadImageStoragePath(leadId, validatedImage.extension);
+    this.logger.info('storage.upload.started', { leadId });
 
     try {
       await this.storage.upload({
@@ -51,13 +53,14 @@ export class LeadImageService {
         contentType: validatedImage.contentType,
       });
     } catch {
+      this.logger.error('storage.upload.failed', { leadId, stage: 'upload' });
       throw new LeadImageStorageException();
     }
 
     const createdAt = new Date();
 
     try {
-      return await this.prisma.leadImage.create({
+      const leadImage = await this.prisma.leadImage.create({
         data: {
           leadId,
           storagePath,
@@ -65,13 +68,17 @@ export class LeadImageService {
           expiresAt: new Date(createdAt.getTime() + RETENTION_MS),
         },
       });
+
+      this.logger.info('storage.upload.completed', { leadId, leadImageId: leadImage.id });
+      return leadImage;
     } catch {
       try {
         await this.storage.delete(storagePath);
       } catch {
-        this.logger.error(`Storage compensation failed for lead ${leadId}.`);
+        this.logger.error('storage.upload.compensation_failed', { leadId });
       }
 
+      this.logger.error('storage.upload.failed', { leadId, stage: 'metadata' });
       throw new LeadImageStorageException();
     }
   }

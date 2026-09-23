@@ -4,5 +4,13 @@
   "workspaces": [
     "backend",
     "frontend"
-  ]
+  ],
+  "devDependencies": {
+    "prisma": "^7.10.0"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "multer": "2.4.0",
+    "mysql2": "3.24.4"
+  }
 }

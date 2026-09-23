@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { StorageService } from './storage.service.js';
 
@@ -10,7 +11,7 @@ export interface RetentionCleanupResult {
 
 @Injectable()
 export class LeadImageRetentionService {
-  private readonly logger = new Logger(LeadImageRetentionService.name);
+  private readonly logger = new SafeStructuredLogger(LeadImageRetentionService.name);
 
   constructor(
     @Inject(PrismaService)
@@ -20,6 +21,7 @@ export class LeadImageRetentionService {
   ) {}
 
   async cleanupExpiredImages(now = new Date()): Promise<RetentionCleanupResult> {
+    this.logger.info('storage.cleanup.started');
     const expiredImages = await this.prisma.leadImage.findMany({
       where: {
         expiresAt: { lte: now },
@@ -40,10 +42,14 @@ export class LeadImageRetentionService {
         completed += 1;
       } catch {
         failed += 1;
-        this.logger.error(`Retention cleanup failed for lead image ${image.id}.`);
+        this.logger.error('storage.cleanup.item_failed', { leadImageId: image.id });
       }
     }
 
-    return { found: expiredImages.length, completed, failed };
+    const result = { found: expiredImages.length, completed, failed };
+    const level = failed > 0 ? 'warn' : 'info';
+    this.logger[level]('storage.cleanup.completed', result);
+
+    return result;
   }
 }

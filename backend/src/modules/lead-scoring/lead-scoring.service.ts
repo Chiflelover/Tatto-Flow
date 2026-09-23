@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Engine, type Event } from 'json-rules-engine';
 import { ConversationStatus, Prisma, ReadinessStatus } from '../../generated/prisma/client.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { ImageAmbiguityLevel } from '../image-analysis/domain/image-analysis.types.js';
 import type {
   GateRuleId,
@@ -24,6 +25,7 @@ const GATE_EVENT = 'lead-readiness-gate';
 @Injectable()
 export class LeadScoringService {
   private readonly engine: Engine;
+  private readonly logger = new SafeStructuredLogger(LeadScoringService.name);
 
   constructor(
     @Inject(LEAD_SCORING_CONFIG)
@@ -88,6 +90,14 @@ export class LeadScoringService {
       where: { leadId },
       update: data,
       create: { leadId, ...data },
+    });
+
+    this.logger.info('scoring.evaluation.completed', {
+      leadId,
+      readinessStatus: result.status,
+      readinessScore: result.readinessScore,
+      activatedGates: result.blockers.map((blocker) => blocker.ruleId),
+      rulesVersion: result.rulesVersion,
     });
 
     return result;

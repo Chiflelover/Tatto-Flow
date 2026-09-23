@@ -54,7 +54,15 @@ function createFixture() {
     { sendMessage, downloadImage } as unknown as WhatsAppCloudApiClient,
   );
 
-  return { service, assertValidPayload, claim, release, handleIncoming, sendMessage, downloadImage };
+  return {
+    service,
+    assertValidPayload,
+    claim,
+    release,
+    handleIncoming,
+    sendMessage,
+    downloadImage,
+  };
 }
 
 describe('WhatsAppWebhookService', () => {
@@ -102,9 +110,7 @@ describe('WhatsAppWebhookService', () => {
   ])('maps an interactive %s using its stable ID', async (_type, interactive) => {
     const fixture = createFixture();
     const expectedId =
-      'button_reply' in interactive
-        ? interactive.button_reply.id
-        : interactive.list_reply.id;
+      'button_reply' in interactive ? interactive.button_reply.id : interactive.list_reply.id;
 
     await fixture.service.handleWebhook(
       payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'interactive', interactive }),

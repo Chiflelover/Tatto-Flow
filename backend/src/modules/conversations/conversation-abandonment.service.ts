@@ -1,12 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConversationStatus, type Conversation } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { toImageAnalysisResult } from '../image-analysis/domain/persisted-image-analysis.js';
 import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { getConversationAbandonmentCutoff } from './conversation-abandonment.constants.js';
 
 @Injectable()
 export class ConversationAbandonmentService {
+  private readonly logger = new SafeStructuredLogger(ConversationAbandonmentService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LeadScoringService) private readonly leadScoringService: LeadScoringService,
@@ -41,7 +44,7 @@ export class ConversationAbandonmentService {
   }
 
   private async abandonConversation(conversation: Conversation, cutoff: Date): Promise<boolean> {
-    return this.prisma.$transaction(async (transaction) => {
+    const leadId = await this.prisma.$transaction(async (transaction) => {
       const update = await transaction.conversation.updateMany({
         where: {
           id: conversation.id,
@@ -52,7 +55,7 @@ export class ConversationAbandonmentService {
       });
 
       if (update.count === 0) {
-        return false;
+        return null;
       }
 
       const lead = await transaction.lead.upsert({
@@ -91,7 +94,17 @@ export class ConversationAbandonmentService {
         transaction,
       );
 
-      return true;
+      return lead.id;
     });
+
+    if (!leadId) {
+      return false;
+    }
+
+    this.logger.info('workflow.conversation.abandoned', {
+      conversationId: conversation.id,
+      leadId,
+    });
+    return true;
   }
 }

@@ -46,11 +46,7 @@ describe('WhatsApp webhook (e2e)', () => {
       .expect('Content-Type', /text\/plain/)
       .expect('challenge-123');
 
-    expect(verifyChallenge).toHaveBeenCalledWith(
-      'subscribe',
-      'verify-token',
-      'challenge-123',
-    );
+    expect(verifyChallenge).toHaveBeenCalledWith('subscribe', 'verify-token', 'challenge-123');
   });
 
   it('preserves the exact POST body used by X-Hub-Signature-256', async () => {

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import {
   WhatsAppAdapter,
   type WhatsAppInboundMessage,
@@ -29,6 +30,8 @@ interface MetaChangeValue {
 
 @Injectable()
 export class WhatsAppWebhookService {
+  private readonly logger = new SafeStructuredLogger(WhatsAppWebhookService.name);
+
   constructor(
     @Inject(ConfigService)
     private readonly config: ConfigService,
@@ -49,6 +52,8 @@ export class WhatsAppWebhookService {
   async handleWebhook(rawBody: Buffer, signature: string | undefined): Promise<{ received: true }> {
     this.signatures.assertValidPayload(rawBody, signature);
     const payload = this.parsePayload(rawBody);
+
+    this.logger.info('whatsapp.webhook.received');
 
     if (payload.object !== 'whatsapp_business_account') {
       return { received: true };
@@ -102,8 +107,14 @@ export class WhatsAppWebhookService {
     }
 
     if (!(await this.messages.claim(messageId))) {
+      this.logger.info('whatsapp.message.duplicate_ignored', { whatsappMessageId: messageId });
       return;
     }
+
+    this.logger.info('whatsapp.message.accepted', {
+      whatsappMessageId: messageId,
+      messageType: typeof message.type === 'string' ? message.type : 'unknown',
+    });
 
     let chatbotProcessed = false;
 
@@ -119,11 +130,20 @@ export class WhatsAppWebhookService {
 
       for (const response of outbound) {
         await this.cloudApi.sendMessage(customerIdentifier, response);
+        this.logger.info('whatsapp.response.sent', {
+          whatsappMessageId: messageId,
+          responseType: response.type,
+        });
       }
     } catch (error) {
       if (!chatbotProcessed) {
         await this.messages.release(messageId);
       }
+
+      this.logger.error('whatsapp.message.failed', {
+        whatsappMessageId: messageId,
+        stage: chatbotProcessed ? 'response' : 'processing',
+      });
 
       throw error;
     }

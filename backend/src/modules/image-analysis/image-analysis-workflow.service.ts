@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
@@ -10,6 +10,7 @@ import {
   type Lead,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { LeadImageService } from '../storage/lead-image.service.js';
@@ -17,6 +18,7 @@ import { ValidationService } from '../validation/validation.service.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
 import { toImageAnalysisResult } from './domain/persisted-image-analysis.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
+import { GeminiImageAnalysisError } from './gemini-image-analysis.service.js';
 
 export interface QuotationPricingSnapshot {
   ruleId: string;
@@ -37,7 +39,7 @@ export interface CompletedImageAnalysis {
 
 @Injectable()
 export class ImageAnalysisWorkflowService {
-  private readonly logger = new Logger(ImageAnalysisWorkflowService.name);
+  private readonly logger = new SafeStructuredLogger(ImageAnalysisWorkflowService.name);
 
   constructor(
     @Inject(PrismaService)
@@ -103,15 +105,33 @@ export class ImageAnalysisWorkflowService {
         bodyPart: conversation.bodyPart,
       },
     });
+    this.logger.info('workflow.lead.available', {
+      conversationId: conversation.id,
+      leadId: lead.id,
+    });
 
     await this.leadImageService.ensureStored(lead.id, image);
 
     let result: ImageAnalysisResult;
+    const analysisStartedAt = Date.now();
+
+    this.logger.info('ai.analysis.started', {
+      conversationId: conversation.id,
+      leadId: lead.id,
+      provider: this.imageAnalysisService.providerName,
+    });
 
     try {
-      result = await this.imageAnalysisService.analyzeTattooImage(image);
-    } catch {
-      this.logger.error(`Image analysis failed for lead ${lead.id}.`);
+      result = await this.imageAnalysisService.analyzeTattooImage(image, { leadId: lead.id });
+      this.logger.info('ai.analysis.completed', {
+        conversationId: conversation.id,
+        leadId: lead.id,
+        provider: this.imageAnalysisService.providerName,
+        durationMs: Date.now() - analysisStartedAt,
+        result: 'success',
+      });
+    } catch (error) {
+      this.logAnalysisFailure(error, conversation.id, lead.id, analysisStartedAt);
       return this.persistFailedAnalysisAndFinalize(conversation, lead.id);
     }
 
@@ -237,9 +257,7 @@ export class ImageAnalysisWorkflowService {
         if (!pricingRule) {
           status = LeadStatus.REQUIRES_REVIEW;
           reviewReasons = [ReviewReason.PRICING_RULE_NOT_FOUND];
-          this.logger.error(
-            `No active pricing rule for ${selectedSize}/${selectedDetail} (lead ${leadId}).`,
-          );
+          this.logger.error('workflow.pricing_rule.missing', { leadId });
         }
       }
 
@@ -284,6 +302,8 @@ export class ImageAnalysisWorkflowService {
       const finalizedConversation = await transaction.conversation.findUniqueOrThrow({
         where: { id: conversation.id },
       });
+
+      this.logFinalWorkflowStatus(conversation.id, finalizedLead);
 
       return this.toCompletedResult(finalizedConversation, finalizedLead, analysis);
     });
@@ -379,6 +399,8 @@ export class ImageAnalysisWorkflowService {
         where: { id: conversation.id },
       });
 
+      this.logFinalWorkflowStatus(conversation.id, finalizedLead);
+
       return this.toCompletedResult(finalizedConversation, finalizedLead, finalizedLead.aiAnalysis);
     });
   }
@@ -392,5 +414,38 @@ export class ImageAnalysisWorkflowService {
 
   private isFinalLeadStatus(status: LeadStatus): boolean {
     return status === LeadStatus.VERIFIED || status === LeadStatus.REQUIRES_REVIEW;
+  }
+
+  private logAnalysisFailure(
+    error: unknown,
+    conversationId: string,
+    leadId: string,
+    startedAt: number,
+  ): void {
+    const code = error instanceof GeminiImageAnalysisError ? error.code : 'PROVIDER_ERROR';
+    const eventByCode: Partial<Record<GeminiImageAnalysisError['code'], string>> = {
+      RATE_LIMITED: 'ai.analysis.rate_limited',
+      TIMEOUT: 'ai.analysis.timeout',
+      INVALID_RESPONSE: 'ai.analysis.invalid_response',
+    };
+
+    this.logger.error(
+      eventByCode[code as GeminiImageAnalysisError['code']] ?? 'ai.analysis.failed',
+      {
+        conversationId,
+        leadId,
+        provider: this.imageAnalysisService.providerName,
+        durationMs: Date.now() - startedAt,
+        result: 'failure',
+        errorCode: code,
+      },
+    );
+  }
+
+  private logFinalWorkflowStatus(conversationId: string, lead: Lead): void {
+    const event =
+      lead.status === LeadStatus.VERIFIED ? 'workflow.lead.ready' : 'workflow.lead.review_required';
+
+    this.logger.info(event, { conversationId, leadId: lead.id });
   }
 }

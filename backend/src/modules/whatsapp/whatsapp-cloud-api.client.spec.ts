@@ -22,6 +22,14 @@ function successfulResponse(): Response {
   });
 }
 
+function parseRequestBody(init: RequestInit | undefined): unknown {
+  if (typeof init?.body !== 'string') {
+    throw new Error('Expected a JSON request body.');
+  }
+
+  return JSON.parse(init.body) as unknown;
+}
+
 describe('WhatsAppCloudApiClient', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -39,14 +47,14 @@ describe('WhatsAppCloudApiClient', () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(String(url)).toBe('https://graph.facebook.com/v99.0/1234567890/messages');
-    expect(String(url)).not.toContain(TEST_CONFIGURATION.WHATSAPP_BUSINESS_ACCOUNT_ID);
+    expect(url).toBe('https://graph.facebook.com/v99.0/1234567890/messages');
+    expect(url).not.toContain(TEST_CONFIGURATION.WHATSAPP_BUSINESS_ACCOUNT_ID);
     expect(init?.method).toBe('POST');
     expect(init?.headers).toEqual({
       Authorization: 'Bearer test-access-token',
       'Content-Type': 'application/json',
     });
-    expect(JSON.parse(String(init?.body))).toEqual({
+    expect(parseRequestBody(init)).toEqual({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: '51999999999',
@@ -85,11 +93,12 @@ describe('WhatsAppCloudApiClient', () => {
     expect(loggerError).toHaveBeenCalledOnce();
     const logged = String(loggerError.mock.calls[0]?.[0]);
     expect(logged).toContain('"httpStatus":401');
-    expect(logged).toContain('"error.message":"Invalid OAuth access token: [REDACTED]"');
-    expect(logged).toContain('"error.type":"OAuthException"');
-    expect(logged).toContain('"error.code":190');
-    expect(logged).toContain('"error.error_subcode":463');
-    expect(logged).toContain('"error.fbtrace_id":"safe-trace-id"');
+    expect(logged).toContain('"event":"whatsapp.meta.error"');
+    expect(logged).toContain('"metaErrorMessage":"Invalid OAuth access token: [REDACTED]"');
+    expect(logged).toContain('"metaErrorType":"OAuthException"');
+    expect(logged).toContain('"metaErrorCode":190');
+    expect(logged).toContain('"metaErrorSubcode":463');
+    expect(logged).toContain('"fbtraceId":"safe-trace-id"');
     expect(logged).not.toContain('test-access-token');
     expect(logged).not.toContain('access_token');
     expect(logged).not.toContain('Authorization');
@@ -110,7 +119,7 @@ describe('WhatsAppCloudApiClient', () => {
       ],
     });
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+    const body = parseRequestBody(fetchMock.mock.calls[0]?.[1]) as {
       type: string;
       interactive: { type: string; action: { buttons: unknown[] } };
     };
@@ -141,7 +150,7 @@ describe('WhatsAppCloudApiClient', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const fallback = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+    const fallback = parseRequestBody(fetchMock.mock.calls[1]?.[1]) as {
       type: string;
       text: { body: string };
     };
@@ -181,11 +190,11 @@ describe('WhatsAppCloudApiClient', () => {
       mimeType: 'image/png',
       fileName: 'whatsapp-reference.png',
     });
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      'https://graph.facebook.com/v99.0/987654321?phone_number_id=1234567890',
+    expect(fetchMock.mock.calls[0]?.[0]).toEqual(
+      new URL('https://graph.facebook.com/v99.0/987654321?phone_number_id=1234567890'),
     );
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
-      'https://lookaside.fbsbx.com/whatsapp-test-image',
+    expect(fetchMock.mock.calls[1]?.[0]).toEqual(
+      new URL('https://lookaside.fbsbx.com/whatsapp-test-image'),
     );
   });
 

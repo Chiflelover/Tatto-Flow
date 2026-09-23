@@ -42,42 +42,42 @@ export default function PrivacyPage() {
         <section>
           <h2>Para qué usamos tus datos</h2>
           <p>
-            Utilizamos estos datos únicamente para recibir, analizar y gestionar tu solicitud, preparar
-            una cotización aproximada y permitir que el tatuador continúe la atención.
+            Utilizamos estos datos únicamente para recibir, analizar y gestionar tu solicitud,
+            preparar una cotización aproximada y permitir que el tatuador continúe la atención.
           </p>
         </section>
 
         <section>
           <h2>Conservación de datos</h2>
           <p>
-            Las imágenes de referencia se conservan durante un máximo de 15 días y después se eliminan
-            automáticamente. Los demás datos de la cotización pueden permanecer almacenados para la
-            gestión del pedido y el historial del tatuador.
+            Las imágenes de referencia se conservan durante un máximo de 15 días y después se
+            eliminan automáticamente. Los demás datos de la cotización pueden permanecer almacenados
+            para la gestión del pedido y el historial del tatuador.
           </p>
         </section>
 
         <section>
           <h2>Proveedores tecnológicos</h2>
           <p>
-            Tatto Flow utiliza proveedores tecnológicos necesarios para operar el servicio, entre ellos
-            Meta/WhatsApp para la mensajería, Vercel para alojar la aplicación y Supabase para la base de
-            datos y el almacenamiento temporal de imágenes.
+            Tatto Flow utiliza proveedores tecnológicos necesarios para operar el servicio, entre
+            ellos Meta/WhatsApp para la mensajería, Vercel para alojar la aplicación y Supabase para
+            la base de datos y el almacenamiento temporal de imágenes.
           </p>
         </section>
 
         <section>
           <h2>No vendemos tus datos</h2>
           <p>
-            Tatto Flow no vende tus datos personales. Solo los utiliza y comparte con los proveedores
-            necesarios para prestar el servicio descrito en esta política.
+            Tatto Flow no vende tus datos personales. Solo los utiliza y comparte con los
+            proveedores necesarios para prestar el servicio descrito en esta política.
           </p>
         </section>
 
         <section>
           <h2>Contacto sobre privacidad</h2>
           <p>
-            Puedes solicitar información, corrección o eliminación de tus datos escribiendo al siguiente
-            correo:
+            Puedes solicitar información, corrección o eliminación de tus datos escribiendo al
+            siguiente correo:
           </p>
           {privacyContactEmail ? (
             <a className={styles.contact} href={`mailto:${privacyContactEmail}`}>

@@ -90,7 +90,12 @@ function createFixture(initialConversations: Conversation[]) {
           aiAnalysis: null,
           images: [],
         };
-    leads.set(String(lead.id), lead);
+
+    if (typeof lead.id !== 'string') {
+      throw new Error('The fixture requires a scalar lead ID.');
+    }
+
+    leads.set(lead.id, lead);
     return Promise.resolve(lead);
   });
   const upsertEvaluation = vi.fn(({ create }: Prisma.LeadEvaluationUpsertArgs) => {

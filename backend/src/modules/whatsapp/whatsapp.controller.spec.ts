@@ -24,10 +24,7 @@ describe('WhatsAppController', () => {
     } as unknown as WhatsAppWebhookService);
 
     await expect(
-      controller.receiveWebhook(
-        { rawBody } as RawBodyRequest<Request>,
-        `sha256=${'a'.repeat(64)}`,
-      ),
+      controller.receiveWebhook({ rawBody } as RawBodyRequest<Request>, `sha256=${'a'.repeat(64)}`),
     ).resolves.toEqual({ received: true });
     expect(handleWebhook).toHaveBeenCalledWith(rawBody, `sha256=${'a'.repeat(64)}`);
   });

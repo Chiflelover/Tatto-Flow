@@ -260,7 +260,7 @@ function openBusinessHours(): NitaBusinessHoursService {
   return {
     isOpen: vi.fn().mockReturnValue(true),
     getClosedPeriodKey: vi.fn(),
-  } as unknown as NitaBusinessHoursService;
+  };
 }
 
 function makeConversation(

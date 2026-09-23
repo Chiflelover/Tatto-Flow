@@ -9,10 +9,7 @@ export type WhatsAppConfigKey =
   | 'META_APP_SECRET'
   | 'WHATSAPP_GRAPH_API_VERSION';
 
-export function getRequiredWhatsAppValue(
-  config: ConfigService,
-  key: WhatsAppConfigKey,
-): string {
+export function getRequiredWhatsAppValue(config: ConfigService, key: WhatsAppConfigKey): string {
   const value = config.get<string>(key)?.trim();
 
   if (!value) {

@@ -22,9 +22,7 @@ describe('NitaStateMachine', () => {
     const decision = stateMachine.begin();
 
     expect(decision.response.messages[0]?.text).toContain('Hola, soy Nita');
-    expect(decision.response.messages[1]?.text).toBe(
-      '¿Qué tamaño aproximado tendrá tu tatuaje?',
-    );
+    expect(decision.response.messages[1]?.text).toBe('¿Qué tamaño aproximado tendrá tu tatuaje?');
     expect(decision.response.options).toEqual([
       { value: TattooSize.SMALL, label: 'Pequeño' },
       { value: TattooSize.MEDIUM, label: 'Mediano' },
@@ -80,9 +78,7 @@ describe('NitaStateMachine', () => {
         selectedDetail: detail,
         currentState: ConversationState.ASK_BODY_PART,
       });
-      expect(decision.response.messages[0]?.text).toBe(
-        '¿En qué parte del cuerpo será el tatuaje?',
-      );
+      expect(decision.response.messages[0]?.text).toBe('¿En qué parte del cuerpo será el tatuaje?');
       expect(decision.response.options).toEqual([]);
     },
   );

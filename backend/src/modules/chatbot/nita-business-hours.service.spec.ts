@@ -16,9 +16,7 @@ describe('Nita business hours in America/Lima', () => {
 
   it('uses one closed-period key throughout the same night', () => {
     expect(getNitaClosedPeriodKey(new Date('2026-09-15T04:00:00.000Z'))).toBe('2026-09-14');
-    expect(getNitaClosedPeriodKey(new Date('2026-09-15T10:59:00.000Z'))).toBe(
-      '2026-09-14',
-    );
+    expect(getNitaClosedPeriodKey(new Date('2026-09-15T10:59:00.000Z'))).toBe('2026-09-14');
   });
 
   it('subtracts only open time when calculating the two-hour inactivity cutoff', () => {

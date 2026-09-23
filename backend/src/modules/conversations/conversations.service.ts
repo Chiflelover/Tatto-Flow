@@ -9,6 +9,7 @@ import {
   type TattooSize,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
 
 export interface ConversationUpdate {
@@ -30,6 +31,8 @@ export interface ActiveConversationResult {
 
 @Injectable()
 export class ConversationsService {
+  private readonly logger = new SafeStructuredLogger(ConversationsService.name);
+
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
@@ -40,10 +43,13 @@ export class ConversationsService {
   async getOrCreateActive(customerId: string): Promise<ActiveConversationResult> {
     const now = new Date();
 
-    await this.abandonmentService.abandonInactiveForCustomer(customerId, now);
+    const abandonedCount = await this.abandonmentService.abandonInactiveForCustomer(
+      customerId,
+      now,
+    );
 
     try {
-      return await this.prisma.$transaction(async (transaction) => {
+      const result = await this.prisma.$transaction(async (transaction) => {
         const activeConversation = await transaction.conversation.findFirst({
           where: {
             customerId,
@@ -85,6 +91,20 @@ export class ConversationsService {
 
         return { conversation, created: true };
       });
+
+      if (result.created) {
+        this.logger.info('workflow.conversation.created', {
+          conversationId: result.conversation.id,
+        });
+
+        if (abandonedCount > 0) {
+          this.logger.info('workflow.conversation.started_after_expiration', {
+            conversationId: result.conversation.id,
+          });
+        }
+      }
+
+      return result;
     } catch (error) {
       if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
         throw error;
