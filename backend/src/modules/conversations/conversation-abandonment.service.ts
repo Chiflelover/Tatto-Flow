@@ -90,6 +90,7 @@ export class ConversationAbandonmentService {
           referenceReceived: lead.images.length > 0,
           conversationStatus: ConversationStatus.ABANDONED,
           analysis: lead.aiAnalysis ? toImageAnalysisResult(lead.aiAnalysis) : null,
+          analysisFailed: false,
         },
         transaction,
       );

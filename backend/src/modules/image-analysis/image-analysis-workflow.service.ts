@@ -227,6 +227,7 @@ export class ImageAnalysisWorkflowService {
           referenceReceived: true,
           conversationStatus: conversation.status,
           analysis: persistedAnalysis,
+          analysisFailed: false,
         },
         transaction,
       );
@@ -366,6 +367,7 @@ export class ImageAnalysisWorkflowService {
             referenceReceived: true,
             conversationStatus: conversation.status,
             analysis: null,
+            analysisFailed: true,
           },
           transaction,
         );

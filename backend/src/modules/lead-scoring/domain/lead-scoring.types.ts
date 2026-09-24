@@ -25,6 +25,7 @@ export type ScoringRuleId =
 
 export type GateRuleId =
   | 'FLOW_INCOMPLETE'
+  | 'AI_ERROR'
   | 'NOT_ON_SKIN'
   | 'SIZE_MISMATCH'
   | 'DETAIL_MISMATCH'
@@ -59,10 +60,12 @@ export interface LeadScoringInput {
   referenceReceived: boolean;
   conversationStatus: ConversationStatus;
   analysis: ImageAnalysisResult | null;
+  analysisFailed: boolean;
 }
 
 export interface LeadScoringFacts {
   analysisPresent: boolean;
+  analysisFailed: boolean;
   flowComplete: boolean;
   conversationAbandoned: boolean;
   sizeProvided: boolean;

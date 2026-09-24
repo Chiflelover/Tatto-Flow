@@ -19,6 +19,7 @@ export const SCORING_CONTRIBUTION_MESSAGES_ES: Record<ScoringRuleId, string> = {
 
 export const SCORING_BLOCKER_MESSAGES_ES: Record<GateRuleId, string> = {
   FLOW_INCOMPLETE: 'La cotización está incompleta o la conversación fue abandonada',
+  AI_ERROR: 'No se pudo analizar la referencia automáticamente',
   NOT_ON_SKIN: 'La referencia no corresponde a un tatuaje aplicado sobre piel',
   SIZE_MISMATCH: 'El tamaño indicado no coincide con el análisis',
   DETAIL_MISMATCH: 'El detalle indicado no coincide con el análisis',

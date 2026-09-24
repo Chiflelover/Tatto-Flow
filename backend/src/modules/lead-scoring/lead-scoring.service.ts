@@ -140,12 +140,12 @@ export class LeadScoringService {
 
     return {
       analysisPresent,
+      analysisFailed: input.analysisFailed,
       flowComplete:
         sizeProvided &&
         detailProvided &&
         bodyPartProvided &&
-        input.referenceReceived &&
-        analysisPresent,
+        input.referenceReceived,
       conversationAbandoned: input.conversationStatus === ConversationStatus.ABANDONED,
       sizeProvided,
       detailProvided,

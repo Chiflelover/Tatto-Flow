@@ -102,6 +102,11 @@ export const LEAD_SCORING_CONFIG_V1: LeadScoringConfig = {
       conditions: { all: [{ fact: 'notOnSkin', operator: 'equal', value: true }] },
     },
     {
+      id: 'AI_ERROR',
+      status: ReadinessStatus.REVISAR,
+      conditions: { all: [{ fact: 'analysisFailed', operator: 'equal', value: true }] },
+    },
+    {
       id: 'SIZE_MISMATCH',
       status: ReadinessStatus.REVISAR,
       conditions: { all: [{ fact: 'sizeMismatch', operator: 'equal', value: true }] },

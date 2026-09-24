@@ -5,6 +5,7 @@ import {
   DetailLevel,
   LeadStatus,
   Prisma,
+  ReadinessStatus,
   ReviewReason,
   TattooSize,
   type AiAnalysis,
@@ -209,7 +210,9 @@ function createFixture(options: FixtureOptions = {}) {
           : null,
       ),
   );
-  const upsertEvaluation = vi.fn().mockResolvedValue({ id: 'evaluation-id' });
+  const upsertEvaluation = vi.fn((arguments_: Prisma.LeadEvaluationUpsertArgs) =>
+    Promise.resolve({ id: 'evaluation-id', arguments_ }),
+  );
   const transactionClient = {
     aiAnalysis: { upsert: upsertAnalysis },
     lead: { updateMany: updateLead, findUniqueOrThrow: findLeadOrThrow },
@@ -310,6 +313,18 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(fixture.getLead().conversationId).toBe(CONVERSATION_ID);
   });
 
+  it('classifies a complete lead normally when Gemini succeeds', async () => {
+    const fixture = createFixture();
+
+    await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
+
+    const evaluation = fixture.upsertEvaluation.mock.calls[0]?.[0];
+    expect(evaluation?.create).toMatchObject({
+      readinessStatus: ReadinessStatus.LISTO,
+      blockers: [],
+    });
+  });
+
   it('logs successful AI duration without changing the workflow result', async () => {
     const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const fixture = createFixture();
@@ -324,6 +339,7 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
   });
 
   it.each([
+    ['API_ERROR', 'ai.analysis.failed'],
     ['RATE_LIMITED', 'ai.analysis.rate_limited'],
     ['TIMEOUT', 'ai.analysis.timeout'],
   ] as const)(
@@ -335,6 +351,23 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
       const result = await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
 
       expect(result.quotation.status).toBe(LeadStatus.REQUIRES_REVIEW);
+      expect(result.analysis).toBeNull();
+      expect(fixture.getLead().reviewReasons).toEqual([ReviewReason.AI_ERROR]);
+      expect(fixture.findPricingRule).not.toHaveBeenCalled();
+      expect(fixture.upsertAnalysis).not.toHaveBeenCalled();
+      expect(fixture.upsertEvaluation.mock.calls[0]?.[0]?.create).toMatchObject({
+        readinessStatus: ReadinessStatus.REVISAR,
+        blockers: [
+          {
+            ruleId: 'AI_ERROR',
+            reason: 'No se pudo analizar la referencia automáticamente',
+          },
+        ],
+      });
+      expect(fixture.getConversation()).toMatchObject({
+        currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+        status: ConversationStatus.COMPLETED,
+      });
       const messages = errorLog.mock.calls.flat().join(' ');
       expect(messages).toContain(event);
       expect(messages).toContain(LEAD_ID);
@@ -479,6 +512,17 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
     expect(lead.calculatedMaxPrice).toBeNull();
     expect(fixture.upsertAnalysis).not.toHaveBeenCalled();
     expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
+    expect(fixture.upsertEvaluation.mock.calls[0]?.[0]?.create).toMatchObject({
+      rawScore: 80,
+      readinessStatus: ReadinessStatus.REVISAR,
+      blockers: [
+        {
+          ruleId: 'AI_ERROR',
+          reason: 'No se pudo analizar la referencia automáticamente',
+        },
+      ],
+    });
+    expect(fixture.findPricingRule).not.toHaveBeenCalled();
     expect(fixture.getConversation()).toMatchObject({
       currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
       status: ConversationStatus.COMPLETED,

@@ -16,6 +16,7 @@ const PERFECT_INPUT: LeadScoringInput = {
   bodyPart: 'Brazo',
   referenceReceived: true,
   conversationStatus: ConversationStatus.ACTIVE,
+  analysisFailed: false,
   analysis: {
     detectedSize: TattooSize.MEDIUM,
     sizeConfidence: 0.95,
@@ -88,6 +89,26 @@ describe('LeadScoringService', () => {
       points: 25,
       reason: 'El cliente indicó el tamaño',
     });
+  });
+
+  it('classifies a complete lead with an AI failure as REVISAR instead of INCOMPLETO', async () => {
+    const result = await createService().evaluate({
+      ...PERFECT_INPUT,
+      analysis: null,
+      analysisFailed: true,
+    });
+
+    expect(result).toMatchObject({
+      rawScore: 80,
+      readinessScore: 32,
+      status: ReadinessStatus.REVISAR,
+    });
+    expect(result.blockers).toEqual([
+      {
+        ruleId: 'AI_ERROR',
+        reason: 'No se pudo analizar la referencia automáticamente',
+      },
+    ]);
   });
 
   it.each([
