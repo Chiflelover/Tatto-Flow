@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiError } from '@google/genai';
 import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
 import { ImageAmbiguityLevel, type TattooImageInput } from './domain/image-analysis.types.js';
 import {
@@ -50,6 +51,25 @@ async function expectErrorCode(
   code: GeminiImageAnalysisError['code'],
 ): Promise<void> {
   await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({ code });
+}
+
+function createApiError(status: number, code: string, message = 'Safe provider detail'): ApiError {
+  return new ApiError({
+    status,
+    message: JSON.stringify({ error: { code: status, status: code, message } }),
+  });
+}
+
+function providerErrorLogs(errorLog: {
+  mock: { calls: readonly (readonly unknown[])[] };
+}): Record<string, unknown>[] {
+  return errorLog.mock.calls
+    .flat()
+    .filter(
+      (message): message is string =>
+        typeof message === 'string' && message.includes('"event":"ai.provider.error"'),
+    )
+    .map((message) => JSON.parse(message) as Record<string, unknown>);
 }
 
 describe('GeminiImageAnalysisService', () => {
@@ -121,8 +141,26 @@ describe('GeminiImageAnalysisService', () => {
   it('maps timeouts to a controlled error', async () => {
     const error = new Error('request stopped');
     error.name = 'AbortError';
+    const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     await expectErrorCode(createFixture(error).service, 'TIMEOUT');
+
+    expect(providerErrorLogs(errorLog)).toEqual([
+      expect.objectContaining({
+        event: 'ai.provider.error',
+        provider: 'gemini',
+        status: null,
+        code: 'TIMEOUT',
+        errorName: 'AbortError',
+        retryable: true,
+        attempt: 1,
+      }),
+      expect.objectContaining({
+        event: 'ai.provider.error',
+        code: 'TIMEOUT',
+        attempt: 2,
+      }),
+    ]);
   });
 
   it('maps rate limits to a controlled error', async () => {
@@ -157,6 +195,96 @@ describe('GeminiImageAnalysisService', () => {
     const promise = createFixture(error).service.analyzeTattooImage(VALID_PNG);
 
     await expect(promise).rejects.toEqual(new GeminiImageAnalysisError('API_ERROR'));
+  });
+
+  it.each([
+    [400, 'INVALID_ARGUMENT', false, 1],
+    [401, 'UNAUTHENTICATED', false, 1],
+    [403, 'PERMISSION_DENIED', false, 1],
+    [404, 'NOT_FOUND', false, 1],
+    [429, 'RESOURCE_EXHAUSTED', true, 2],
+    [500, 'INTERNAL', true, 2],
+  ] as const)(
+    'logs safe provider diagnostics for HTTP %s',
+    async (status, code, retryable, attempts) => {
+      const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const fixture = createFixture(createApiError(status, code));
+
+      await expect(fixture.service.analyzeTattooImage(VALID_PNG)).rejects.toBeInstanceOf(
+        GeminiImageAnalysisError,
+      );
+
+      const logs = providerErrorLogs(errorLog);
+      expect(logs).toHaveLength(attempts);
+      expect(logs.at(-1)).toMatchObject({
+        event: 'ai.provider.error',
+        provider: 'gemini',
+        status,
+        code,
+        errorName: 'ApiError',
+        retryable,
+        attempt: attempts,
+        message: 'Safe provider detail',
+      });
+    },
+  );
+
+  it('logs invalid structured responses without logging the response body', async () => {
+    const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    await expectErrorCode(createFixture('{').service, 'INVALID_RESPONSE');
+
+    expect(providerErrorLogs(errorLog)).toEqual([
+      expect.objectContaining({
+        event: 'ai.provider.error',
+        provider: 'gemini',
+        status: null,
+        code: 'INVALID_RESPONSE',
+        errorName: 'GeminiImageAnalysisError',
+        retryable: false,
+        attempt: 1,
+      }),
+    ]);
+    expect(errorLog.mock.calls.flat().join(' ')).not.toContain('"{"');
+  });
+
+  it('never logs API keys, image data, prompts, signed URLs, phones or full payloads', async () => {
+    const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const previousKey = process.env.GEMINI_API_KEY;
+    const secret = 'AIzaProductionSecretThatMustNeverAppear123';
+    process.env.GEMINI_API_KEY = secret;
+    const unsafeMessage = [
+      `key=${secret}`,
+      'inlineData',
+      'A'.repeat(200),
+      'https://storage.example/signed?token=private',
+      '51999888777',
+      'Analiza exclusivamente la imagen de referencia de tatuaje',
+    ].join(' ');
+
+    try {
+      await expectErrorCode(
+        createFixture(createApiError(400, 'INVALID_ARGUMENT', unsafeMessage)).service,
+        'API_ERROR',
+      );
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = previousKey;
+      }
+    }
+
+    const serializedLogs = errorLog.mock.calls.flat().join(' ');
+    expect(serializedLogs).toContain('ai.provider.error');
+    expect(serializedLogs).toContain('INVALID_ARGUMENT');
+    expect(serializedLogs).not.toContain(secret);
+    expect(serializedLogs).not.toContain('inlineData');
+    expect(serializedLogs).not.toContain('A'.repeat(80));
+    expect(serializedLogs).not.toContain('storage.example');
+    expect(serializedLogs).not.toContain('51999888777');
+    expect(serializedLogs).not.toContain('Analiza exclusivamente');
+    expect(serializedLogs).not.toContain('"message"');
   });
 
   it('preserves negative visual findings and low confidence', async () => {

@@ -15,6 +15,14 @@ import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysi
 
 const GEMINI_TIMEOUT_MS = 20_000;
 const GEMINI_RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+const MAX_SAFE_PROVIDER_MESSAGE_LENGTH = 300;
+const UNSAFE_PROVIDER_MESSAGE_MARKERS = [
+  'inlineData',
+  'base64',
+  'contents',
+  'Clasificación de tamaño visual para Tatto Flow',
+  'Analiza exclusivamente la imagen de referencia de tatuaje',
+];
 const RESPONSE_KEYS = Object.freeze([
   'detectedSize',
   'sizeConfidence',
@@ -106,12 +114,16 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       },
     };
     let response: { readonly text?: string } | undefined;
+    let completedAttempt = 1;
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         response = await this.client.models.generateContent(parameters);
+        completedAttempt = attempt;
         break;
       } catch (error: unknown) {
+        this.logProviderError(error, attempt);
+
         if (attempt === 1 && this.isRetryable(error)) {
           this.logger.warn('ai.analysis.retry', {
             provider: this.providerName,
@@ -126,7 +138,12 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       }
     }
 
-    return this.parseResponse(response?.text);
+    try {
+      return this.parseResponse(response?.text);
+    } catch (error: unknown) {
+      this.logProviderError(error, completedAttempt);
+      throw error;
+    }
   }
 
   private parseResponse(text: string | undefined): ImageAnalysisResult {
@@ -205,5 +222,141 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       name === 'AbortError' ||
       name === 'TimeoutError'
     );
+  }
+
+  private logProviderError(error: unknown, attempt: number): void {
+    const status = error instanceof ApiError ? error.status : this.readStatus(error);
+    const payload = this.readProviderErrorPayload(error);
+    const message = this.safeProviderMessage(payload.message);
+
+    this.logger.error('ai.provider.error', {
+      provider: this.providerName,
+      status: status ?? null,
+      code: payload.code ?? this.classifyProviderError(error, status),
+      errorName: error instanceof Error ? error.name : typeof error,
+      retryable: this.isRetryable(error),
+      attempt,
+      ...(message ? { message } : {}),
+    });
+  }
+
+  private readProviderErrorPayload(error: unknown): {
+    code?: string | number;
+    message?: string;
+  } {
+    const directCode = this.readErrorCode(error);
+
+    if (!(error instanceof Error)) {
+      return { code: directCode };
+    }
+
+    const parsed = this.parseErrorEnvelope(error.message);
+
+    return {
+      code: parsed?.code ?? directCode,
+      message: parsed?.message ?? error.message,
+    };
+  }
+
+  private parseErrorEnvelope(
+    message: string,
+  ): { code?: string | number; message?: string } | undefined {
+    const envelope = this.parseJsonRecord(message);
+
+    if (!envelope) {
+      return undefined;
+    }
+
+    const errorValue = this.readRecord(envelope, 'error') ?? envelope;
+    const nestedMessage = this.readString(errorValue, 'message');
+    const nestedEnvelope = nestedMessage ? this.parseJsonRecord(nestedMessage) : undefined;
+    const nestedError = nestedEnvelope
+      ? (this.readRecord(nestedEnvelope, 'error') ?? nestedEnvelope)
+      : undefined;
+    const details = nestedError ?? errorValue;
+
+    return {
+      code: this.readString(details, 'status') ?? this.readPrimitiveCode(details),
+      message: this.readString(details, 'message') ?? nestedMessage,
+    };
+  }
+
+  private parseJsonRecord(value: string): Record<string, unknown> | undefined {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readRecord(
+    value: Record<string, unknown>,
+    key: string,
+  ): Record<string, unknown> | undefined {
+    const candidate = value[key];
+    return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      ? (candidate as Record<string, unknown>)
+      : undefined;
+  }
+
+  private readString(value: Record<string, unknown>, key: string): string | undefined {
+    const candidate = value[key];
+    return typeof candidate === 'string' && candidate.trim() ? candidate : undefined;
+  }
+
+  private readPrimitiveCode(value: Record<string, unknown>): string | number | undefined {
+    const code = value.code;
+    return typeof code === 'string' || typeof code === 'number' ? code : undefined;
+  }
+
+  private readErrorCode(error: unknown): string | number | undefined {
+    if (!error || typeof error !== 'object') {
+      return undefined;
+    }
+
+    const code: unknown = Reflect.get(error, 'code');
+    return typeof code === 'string' || typeof code === 'number' ? code : undefined;
+  }
+
+  private classifyProviderError(error: unknown, status: number | undefined): string {
+    const name = error instanceof Error ? error.name : '';
+
+    if (status === 408 || name === 'AbortError' || name === 'TimeoutError') {
+      return 'TIMEOUT';
+    }
+
+    if (status === 400) return 'BAD_REQUEST';
+    if (status === 401) return 'AUTHENTICATION_ERROR';
+    if (status === 403) return 'PERMISSION_DENIED';
+    if (status === 404) return 'NOT_FOUND';
+    if (status === 429) return 'RATE_LIMITED';
+    if (typeof status === 'number' && status >= 500) return 'PROVIDER_ERROR';
+    if (error instanceof GeminiImageAnalysisError && error.code === 'INVALID_RESPONSE') {
+      return 'INVALID_RESPONSE';
+    }
+
+    return 'API_ERROR';
+  }
+
+  private safeProviderMessage(message: string | undefined): string | undefined {
+    if (!message) {
+      return undefined;
+    }
+
+    if (UNSAFE_PROVIDER_MESSAGE_MARKERS.some((marker) => message.includes(marker))) {
+      return undefined;
+    }
+
+    const sanitized = message
+      .replace(/https?:\/\/\S+/gi, '[REDACTED_URL]')
+      .replace(/AIza[\w-]{20,}/g, '[REDACTED_API_KEY]')
+      .replace(/[A-Za-z0-9+/_=-]{80,}/g, '[REDACTED_DATA]')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return sanitized ? sanitized.slice(0, MAX_SAFE_PROVIDER_MESSAGE_LENGTH) : undefined;
   }
 }
