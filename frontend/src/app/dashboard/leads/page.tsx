@@ -94,20 +94,6 @@ const EMPTY_MESSAGES: Record<(typeof TABS)[number]['key'], string> = {
   archived: 'No hay leads archivados.',
 };
 
-const KPI_LABELS = [
-  { key: 'ready' as const, label: 'Listos' },
-  { key: 'review' as const, label: 'Revisar' },
-  { key: 'incomplete' as const, label: 'Incompletos' },
-  { key: 'total' as const, label: 'Total activo' },
-];
-
-interface LeadReadinessCounts {
-  ready: number;
-  review: number;
-  incomplete: number;
-  total: number;
-}
-
 type QueryUpdate = Record<string, string | undefined>;
 type PaginationItem = number | 'start-ellipsis' | 'end-ellipsis';
 
@@ -212,8 +198,6 @@ function LeadsWorkspace() {
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<LeadSummary | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [readinessCounts, setReadinessCounts] = useState<LeadReadinessCounts | null>(null);
-  const [countsUnavailable, setCountsUnavailable] = useState(false);
   const currentRequestKey = `${requestKey}:${refreshKey}`;
   const [requestState, setRequestState] = useState<{
     key: string;
@@ -286,44 +270,6 @@ function LeadsWorkspace() {
       active = false;
     };
   }, [archived, currentRequestKey, detail, page, router, search, size, sortBy, sortOrder, status]);
-
-  useEffect(() => {
-    let active = true;
-
-    void Promise.all([
-      listLeads({ status: 'LISTO', page: 1, pageSize: 1 }),
-      listLeads({ status: 'REVISAR', page: 1, pageSize: 1 }),
-      listLeads({ status: 'INCOMPLETO', page: 1, pageSize: 1 }),
-      listLeads({ page: 1, pageSize: 1 }),
-    ])
-      .then(([readyResult, reviewResult, incompleteResult, totalResult]) => {
-        if (active) {
-          setReadinessCounts({
-            ready: readyResult.pagination.total,
-            review: reviewResult.pagination.total,
-            incomplete: incompleteResult.pagination.total,
-            total: totalResult.pagination.total,
-          });
-        }
-      })
-      .catch((requestError: unknown) => {
-        if (!active) {
-          return;
-        }
-
-        if (isUnauthorized(requestError)) {
-          router.replace('/login');
-          return;
-        }
-
-        setReadinessCounts(null);
-        setCountsUnavailable(true);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [refreshKey, router]);
 
   const pageItems = useMemo(
     () => paginationItems(result?.pagination.page ?? 1, result?.pagination.totalPages ?? 0),
@@ -443,21 +389,6 @@ function LeadsWorkspace() {
           <p>Prioriza cotizaciones, revisa su preparación y gestiona pendientes.</p>
         </div>
       </header>
-
-      <section className={styles.leadKpiGrid} aria-label="Resumen de preparación">
-        {KPI_LABELS.map((metric) => (
-          <article key={metric.key} className={styles.leadKpiCard}>
-            <span>{metric.label}</span>
-            {readinessCounts ? (
-              <strong>{readinessCounts[metric.key]}</strong>
-            ) : countsUnavailable ? (
-              <strong aria-label={`${metric.label} no disponible`}>—</strong>
-            ) : (
-              <span className={styles.kpiSkeleton} aria-hidden="true" />
-            )}
-          </article>
-        ))}
-      </section>
 
       <nav className={styles.leadTabs} aria-label="Categorías de leads">
         {TABS.map((tab) => (

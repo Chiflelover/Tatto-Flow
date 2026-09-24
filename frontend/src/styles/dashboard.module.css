@@ -886,46 +886,6 @@
   scrollbar-width: none;
 }
 
-.leadKpiGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
-  margin-bottom: 1rem;
-}
-
-.leadKpiCard {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-height: 3.7rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 0.72rem;
-  background: var(--surface-raised);
-}
-
-.leadKpiCard > span:first-child {
-  color: var(--muted);
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
-}
-
-.leadKpiCard strong {
-  font-size: 1.15rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpiSkeleton {
-  width: 2.15rem;
-  height: 1.15rem;
-  border-radius: 0.3rem;
-  background: var(--surface-soft);
-  animation: skeletonPulse 1.2s ease-in-out infinite alternate;
-}
-
 .leadTabs::-webkit-scrollbar {
   display: none;
 }
@@ -1581,10 +1541,6 @@
     grid-column: span 2;
   }
 
-  .leadKpiGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   .leadDetailSummary {
     grid-template-columns: minmax(14rem, 0.85fr) minmax(20rem, 1.25fr);
   }
@@ -1732,7 +1688,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .loader,
-  .kpiSkeleton,
   .leadSkeletonRow {
     animation: none;
   }
