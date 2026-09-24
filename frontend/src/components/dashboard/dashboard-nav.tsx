@@ -8,7 +8,6 @@ const NAVIGATION = [
   { href: '/dashboard', label: 'Inicio', icon: '⌂', exact: true },
   { href: '/dashboard/leads', label: 'Pedidos', icon: '≡' },
   { href: '/dashboard/pricing', label: 'Precios', icon: 'S/' },
-  { href: '/dashboard/settings', label: 'Configuración', icon: '⚙' },
 ];
 
 export function DashboardNav({ mobile = false }: { mobile?: boolean }) {

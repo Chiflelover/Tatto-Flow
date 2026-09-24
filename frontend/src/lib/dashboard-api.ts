@@ -223,10 +223,6 @@ export function logout(): Promise<{ success: boolean }> {
   return jsonRequest('auth/logout', 'POST');
 }
 
-export function getSession(): Promise<TattooArtistSession> {
-  return dashboardRequest('auth/session');
-}
-
 export function getDashboardMetrics(): Promise<DashboardMetrics> {
   return dashboardRequest('dashboard/metrics');
 }

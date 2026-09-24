@@ -19,6 +19,9 @@ import {
 } from '@/lib/dashboard-api';
 import styles from '@/styles/dashboard.module.css';
 
+const AI_ERROR_MESSAGE =
+  'No se pudo analizar automáticamente la referencia. El tatuador debe revisarla manualmente.';
+
 export function LeadDetailClient({ leadId }: { leadId: string }) {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDetail | null>(null);
@@ -211,6 +214,8 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
 
   const requiresReview = lead.status === 'REQUIRES_REVIEW';
   const verified = lead.status === 'VERIFIED';
+  const hasAiError =
+    lead.evaluation?.blockers.some((blocker) => blocker.ruleId === 'AI_ERROR') ?? false;
 
   return (
     <>
@@ -226,6 +231,54 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
         </div>
         <StatusBadge status={lead.status} label={lead.statusLabel} />
       </header>
+
+      <section className={styles.leadDetailSummary} aria-label="Resumen del lead">
+        <div className={styles.detailReadiness}>
+          <div>
+            <span>Preparación</span>
+            <ReadinessBadge status={lead.evaluation?.status ?? null} />
+          </div>
+          <div>
+            <span>Confianza</span>
+            <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+          </div>
+        </div>
+
+        <dl className={styles.detailSummaryFacts}>
+          <div>
+            <dt>Cliente</dt>
+            <dd>
+              {lead.selectedSizeLabel ?? 'Tamaño pendiente'} ·{' '}
+              {lead.selectedDetailLabel ?? 'Detalle pendiente'}
+            </dd>
+          </div>
+          <div>
+            <dt>Análisis IA</dt>
+            <dd>
+              {lead.analysis
+                ? `${lead.analysis.detectedSizeLabel} (${Math.round(
+                    lead.analysis.sizeConfidence * 100,
+                  )}%) · ${lead.analysis.detectedDetailLabel} (${Math.round(
+                    lead.analysis.detailConfidence * 100,
+                  )}%)`
+                : 'No disponible'}
+            </dd>
+          </div>
+        </dl>
+
+        {lead.evaluation && lead.evaluation.blockers.length > 0 && (
+          <div className={styles.detailBlockers}>
+            <strong>Requiere atención</strong>
+            <ul>
+              {lead.evaluation.blockers.map((blocker) => (
+                <li key={blocker.ruleId}>
+                  {blocker.ruleId === 'AI_ERROR' ? AI_ERROR_MESSAGE : blocker.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       <div className={styles.detailGrid}>
         <div className={styles.detailMain}>
@@ -264,7 +317,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 <div className={styles.evaluationSummary}>
                   <div>
                     <span>Confianza</span>
-                    <ReadinessScore readiness={lead.readiness} />
+                    <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
                   </div>
                   <div>
                     <span>Estado</span>
@@ -289,20 +342,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                             {contribution.points}
                           </strong>
                           <span>{contribution.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {lead.evaluation.blockers.length > 0 && (
-                  <div className={styles.evaluationGroup}>
-                    <h3>Bloqueos</h3>
-                    <ul className={styles.blockerList}>
-                      {lead.evaluation.blockers.map((blocker) => (
-                        <li key={blocker.ruleId}>
-                          <span aria-hidden="true">⚠</span>
-                          {blocker.reason}
                         </li>
                       ))}
                     </ul>
@@ -356,12 +395,17 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                   </div>
                 </div>
               </div>
+            ) : hasAiError ? (
+              <div className={styles.reviewBox}>
+                <strong>Revisión manual necesaria</strong>
+                <p>{AI_ERROR_MESSAGE}</p>
+              </div>
             ) : (
               <p className={styles.sentNote}>La referencia todavía no tiene análisis disponible.</p>
             )}
 
             {verified && <div className={styles.verifiedBox}>Verificado automáticamente</div>}
-            {requiresReview && (
+            {requiresReview && !hasAiError && (
               <div className={styles.reviewBox}>
                 <strong>Requiere revisión del tatuador</strong>
                 {lead.reviewMessages.length > 0 && (

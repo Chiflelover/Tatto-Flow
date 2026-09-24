@@ -17,6 +17,22 @@
   color-scheme: dark;
 }
 
+.dashboardLayout :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .sidebar {
   display: none;
 }
@@ -70,7 +86,7 @@
 }
 
 .dashboardContent {
-  width: min(100%, 88rem);
+  width: min(100%, 96rem);
   min-height: calc(100dvh - 4.6rem);
   margin: 0 auto;
   padding: 1.35rem 1rem 6.6rem;
@@ -78,6 +94,7 @@
 
 .desktopNav {
   display: grid;
+  align-content: start;
   gap: 0.4rem;
 }
 
@@ -88,7 +105,7 @@
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   padding: 0.45rem max(0.35rem, env(safe-area-inset-right))
     calc(0.45rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
@@ -101,8 +118,8 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  min-height: 3rem;
-  padding: 0.6rem 0.7rem;
+  min-height: 2.65rem;
+  padding: 0.5rem 0.65rem;
   border-radius: 0.75rem;
   color: var(--muted);
   font-size: 0.84rem;
@@ -135,6 +152,7 @@
 
 .navLinkActive {
   color: var(--accent);
+  box-shadow: inset 0.16rem 0 var(--accent);
   background: rgba(57, 255, 136, 0.1);
 }
 
@@ -479,8 +497,7 @@
 
 .dataList dt,
 .comparisonLabel,
-.priceForm label span,
-.settingsRow span {
+.priceForm label span {
   color: var(--muted);
   font-size: 0.66rem;
 }
@@ -545,6 +562,10 @@
   display: grid;
   gap: 0.4rem;
   margin: 0.55rem 0 0 1rem;
+}
+
+.reviewBox p {
+  margin-top: 0.42rem;
 }
 
 .verifiedBox {
@@ -865,6 +886,46 @@
   scrollbar-width: none;
 }
 
+.leadKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.leadKpiCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.7rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.72rem;
+  background: var(--surface-raised);
+}
+
+.leadKpiCard > span:first-child {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.leadKpiCard strong {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiSkeleton {
+  width: 2.15rem;
+  height: 1.15rem;
+  border-radius: 0.3rem;
+  background: var(--surface-soft);
+  animation: skeletonPulse 1.2s ease-in-out infinite alternate;
+}
+
 .leadTabs::-webkit-scrollbar {
   display: none;
 }
@@ -891,10 +952,12 @@
   color: var(--accent);
   border-color: rgba(57, 255, 136, 0.38);
   background: rgba(57, 255, 136, 0.1);
+  box-shadow: inset 0 -0.13rem var(--accent);
 }
 
 .leadFilters {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
   padding: 0.9rem;
@@ -909,6 +972,10 @@
   display: grid;
   align-content: end;
   gap: 0.35rem;
+}
+
+.phoneSearch {
+  grid-column: 1 / -1;
 }
 
 .leadFilters label > span,
@@ -1047,6 +1114,16 @@
   background: #131d16;
 }
 
+.clickableLeadRow {
+  cursor: pointer;
+}
+
+.leadTable .clickableLeadRow:focus-visible,
+.mobileLeadRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .customerCell,
 .priceCell {
   color: var(--foreground);
@@ -1101,7 +1178,7 @@
 
 .scoreTrack {
   display: block;
-  height: 0.38rem;
+  height: 0.48rem;
   overflow: hidden;
   border-radius: 999px;
   background: #29362e;
@@ -1111,7 +1188,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1abf63, #39ff88);
+  background: var(--accent-strong);
 }
 
 .scoreUnavailable {
@@ -1170,6 +1247,11 @@
   border-radius: 0.85rem;
   background: var(--surface-raised);
   box-shadow: 0 0.4rem 1.3rem rgba(0, 0, 0, 0.25);
+}
+
+.mobileLeadRow:hover {
+  border-color: var(--border-strong);
+  background: #131d16;
 }
 
 .mobileLeadTopline {
@@ -1248,6 +1330,90 @@
   background: var(--accent-strong);
 }
 
+.dateCell {
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.leadsLoading {
+  display: grid;
+  gap: 0.1rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+}
+
+.leadSkeletonRow {
+  display: block;
+  height: 3.65rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  animation: skeletonPulse 1.2s ease-in-out infinite alternate;
+}
+
+.leadSkeletonRow:last-child {
+  border-bottom: 0;
+}
+
+.leadDetailSummary {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+}
+
+.detailReadiness,
+.detailSummaryFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.detailReadiness > div,
+.detailSummaryFacts > div {
+  display: grid;
+  align-content: start;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.65rem;
+  border-radius: 0.65rem;
+  background: var(--surface-soft);
+}
+
+.detailReadiness span:first-child,
+.detailSummaryFacts dt {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+
+.detailSummaryFacts dd {
+  overflow-wrap: anywhere;
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.detailBlockers {
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(236, 104, 90, 0.35);
+  border-radius: 0.68rem;
+  color: #ffb4ac;
+  background: rgba(220, 86, 72, 0.1);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.detailBlockers ul {
+  display: grid;
+  gap: 0.32rem;
+  margin: 0.4rem 0 0 1rem;
+}
+
 .dangerButton {
   min-height: 2.85rem;
   padding: 0.7rem 0.9rem;
@@ -1299,15 +1465,13 @@
   padding-top: 0.2rem;
 }
 
-.contributionList,
-.blockerList {
+.contributionList {
   display: grid;
   gap: 0.42rem;
   list-style: none;
 }
 
-.contributionList li,
-.blockerList li {
+.contributionList li {
   display: flex;
   align-items: flex-start;
   gap: 0.55rem;
@@ -1327,14 +1491,8 @@
   color: #75ffa9;
 }
 
-.negativePoints,
-.blockerList li {
+.negativePoints {
   color: #ffaaa1;
-}
-
-.blockerList li {
-  border-color: rgba(236, 104, 90, 0.35);
-  background: rgba(220, 86, 72, 0.1);
 }
 
 .unevaluatedDetail {
@@ -1391,39 +1549,14 @@
   margin-top: 1.1rem;
 }
 
-.settingsList {
-  display: grid;
-  gap: 0.1rem;
-}
+@keyframes skeletonPulse {
+  from {
+    opacity: 0.55;
+  }
 
-.settingsRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.settingsRow:last-child {
-  border-bottom: 0;
-}
-
-.settingsRow strong {
-  max-width: 65%;
-  overflow-wrap: anywhere;
-  font-size: 0.78rem;
-  text-align: right;
-}
-
-.securityNote {
-  margin-top: 0.9rem;
-  padding: 0.8rem;
-  border-radius: 0.75rem;
-  color: var(--muted-strong);
-  background: var(--surface-soft);
-  font-size: 0.72rem;
-  line-height: 1.55;
+  to {
+    opacity: 1;
+  }
 }
 
 @media (min-width: 46rem) {
@@ -1441,10 +1574,22 @@
   }
 
   .leadFilters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .phoneSearch {
+    grid-column: span 2;
+  }
+
+  .leadKpiGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .leadDetailSummary {
+    grid-template-columns: minmax(14rem, 0.85fr) minmax(20rem, 1.25fr);
+  }
+
+  .detailBlockers {
     grid-column: 1 / -1;
   }
 
@@ -1465,7 +1610,7 @@
 @media (min-width: 62rem) {
   .dashboardLayout {
     display: grid;
-    grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-columns: 12.75rem minmax(0, 1fr);
   }
 
   .sidebar {
@@ -1473,9 +1618,9 @@
     top: 0;
     display: grid;
     grid-template-rows: auto 1fr auto;
-    gap: 2rem;
+    gap: 1.35rem;
     height: 100dvh;
-    padding: 1.25rem;
+    padding: 1rem 0.85rem;
     border-right: 1px solid var(--border);
     background: var(--surface);
   }
@@ -1487,7 +1632,7 @@
 
   .dashboardContent {
     min-height: 100dvh;
-    padding: 2.25rem clamp(1.5rem, 4vw, 3.5rem);
+    padding: 2rem clamp(1.35rem, 3vw, 3rem);
   }
 
   .navLink:hover,
@@ -1497,7 +1642,7 @@
 
   .leadFilters {
     grid-template-columns:
-      minmax(15rem, 1.7fr) repeat(3, minmax(7rem, 0.75fr)) minmax(9rem, 1fr)
+      minmax(15rem, 1.7fr) repeat(2, minmax(7rem, 0.75fr)) minmax(9rem, 1fr)
       auto;
     align-items: end;
   }
@@ -1586,7 +1731,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loader {
+  .loader,
+  .kpiSkeleton,
+  .leadSkeletonRow {
     animation: none;
   }
 }

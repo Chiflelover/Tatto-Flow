@@ -17,15 +17,30 @@ export function ReadinessBadge({ status }: { status: ReadinessStatus | null }) {
   return <span className={`${styles.readinessBadge} ${READINESS_CLASS[status]}`}>{status}</span>;
 }
 
-export function ReadinessScore({ readiness }: { readiness: LeadSummary['readiness'] }) {
+export function ReadinessScore({
+  readiness,
+  confidence,
+}: {
+  readiness: LeadSummary['readiness'];
+  confidence?: LeadSummary['confidence'];
+}) {
   if (!readiness) {
     return <span className={styles.scoreUnavailable}>—</span>;
   }
 
   const score = Math.min(100, Math.max(0, readiness.score));
+  const confidenceLabel = confidence
+    ? `Tamaño IA: ${Math.round(confidence.size * 100)}%. Detalle IA: ${Math.round(
+        confidence.detail * 100,
+      )}%.`
+    : null;
 
   return (
-    <div className={styles.readinessScore} aria-label={`Confianza ${score}%`}>
+    <div
+      className={styles.readinessScore}
+      aria-label={`Confianza ${score}%${confidenceLabel ? `. ${confidenceLabel}` : ''}`}
+      title={confidenceLabel ?? undefined}
+    >
       <strong>{score}%</strong>
       <span
         className={styles.scoreTrack}

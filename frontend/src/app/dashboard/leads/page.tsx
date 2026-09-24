@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   DashboardError,
   DashboardLoading,
@@ -72,10 +81,32 @@ const SORT_LABELS: Record<LeadSortField, string> = {
 };
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
+  day: 'numeric',
   month: 'short',
   year: 'numeric',
 });
+
+const EMPTY_MESSAGES: Record<(typeof TABS)[number]['key'], string> = {
+  all: 'Todavía no hay leads activos para mostrar.',
+  LISTO: 'No hay leads listos.',
+  REVISAR: 'No hay leads pendientes de revisión.',
+  INCOMPLETO: 'No hay cotizaciones incompletas.',
+  archived: 'No hay leads archivados.',
+};
+
+const KPI_LABELS = [
+  { key: 'ready' as const, label: 'Listos' },
+  { key: 'review' as const, label: 'Revisar' },
+  { key: 'incomplete' as const, label: 'Incompletos' },
+  { key: 'total' as const, label: 'Total activo' },
+];
+
+interface LeadReadinessCounts {
+  ready: number;
+  review: number;
+  incomplete: number;
+  total: number;
+}
 
 type QueryUpdate = Record<string, string | undefined>;
 type PaginationItem = number | 'start-ellipsis' | 'end-ellipsis';
@@ -121,6 +152,27 @@ function priceLabel(lead: LeadSummary): string {
   return lead.price ? `S/${lead.price.minimum}–${lead.price.maximum}` : '—';
 }
 
+function dateLabel(value: string): string {
+  return DATE_FORMATTER.format(new Date(value))
+    .replaceAll('.', '')
+    .replace(/\b(?:set|sept)\b/, 'sep');
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('a, button, input, select, textarea'));
+}
+
+function LeadsLoading() {
+  return (
+    <div className={styles.leadsLoading} role="status" aria-label="Cargando leads">
+      <span className={styles.srOnly}>Cargando leads…</span>
+      {Array.from({ length: 6 }, (_, index) => (
+        <span key={index} className={styles.leadSkeletonRow} aria-hidden="true" />
+      ))}
+    </div>
+  );
+}
+
 function paginationItems(current: number, total: number): PaginationItem[] {
   if (total <= 5) {
     return Array.from({ length: total }, (_, index) => index + 1);
@@ -160,6 +212,8 @@ function LeadsWorkspace() {
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<LeadSummary | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [readinessCounts, setReadinessCounts] = useState<LeadReadinessCounts | null>(null);
+  const [countsUnavailable, setCountsUnavailable] = useState(false);
   const currentRequestKey = `${requestKey}:${refreshKey}`;
   const [requestState, setRequestState] = useState<{
     key: string;
@@ -233,6 +287,44 @@ function LeadsWorkspace() {
     };
   }, [archived, currentRequestKey, detail, page, router, search, size, sortBy, sortOrder, status]);
 
+  useEffect(() => {
+    let active = true;
+
+    void Promise.all([
+      listLeads({ status: 'LISTO', page: 1, pageSize: 1 }),
+      listLeads({ status: 'REVISAR', page: 1, pageSize: 1 }),
+      listLeads({ status: 'INCOMPLETO', page: 1, pageSize: 1 }),
+      listLeads({ page: 1, pageSize: 1 }),
+    ])
+      .then(([readyResult, reviewResult, incompleteResult, totalResult]) => {
+        if (active) {
+          setReadinessCounts({
+            ready: readyResult.pagination.total,
+            review: reviewResult.pagination.total,
+            incomplete: incompleteResult.pagination.total,
+            total: totalResult.pagination.total,
+          });
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (!active) {
+          return;
+        }
+
+        if (isUnauthorized(requestError)) {
+          router.replace('/login');
+          return;
+        }
+
+        setReadinessCounts(null);
+        setCountsUnavailable(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [refreshKey, router]);
+
   const pageItems = useMemo(
     () => paginationItems(result?.pagination.page ?? 1, result?.pagination.totalPages ?? 0),
     [result?.pagination.page, result?.pagination.totalPages],
@@ -253,6 +345,25 @@ function LeadsWorkspace() {
   function applySort(field: LeadSortField): void {
     const nextOrder: SortOrder = sortBy === field && sortOrder === 'desc' ? 'asc' : 'desc';
     navigate({ sortBy: field, sortOrder: nextOrder });
+  }
+
+  function openLead(
+    leadId: string,
+    event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+  ): void {
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+
+    if ('key' in event && event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    if ('key' in event) {
+      event.preventDefault();
+    }
+
+    router.push(`/dashboard/leads/${leadId}`);
   }
 
   async function runAction(leadId: string, action: () => Promise<unknown>): Promise<void> {
@@ -333,6 +444,21 @@ function LeadsWorkspace() {
         </div>
       </header>
 
+      <section className={styles.leadKpiGrid} aria-label="Resumen de preparación">
+        {KPI_LABELS.map((metric) => (
+          <article key={metric.key} className={styles.leadKpiCard}>
+            <span>{metric.label}</span>
+            {readinessCounts ? (
+              <strong>{readinessCounts[metric.key]}</strong>
+            ) : countsUnavailable ? (
+              <strong aria-label={`${metric.label} no disponible`}>—</strong>
+            ) : (
+              <span className={styles.kpiSkeleton} aria-hidden="true" />
+            )}
+          </article>
+        ))}
+      </section>
+
       <nav className={styles.leadTabs} aria-label="Categorías de leads">
         {TABS.map((tab) => (
           <button
@@ -385,21 +511,6 @@ function LeadsWorkspace() {
         </label>
 
         <label>
-          <span>Estado</span>
-          <select
-            value={status ?? ''}
-            onChange={(event) => navigate({ status: event.target.value || undefined })}
-          >
-            <option value="">Todos</option>
-            {READINESS_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
           <span>Ordenar por</span>
           <select
             value={sortBy ?? ''}
@@ -423,9 +534,10 @@ function LeadsWorkspace() {
           className={styles.sortDirection}
           type="button"
           disabled={!sortBy}
+          aria-label={sortOrder === 'asc' ? 'Orden ascendente' : 'Orden descendente'}
           onClick={() => navigate({ sortOrder: sortOrder === 'asc' ? 'desc' : 'asc' })}
         >
-          {sortOrder === 'asc' ? 'Ascendente ↑' : 'Descendente ↓'}
+          {sortOrder === 'asc' ? 'Asc ↑' : 'Desc ↓'}
         </button>
       </section>
 
@@ -438,10 +550,8 @@ function LeadsWorkspace() {
       {error && (
         <DashboardError message={error} retry={() => setRefreshKey((current) => current + 1)} />
       )}
-      {!error && !result && <DashboardLoading label="Cargando leads…" />}
-      {result && result.leads.length === 0 && (
-        <EmptyState>No hay leads en esta categoría.</EmptyState>
-      )}
+      {!error && !result && <LeadsLoading />}
+      {result && result.leads.length === 0 && <EmptyState>{EMPTY_MESSAGES[activeTab]}</EmptyState>}
 
       {result && result.leads.length > 0 && (
         <>
@@ -521,18 +631,26 @@ function LeadsWorkspace() {
               </thead>
               <tbody>
                 {result.leads.map((lead) => (
-                  <tr key={lead.id}>
+                  <tr
+                    key={lead.id}
+                    className={styles.clickableLeadRow}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
+                    onClick={(event) => openLead(lead.id, event)}
+                    onKeyDown={(event) => openLead(lead.id, event)}
+                  >
                     <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
                     <td className={styles.priceCell}>{priceLabel(lead)}</td>
                     <td>{lead.selectedSizeLabel ?? '—'}</td>
                     <td>{lead.selectedDetailLabel ?? '—'}</td>
                     <td>
-                      <ReadinessScore readiness={lead.readiness} />
+                      <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
                     </td>
                     <td>
                       <ReadinessBadge status={lead.readiness?.status ?? null} />
                     </td>
-                    <td>{DATE_FORMATTER.format(new Date(lead.createdAt))}</td>
+                    <td className={styles.dateCell}>{dateLabel(lead.createdAt)}</td>
                     <td>{renderActions(lead)}</td>
                   </tr>
                 ))}
@@ -542,20 +660,36 @@ function LeadsWorkspace() {
 
           <div className={styles.mobileLeadTable}>
             {result.leads.map((lead) => (
-              <article key={lead.id} className={styles.mobileLeadRow}>
+              <article
+                key={lead.id}
+                className={`${styles.mobileLeadRow} ${styles.clickableLeadRow}`}
+                tabIndex={0}
+                role="link"
+                aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
+                onClick={(event) => openLead(lead.id, event)}
+                onKeyDown={(event) => openLead(lead.id, event)}
+              >
                 <div className={styles.mobileLeadTopline}>
                   <strong>{lead.customerPhoneNumber}</strong>
                   <ReadinessBadge status={lead.readiness?.status ?? null} />
                 </div>
-                <ReadinessScore readiness={lead.readiness} />
+                <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
                 <dl>
+                  <div>
+                    <dt>Tamaño</dt>
+                    <dd>{lead.selectedSizeLabel ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Detalle</dt>
+                    <dd>{lead.selectedDetailLabel ?? '—'}</dd>
+                  </div>
                   <div>
                     <dt>Precio</dt>
                     <dd>{priceLabel(lead)}</dd>
                   </div>
                   <div>
                     <dt>Fecha</dt>
-                    <dd>{DATE_FORMATTER.format(new Date(lead.createdAt))}</dd>
+                    <dd>{dateLabel(lead.createdAt)}</dd>
                   </div>
                 </dl>
                 {renderActions(lead)}
