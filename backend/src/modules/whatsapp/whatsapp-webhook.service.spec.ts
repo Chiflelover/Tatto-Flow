@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { WhatsAppAdapter, WHATSAPP_BUTTON_IDS } from '../chatbot/whatsapp/whatsapp.adapter.js';
 import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
@@ -63,6 +64,10 @@ function createFixture() {
     sendMessage,
     downloadImage,
   };
+}
+
+function observeServiceLogs(service: WhatsAppWebhookService) {
+  return vi.spyOn(Reflect.get(service, 'logger') as SafeStructuredLogger, 'info');
 }
 
 describe('WhatsAppWebhookService', () => {
@@ -189,17 +194,80 @@ describe('WhatsAppWebhookService', () => {
   });
 
   it.each([
-    ['another business account', { accountId: '9999999999' }],
-    ['another phone number', { phoneId: '9999999999' }],
-  ])('ignores events addressed to %s', async (_case, overrides) => {
-    const fixture = createFixture();
+    [
+      'another business account',
+      { accountId: '9999999999' },
+      'business_account_id_mismatch',
+      'entry.id',
+      false,
+    ],
+    [
+      'another phone number',
+      { phoneId: '9999999999' },
+      'phone_number_id_mismatch',
+      'change.value.metadata.phone_number_id',
+      true,
+    ],
+  ])(
+    'logs why it ignores events addressed to %s without exposing either ID',
+    async (_case, overrides, reason, field, hasMessages) => {
+      const fixture = createFixture();
+      const info = observeServiceLogs(fixture.service);
 
-    await fixture.service.handleWebhook(
-      payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } }, overrides),
-      'sha256=valid',
+      await fixture.service.handleWebhook(
+        payload(
+          { id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } },
+          overrides,
+        ),
+        'sha256=valid',
+      );
+
+      expect(fixture.claim).not.toHaveBeenCalled();
+      expect(fixture.handleIncoming).not.toHaveBeenCalled();
+      expect(info).toHaveBeenCalledWith('whatsapp.webhook.ignored', {
+        reason,
+        object: 'whatsapp_business_account',
+        field,
+        hasMessages,
+        hasStatuses: false,
+      });
+      expect(info.mock.calls.flat()).not.toContain('9999999999');
+    },
+  );
+
+  it('distinguishes a delivery status webhook from an inbound message', async () => {
+    const fixture = createFixture();
+    const info = observeServiceLogs(fixture.service);
+    const rawBody = Buffer.from(
+      JSON.stringify({
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: BUSINESS_ACCOUNT_ID,
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  metadata: { phone_number_id: PHONE_NUMBER_ID },
+                  statuses: [{ id: 'status-id' }],
+                },
+              },
+            ],
+          },
+        ],
+      }),
     );
+
+    await fixture.service.handleWebhook(rawBody, 'sha256=valid');
 
     expect(fixture.claim).not.toHaveBeenCalled();
     expect(fixture.handleIncoming).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith('whatsapp.webhook.ignored', {
+      reason: 'statuses_without_messages',
+      object: 'whatsapp_business_account',
+      field: 'change.value.messages',
+      hasMessages: false,
+      hasStatuses: true,
+    });
   });
 });

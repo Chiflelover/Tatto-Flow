@@ -26,7 +26,23 @@ interface MetaMessage {
 interface MetaChangeValue {
   metadata?: { phone_number_id?: unknown };
   messages?: unknown;
+  statuses?: unknown;
 }
+
+type WhatsAppWebhookIgnoredReason =
+  | 'unexpected_object'
+  | 'entries_missing'
+  | 'invalid_entry'
+  | 'business_account_id_mismatch'
+  | 'changes_missing'
+  | 'invalid_change'
+  | 'unexpected_change_field'
+  | 'invalid_change_value'
+  | 'metadata_missing'
+  | 'phone_number_id_mismatch'
+  | 'statuses_without_messages'
+  | 'messages_missing'
+  | 'invalid_message_shape';
 
 @Injectable()
 export class WhatsAppWebhookService {
@@ -56,6 +72,7 @@ export class WhatsAppWebhookService {
     this.logger.info('whatsapp.webhook.received');
 
     if (payload.object !== 'whatsapp_business_account') {
+      this.logIgnored('unexpected_object', payload.object, 'object');
       return { received: true };
     }
 
@@ -63,33 +80,83 @@ export class WhatsAppWebhookService {
     const phoneNumberId = getRequiredWhatsAppValue(this.config, 'WHATSAPP_PHONE_NUMBER_ID');
     const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
+    if (entries.length === 0) {
+      this.logIgnored('entries_missing', payload.object, 'entry');
+    }
+
     for (const entry of entries) {
-      if (
-        !this.isRecord(entry) ||
-        entry.id !== businessAccountId ||
-        !Array.isArray(entry.changes)
-      ) {
+      if (!this.isRecord(entry)) {
+        this.logIgnored('invalid_entry', payload.object, 'entry[]');
+        continue;
+      }
+
+      if (entry.id !== businessAccountId) {
+        this.logIgnored('business_account_id_mismatch', payload.object, 'entry.id');
+        continue;
+      }
+
+      if (!Array.isArray(entry.changes) || entry.changes.length === 0) {
+        this.logIgnored('changes_missing', payload.object, 'entry.changes');
         continue;
       }
 
       for (const change of entry.changes) {
-        if (!this.isRecord(change) || change.field !== 'messages' || !this.isRecord(change.value)) {
+        if (!this.isRecord(change)) {
+          this.logIgnored('invalid_change', payload.object, 'entry.changes[]');
+          continue;
+        }
+
+        if (change.field !== 'messages') {
+          this.logIgnored(
+            'unexpected_change_field',
+            payload.object,
+            this.diagnosticText(change.field),
+          );
+          continue;
+        }
+
+        if (!this.isRecord(change.value)) {
+          this.logIgnored('invalid_change_value', payload.object, 'change.value');
           continue;
         }
 
         const value = change.value as MetaChangeValue;
 
-        if (
-          !this.isRecord(value.metadata) ||
-          value.metadata.phone_number_id !== phoneNumberId ||
-          !Array.isArray(value.messages)
-        ) {
+        if (!this.isRecord(value.metadata)) {
+          this.logIgnored('metadata_missing', payload.object, 'change.value.metadata', value);
+          continue;
+        }
+
+        if (value.metadata.phone_number_id !== phoneNumberId) {
+          this.logIgnored(
+            'phone_number_id_mismatch',
+            payload.object,
+            'change.value.metadata.phone_number_id',
+            value,
+          );
+          continue;
+        }
+
+        if (!Array.isArray(value.messages) || value.messages.length === 0) {
+          this.logIgnored(
+            this.hasItems(value.statuses) ? 'statuses_without_messages' : 'messages_missing',
+            payload.object,
+            'change.value.messages',
+            value,
+          );
           continue;
         }
 
         for (const message of value.messages) {
           if (this.isRecord(message)) {
             await this.processMessage(message);
+          } else {
+            this.logIgnored(
+              'invalid_message_shape',
+              payload.object,
+              'change.value.messages[]',
+              value,
+            );
           }
         }
       }
@@ -214,6 +281,29 @@ export class WhatsAppWebhookService {
     }
 
     return value;
+  }
+
+  private logIgnored(
+    reason: WhatsAppWebhookIgnoredReason,
+    object: unknown,
+    field: string,
+    value?: MetaChangeValue,
+  ): void {
+    this.logger.info('whatsapp.webhook.ignored', {
+      reason,
+      object: this.diagnosticText(object),
+      field,
+      hasMessages: this.hasItems(value?.messages),
+      hasStatuses: this.hasItems(value?.statuses),
+    });
+  }
+
+  private diagnosticText(value: unknown): string {
+    return typeof value === 'string' && value.length <= 64 ? value : 'invalid';
+  }
+
+  private hasItems(value: unknown): boolean {
+    return Array.isArray(value) && value.length > 0;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
