@@ -21,6 +21,7 @@ type LeadEvaluationClient = Pick<Prisma.TransactionClient, 'leadEvaluation'>;
 
 const SCORE_EVENT = 'lead-score-contribution';
 const GATE_EVENT = 'lead-readiness-gate';
+const LOW_CONFIDENCE_READINESS_PENALTY = 10;
 
 @Injectable()
 export class LeadScoringService {
@@ -55,11 +56,12 @@ export class LeadScoringService {
         reason: SCORING_BLOCKER_MESSAGES_ES[rule.id],
       }));
     const normalizedScore = this.normalize(rawScore);
+    const finalReadinessScore = this.applyConfidencePenalty(normalizedScore, matchedGateRules);
 
     return {
       rawScore,
       maxPositiveScore: this.config.maxPositiveScore,
-      readinessScore: Math.round(normalizedScore),
+      readinessScore: Math.round(finalReadinessScore),
       status: this.classify(normalizedScore, matchedGateRules),
       rulesVersion: this.config.rulesVersion,
       contributions,
@@ -74,7 +76,10 @@ export class LeadScoringService {
   ): Promise<LeadEvaluationResult> {
     const result = await this.evaluate(input);
     const evaluatedAt = new Date();
-    const persistedScore = new Prisma.Decimal(this.normalize(result.rawScore).toFixed(2));
+    const matchedGateRules = new Set(result.blockers.map(({ ruleId }) => ruleId));
+    const persistedScore = new Prisma.Decimal(
+      this.applyConfidencePenalty(this.normalize(result.rawScore), matchedGateRules).toFixed(2),
+    );
     const data = {
       rawScore: result.rawScore,
       maxPositiveScore: result.maxPositiveScore,
@@ -141,11 +146,7 @@ export class LeadScoringService {
     return {
       analysisPresent,
       analysisFailed: input.analysisFailed,
-      flowComplete:
-        sizeProvided &&
-        detailProvided &&
-        bodyPartProvided &&
-        input.referenceReceived,
+      flowComplete: sizeProvided && detailProvided && bodyPartProvided && input.referenceReceived,
       conversationAbandoned: input.conversationStatus === ConversationStatus.ABANDONED,
       sizeProvided,
       detailProvided,
@@ -179,6 +180,14 @@ export class LeadScoringService {
     const percentage = (rawScore / this.config.maxPositiveScore) * 100;
 
     return Math.min(100, Math.max(0, percentage));
+  }
+
+  private applyConfidencePenalty(score: number, matchedGates: Set<GateRuleId>): number {
+    const penalty =
+      (matchedGates.has('LOW_SIZE_CONFIDENCE') ? LOW_CONFIDENCE_READINESS_PENALTY : 0) +
+      (matchedGates.has('LOW_DETAIL_CONFIDENCE') ? LOW_CONFIDENCE_READINESS_PENALTY : 0);
+
+    return Math.min(100, Math.max(0, score - penalty));
   }
 
   private classify(score: number, matchedGates: Set<GateRuleId>): ReadinessStatus {

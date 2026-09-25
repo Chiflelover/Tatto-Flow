@@ -193,15 +193,45 @@ describe('LeadScoringService', () => {
   );
 
   it.each([
-    ['sizeConfidence', { sizeConfidence: 0.899 }, 'LOW_SIZE_CONFIDENCE'],
-    ['detailConfidence', { detailConfidence: 0.899 }, 'LOW_DETAIL_CONFIDENCE'],
-  ])('never returns LISTO when %s is below 90%%', async (_field, analysis, blocker) => {
-    const result = await createService().evaluate(inputWith({}, analysis));
+    {
+      name: 'both confidences meet the 90% boundary',
+      analysis: { sizeConfidence: 0.9, detailConfidence: 0.9 },
+      expectedReadiness: 100,
+      expectedStatus: ReadinessStatus.LISTO,
+      expectedBlockers: [],
+    },
+    {
+      name: 'only sizeConfidence is below 90%',
+      analysis: { sizeConfidence: 0.89, detailConfidence: 0.95 },
+      expectedReadiness: 90,
+      expectedStatus: ReadinessStatus.REVISAR,
+      expectedBlockers: ['LOW_SIZE_CONFIDENCE'],
+    },
+    {
+      name: 'only detailConfidence is below 90%',
+      analysis: { sizeConfidence: 0.95, detailConfidence: 0.84 },
+      expectedReadiness: 90,
+      expectedStatus: ReadinessStatus.REVISAR,
+      expectedBlockers: ['LOW_DETAIL_CONFIDENCE'],
+    },
+    {
+      name: 'both confidences are below 90%',
+      analysis: { sizeConfidence: 0.89, detailConfidence: 0.84 },
+      expectedReadiness: 80,
+      expectedStatus: ReadinessStatus.REVISAR,
+      expectedBlockers: ['LOW_SIZE_CONFIDENCE', 'LOW_DETAIL_CONFIDENCE'],
+    },
+  ])(
+    'applies the final-readiness confidence penalty when $name',
+    async ({ analysis, expectedReadiness, expectedStatus, expectedBlockers }) => {
+      const result = await createService().evaluate(inputWith({}, analysis));
 
-    expect(result.readinessScore).toBe(100);
-    expect(result.status).toBe(ReadinessStatus.REVISAR);
-    expect(result.blockers.map(({ ruleId }) => ruleId)).toContain(blocker);
-  });
+      expect(result.rawScore).toBe(250);
+      expect(result.readinessScore).toBe(expectedReadiness);
+      expect(result.status).toBe(expectedStatus);
+      expect(result.blockers.map(({ ruleId }) => ruleId)).toEqual(expectedBlockers);
+    },
+  );
 
   it('adds all penalties and keeps contributions equal to the raw score', async () => {
     const result = await createService().evaluate(
@@ -231,7 +261,12 @@ describe('LeadScoringService', () => {
   });
 
   it.each([
-    ['lower bound', configWith({ weights: { NOT_ON_SKIN: -500 } }), { tattooOnSkin: false }, 0],
+    [
+      'lower bound',
+      configWith({ weights: { NOT_ON_SKIN: -500 } }),
+      { tattooOnSkin: false, sizeConfidence: 0.2, detailConfidence: 0.2 },
+      0,
+    ],
     ['upper bound', configWith({ weights: { TATTOO_ON_SKIN: 1_000 } }), {}, 100],
   ])('clamps readiness at the %s', async (_name, config, analysis, expected) => {
     const result = await createService(config).evaluate(inputWith({}, analysis));
@@ -328,6 +363,29 @@ describe('LeadScoringService', () => {
       leadId: '290f2044-e63c-4e49-8847-067cd62426e4',
       rulesVersion: 1,
       readinessScore: new Prisma.Decimal('96.00'),
+    });
+  });
+
+  it('persists the final readiness after both low-confidence penalties without changing rawScore', async () => {
+    const upsert = vi.fn((arguments_: Prisma.LeadEvaluationUpsertArgs) =>
+      Promise.resolve({ id: 'evaluation-id', arguments_ }),
+    );
+
+    const result = await createService().evaluateAndPersist(
+      '290f2044-e63c-4e49-8847-067cd62426e4',
+      inputWith({}, { sizeConfidence: 0.89, detailConfidence: 0.84 }),
+      { leadEvaluation: { upsert } } as unknown as Pick<Prisma.TransactionClient, 'leadEvaluation'>,
+    );
+
+    expect(result).toMatchObject({
+      rawScore: 250,
+      readinessScore: 80,
+      status: ReadinessStatus.REVISAR,
+    });
+    expect(upsert.mock.calls[0]?.[0].update).toMatchObject({
+      rawScore: 250,
+      readinessScore: new Prisma.Decimal('80.00'),
+      readinessStatus: ReadinessStatus.REVISAR,
     });
   });
 });
