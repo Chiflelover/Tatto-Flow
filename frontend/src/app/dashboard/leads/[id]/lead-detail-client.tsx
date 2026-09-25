@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
-import { StatusBadge } from '@/components/dashboard/lead-card';
 import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
 import {
   completeLead,
@@ -22,6 +21,35 @@ import styles from '@/styles/dashboard.module.css';
 const AI_ERROR_MESSAGE =
   'No se pudo analizar automáticamente la referencia. El tatuador debe revisarla manualmente.';
 
+const GATE_EXPLANATIONS: Record<string, string> = {
+  FLOW_INCOMPLETE: 'La cotización está incompleta o la conversación fue abandonada',
+  AI_ERROR: 'No se pudo completar el análisis automático',
+  NOT_ON_SKIN: 'La referencia no corresponde a un tatuaje aplicado sobre piel',
+  SIZE_MISMATCH: 'El tamaño indicado no coincide con el análisis',
+  DETAIL_MISMATCH: 'El nivel de detalle no coincide con el análisis',
+  LOW_SIZE_CONFIDENCE: 'La confianza del tamaño detectado es menor al 90%',
+  SIZE_CONFIDENCE_LOW: 'La confianza del tamaño detectado es menor al 90%',
+  LOW_DETAIL_CONFIDENCE: 'La confianza del detalle detectado es menor al 90%',
+  DETAIL_CONFIDENCE_LOW: 'La confianza del detalle detectado es menor al 90%',
+};
+
+function normalizeExplanation(value: string): string {
+  return value
+    .trim()
+    .replace(/[.!]+$/, '')
+    .toLocaleLowerCase('es-PE');
+}
+
+function gateExplanation(blocker: { ruleId: string; reason: string }): string {
+  const knownExplanation = GATE_EXPLANATIONS[blocker.ruleId];
+  if (knownExplanation) {
+    return knownExplanation;
+  }
+
+  const reason = blocker.reason.trim();
+  return reason && !/^[A-Z0-9_]+$/.test(reason) ? reason : 'La evaluación requiere revisión manual';
+}
+
 export function LeadDetailClient({ leadId }: { leadId: string }) {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDetail | null>(null);
@@ -33,6 +61,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'complete' | null>(null);
+  const [evaluationExpanded, setEvaluationExpanded] = useState(false);
 
   const loadLead = useCallback(async () => {
     try {
@@ -213,9 +242,25 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   }
 
   const requiresReview = lead.status === 'REQUIRES_REVIEW';
-  const verified = lead.status === 'VERIFIED';
   const hasAiError =
     lead.evaluation?.blockers.some((blocker) => blocker.ruleId === 'AI_ERROR') ?? false;
+  const contributionRuleIds = new Set(
+    lead.evaluation?.contributions.map((contribution) => contribution.ruleId) ?? [],
+  );
+  const contributionExplanations = new Set(
+    lead.evaluation?.contributions.map((contribution) =>
+      normalizeExplanation(contribution.reason),
+    ) ?? [],
+  );
+  const gateExplanations =
+    lead.evaluation?.blockers
+      .filter((blocker) => !contributionRuleIds.has(blocker.ruleId))
+      .map(gateExplanation)
+      .filter(
+        (explanation, index, explanations) =>
+          !contributionExplanations.has(normalizeExplanation(explanation)) &&
+          explanations.indexOf(explanation) === index,
+      ) ?? [];
 
   return (
     <>
@@ -229,13 +274,12 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
           <h1>{lead.customerPhoneNumber}</h1>
           <p>Información entregada por el cliente y resultado del análisis.</p>
         </div>
-        <StatusBadge status={lead.status} label={lead.statusLabel} />
       </header>
 
       <section className={styles.leadDetailSummary} aria-label="Resumen del lead">
         <div className={styles.detailReadiness}>
           <div>
-            <span>Preparación</span>
+            <span>Estado</span>
             <ReadinessBadge status={lead.evaluation?.status ?? null} />
           </div>
           <div>
@@ -244,35 +288,13 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
           </div>
         </div>
 
-        <dl className={styles.detailSummaryFacts}>
-          <div>
-            <dt>Cliente</dt>
-            <dd>
-              {lead.selectedSizeLabel ?? 'Tamaño pendiente'} ·{' '}
-              {lead.selectedDetailLabel ?? 'Detalle pendiente'}
-            </dd>
-          </div>
-          <div>
-            <dt>Análisis IA</dt>
-            <dd>
-              {lead.analysis
-                ? `${lead.analysis.detectedSizeLabel} (${Math.round(
-                    lead.analysis.sizeConfidence * 100,
-                  )}%) · ${lead.analysis.detectedDetailLabel} (${Math.round(
-                    lead.analysis.detailConfidence * 100,
-                  )}%)`
-                : 'No disponible'}
-            </dd>
-          </div>
-        </dl>
-
         {lead.evaluation && lead.evaluation.blockers.length > 0 && (
           <div className={styles.detailBlockers}>
             <strong>Requiere atención</strong>
             <ul>
               {lead.evaluation.blockers.map((blocker) => (
                 <li key={blocker.ruleId}>
-                  {blocker.ruleId === 'AI_ERROR' ? AI_ERROR_MESSAGE : blocker.reason}
+                  {blocker.ruleId === 'AI_ERROR' ? AI_ERROR_MESSAGE : gateExplanation(blocker)}
                 </li>
               ))}
             </ul>
@@ -299,61 +321,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 <dt>Zona corporal</dt>
                 <dd>{lead.bodyPart ?? 'Pendiente'}</dd>
               </div>
-              <div>
-                <dt>Precio aproximado</dt>
-                <dd>
-                  {lead.price ? `S/${lead.price.minimum} – S/${lead.price.maximum}` : 'Pendiente'}
-                </dd>
-              </div>
             </dl>
-          </section>
-
-          <section className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <h2>Evaluación del lead</h2>
-            </div>
-            {lead.evaluation ? (
-              <div className={styles.evaluationContent}>
-                <div className={styles.evaluationSummary}>
-                  <div>
-                    <span>Confianza</span>
-                    <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
-                  </div>
-                  <div>
-                    <span>Estado</span>
-                    <ReadinessBadge status={lead.evaluation.status} />
-                  </div>
-                </div>
-
-                {lead.evaluation.contributions.length > 0 && (
-                  <div className={styles.evaluationGroup}>
-                    <h3>Contribuciones</h3>
-                    <ul className={styles.contributionList}>
-                      {lead.evaluation.contributions.map((contribution) => (
-                        <li key={contribution.ruleId}>
-                          <strong
-                            className={
-                              contribution.points >= 0
-                                ? styles.positivePoints
-                                : styles.negativePoints
-                            }
-                          >
-                            {contribution.points > 0 ? '+' : ''}
-                            {contribution.points}
-                          </strong>
-                          <span>{contribution.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className={styles.unevaluatedDetail}>
-                <ReadinessBadge status={null} />
-                <p>Este lead histórico todavía no tiene una evaluación de preparación.</p>
-              </div>
-            )}
           </section>
 
           <section className={styles.panel}>
@@ -361,61 +329,22 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               <h2>Análisis de la referencia</h2>
             </div>
             {lead.analysis ? (
-              <div className={styles.comparisonList}>
-                <div className={styles.comparison}>
-                  <span className={styles.comparisonLabel}>Tamaño</span>
-                  <div className={styles.comparisonValues}>
-                    <div>
-                      <small>Cliente</small>
-                      <strong>{lead.selectedSizeLabel ?? 'Pendiente'}</strong>
-                    </div>
-                    <div>
-                      <small>IA</small>
-                      <strong>
-                        {lead.analysis.detectedSizeLabel} —{' '}
-                        {Math.round(lead.analysis.sizeConfidence * 100)}%
-                      </strong>
-                    </div>
-                  </div>
+              <dl className={styles.analysisFacts}>
+                <div>
+                  <dt>Tamaño detectado</dt>
+                  <dd>{lead.analysis.detectedSizeLabel}</dd>
+                  <small>Confianza: {Math.round(lead.analysis.sizeConfidence * 100)}%</small>
                 </div>
-                <div className={styles.comparison}>
-                  <span className={styles.comparisonLabel}>Detalle</span>
-                  <div className={styles.comparisonValues}>
-                    <div>
-                      <small>Cliente</small>
-                      <strong>{lead.selectedDetailLabel ?? 'Pendiente'}</strong>
-                    </div>
-                    <div>
-                      <small>IA</small>
-                      <strong>
-                        {lead.analysis.detectedDetailLabel} —{' '}
-                        {Math.round(lead.analysis.detailConfidence * 100)}%
-                      </strong>
-                    </div>
-                  </div>
+                <div>
+                  <dt>Detalle detectado</dt>
+                  <dd>{lead.analysis.detectedDetailLabel}</dd>
+                  <small>Confianza: {Math.round(lead.analysis.detailConfidence * 100)}%</small>
                 </div>
-              </div>
+              </dl>
             ) : hasAiError ? (
-              <div className={styles.reviewBox}>
-                <strong>Revisión manual necesaria</strong>
-                <p>{AI_ERROR_MESSAGE}</p>
-              </div>
+              <p className={styles.sentNote}>No hay resultados de análisis disponibles.</p>
             ) : (
               <p className={styles.sentNote}>La referencia todavía no tiene análisis disponible.</p>
-            )}
-
-            {verified && <div className={styles.verifiedBox}>Verificado automáticamente</div>}
-            {requiresReview && !hasAiError && (
-              <div className={styles.reviewBox}>
-                <strong>Requiere revisión del tatuador</strong>
-                {lead.reviewMessages.length > 0 && (
-                  <ul>
-                    {lead.reviewMessages.map((message) => (
-                      <li key={message}>{message}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             )}
           </section>
 
@@ -434,6 +363,68 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 />
               ) : (
                 (referenceError ?? reference?.message ?? 'Cargando imagen de referencia…')
+              )}
+            </div>
+          </section>
+
+          <section className={`${styles.panel} ${styles.evaluationPanel}`}>
+            <button
+              className={styles.evaluationToggle}
+              type="button"
+              aria-expanded={evaluationExpanded}
+              aria-controls="lead-evaluation-details"
+              onClick={() => setEvaluationExpanded((current) => !current)}
+            >
+              <span>Cómo se calculó la evaluación</span>
+              <strong>{evaluationExpanded ? 'Ocultar' : 'Mostrar'}</strong>
+            </button>
+
+            <div
+              id="lead-evaluation-details"
+              className={styles.evaluationContent}
+              hidden={!evaluationExpanded}
+            >
+              {lead.evaluation ? (
+                <>
+                  {lead.evaluation.contributions.length > 0 && (
+                    <div className={styles.evaluationGroup}>
+                      <h3>Contribuciones y penalizaciones</h3>
+                      <ul className={styles.contributionList}>
+                        {lead.evaluation.contributions.map((contribution) => (
+                          <li key={contribution.ruleId}>
+                            <strong
+                              className={
+                                contribution.points >= 0
+                                  ? styles.positivePoints
+                                  : styles.negativePoints
+                              }
+                            >
+                              {contribution.points > 0 ? '+' : ''}
+                              {contribution.points}
+                            </strong>
+                            <span>{contribution.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {gateExplanations.length > 0 && (
+                    <div className={styles.evaluationGroup}>
+                      <h3>Motivos que influyeron en el estado</h3>
+                      <ul className={styles.evaluationBlockerList}>
+                        {gateExplanations.map((explanation) => (
+                          <li key={explanation}>{explanation}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className={styles.unevaluatedDetail}>
+                  <ReadinessBadge status={null} />
+                  <p>Este lead histórico todavía no tiene una evaluación de preparación.</p>
+                </div>
               )}
             </div>
           </section>

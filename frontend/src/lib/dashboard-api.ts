@@ -59,7 +59,6 @@ export interface LeadDetail extends LeadSummary {
     detectedDetailLabel: string;
     detailConfidence: number;
   } | null;
-  reviewMessages: string[];
   evaluation: {
     rawScore: number;
     maxPositiveScore: number;
