@@ -190,7 +190,7 @@ async function dashboardRequest<T>(path: string, init: RequestInit = {}): Promis
     });
   } catch {
     throw new DashboardApiError(
-      'No pudimos conectar con Tatto Flow. Comprueba que el backend esté activo.',
+      'No pudimos conectar con Tatuoflow. Comprueba que el backend esté activo.',
       0,
     );
   }

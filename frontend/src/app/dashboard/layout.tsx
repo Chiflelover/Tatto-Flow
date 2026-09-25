@@ -5,8 +5,8 @@ import { LogoutButton } from '@/components/dashboard/logout-button';
 import styles from '@/styles/dashboard.module.css';
 
 export const metadata: Metadata = {
-  title: 'Dashboard | Tatto Flow',
-  description: 'Pedidos y precios de Tatto Flow',
+  title: 'Dashboard | Tatuoflow',
+  description: 'Pedidos y precios de Tatuoflow',
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -16,7 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard" className={styles.brand}>
           <span aria-hidden="true">TF</span>
           <div>
-            <strong>Tatto Flow</strong>
+            <strong>Tatuoflow</strong>
             <small>Panel del tatuador</small>
           </div>
         </Link>
@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard" className={styles.brand}>
           <span aria-hidden="true">TF</span>
           <div>
-            <strong>Tatto Flow</strong>
+            <strong>Tatuoflow</strong>
             <small>Panel del tatuador</small>
           </div>
         </Link>

@@ -9,7 +9,7 @@ import type {
 } from './chatbot.types.js';
 
 const WELCOME_MESSAGE =
-  'Hola, soy Nita, tu asistente virtual de Tatto Flow 👋\nTe haré unas preguntas para poder atenderte mejor.';
+  'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋\nTe haré unas preguntas para poder atenderte mejor.';
 const SIZE_QUESTION = '¿Qué tamaño aproximado tendrá tu tatuaje?';
 const DETAIL_QUESTION = '¿Qué nivel de detalle tiene el diseño?';
 const BODY_PART_QUESTION = '¿En qué parte del cuerpo será el tatuaje?';

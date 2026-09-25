@@ -384,7 +384,7 @@ function LeadsWorkspace() {
     <>
       <header className={styles.pageHeader}>
         <div>
-          <span>Tatto Flow</span>
+          <span>Tatuoflow</span>
           <h1>Bandeja de leads</h1>
           <p>Prioriza cotizaciones, revisa su preparación y gestiona pendientes.</p>
         </div>

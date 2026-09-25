@@ -4,7 +4,7 @@ import { LoginForm } from './login-form';
 import styles from './login.module.css';
 
 export const metadata: Metadata = {
-  title: 'Ingresar | Tatto Flow',
+  title: 'Ingresar | Tatuoflow',
 };
 
 export default function LoginPage() {
@@ -16,7 +16,7 @@ export default function LoginPage() {
         </div>
         <div className={styles.heading}>
           <span>Panel privado</span>
-          <h1>Bienvenido a Tatto Flow</h1>
+          <h1>Bienvenido a Tatuoflow</h1>
           <p>Ingresa con la cuenta del estudio para revisar tus pedidos.</p>
         </div>
         <LoginForm />

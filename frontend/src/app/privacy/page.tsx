@@ -3,8 +3,8 @@ import Link from 'next/link';
 import styles from './privacy.module.css';
 
 export const metadata: Metadata = {
-  title: 'Política de privacidad | Tatto Flow',
-  description: 'Conoce cómo Tatto Flow utiliza y protege la información de una cotización.',
+  title: 'Política de privacidad | Tatuoflow',
+  description: 'Conoce cómo Tatuoflow utiliza y protege la información de una cotización.',
 };
 
 const privacyContactEmail = process.env.PRIVACY_CONTACT_EMAIL?.trim();
@@ -21,19 +21,19 @@ export default function PrivacyPage() {
         <header className={styles.header}>
           <Link className={styles.brand} href="/login" aria-label="Ir al inicio de sesión">
             <span aria-hidden="true">TF</span>
-            Tatto Flow
+            Tatuoflow
           </Link>
           <p className={styles.eyebrow}>Información para clientes</p>
           <h1>Política de privacidad</h1>
           <p className={styles.updated}>Última actualización: 25 de septiembre de 2026</p>
           <p className={styles.intro}>
-            Cómo Tatto Flow utiliza y protege la información que compartes durante una cotización.
+            Cómo Tatuoflow utiliza y protege la información que compartes durante una cotización.
           </p>
         </header>
 
         <section>
           <h2>Qué información recopilamos</h2>
-          <p>Cuando conversas con Nita por WhatsApp, Tatto Flow puede procesar:</p>
+          <p>Cuando conversas con Nita por WhatsApp, Tatuoflow puede procesar:</p>
           <ul>
             <li>Tu número de WhatsApp y el identificador técnico de cada mensaje recibido.</li>
             <li>
@@ -78,20 +78,20 @@ export default function PrivacyPage() {
         <section>
           <h2>Imágenes de referencia y retención</h2>
           <p>
-            Tatto Flow almacena temporalmente la imagen de referencia en un espacio privado de
+            Tatuoflow almacena temporalmente la imagen de referencia en un espacio privado de
             Supabase. El acceso desde el dashboard requiere autenticación y utiliza enlaces
             temporales; el archivo no se publica como una URL abierta permanente.
           </p>
           <p>
             Cada imagen recibe una fecha de expiración de 15 días. Un proceso automático diario
             busca las imágenes vencidas y elimina sus archivos. Por ello, el objetivo operativo de
-            Tatto Flow es conservarlas durante un máximo de 15 días, aunque una falla temporal del
+            Tatuoflow es conservarlas durante un máximo de 15 días, aunque una falla temporal del
             proceso podría retrasar la eliminación hasta su siguiente ejecución correcta.
           </p>
           <p>
-            Este plazo describe la copia administrada por Tatto Flow en Supabase. El tratamiento
+            Este plazo describe la copia administrada por Tatuoflow en Supabase. El tratamiento
             temporal realizado por los proveedores de inteligencia artificial se rige por sus
-            propias condiciones y configuraciones, que Tatto Flow no controla por completo.
+            propias condiciones y configuraciones, que Tatuoflow no controla por completo.
           </p>
           <p>
             Los demás datos de la cotización —como respuestas, análisis, evaluación, estado y
@@ -111,7 +111,7 @@ export default function PrivacyPage() {
             Google Gemini es el proveedor principal. OpenAI se utiliza como respaldo técnico solo
             cuando Gemini no puede completar el análisis por un error elegible. La inteligencia
             artificial no decide directamente el precio ni el estado final de preparación: esas
-            decisiones se aplican mediante reglas determinísticas de Tatto Flow.
+            decisiones se aplican mediante reglas determinísticas de Tatuoflow.
           </p>
 
           <h3>Google Gemini</h3>
@@ -120,7 +120,7 @@ export default function PrivacyPage() {
             Determinadas modalidades gratuitas pueden permitir a Google utilizar el contenido para
             mejorar sus productos, mientras que los servicios pagados establecen condiciones
             diferentes. El repositorio no permite comprobar qué modalidad está activa en la cuenta
-            utilizada por Tatto Flow.
+            utilizada por Tatuoflow.
           </p>
           <a
             className={styles.externalLink}
@@ -132,7 +132,7 @@ export default function PrivacyPage() {
 
           <h3>OpenAI</h3>
           <p>
-            Tatto Flow usa la API de OpenAI únicamente como respaldo técnico. La solicitud actual
+            Tatuoflow usa la API de OpenAI únicamente como respaldo técnico. La solicitud actual
             utiliza <code>store: false</code>, por lo que no solicita conservar el objeto Response
             como estado de la aplicación. Aun así, esto no significa retención cero: OpenAI indica
             que los datos de API no se usan para entrenar sus modelos por defecto, salvo
@@ -154,14 +154,14 @@ export default function PrivacyPage() {
           <ul className={styles.providerList}>
             <li>
               <strong>Meta / WhatsApp Business Platform:</strong> recibe y transporta los mensajes y
-              archivos antes de que lleguen a Tatto Flow. Su tratamiento se rige también por la{' '}
+              archivos antes de que lleguen a Tatuoflow. Su tratamiento se rige también por la{' '}
               <a
                 href="https://www.whatsapp.com/legal/privacy-policy?lang=es"
                 {...externalLinkProps}
               >
                 política de privacidad de WhatsApp
               </a>
-              . Tatto Flow no controla la retención interna de Meta.
+              . Tatuoflow no controla la retención interna de Meta.
             </li>
             <li>
               <strong>Supabase:</strong> proporciona la base de datos y el almacenamiento privado
@@ -189,7 +189,7 @@ export default function PrivacyPage() {
         <section>
           <h2>Medidas de seguridad</h2>
           <p>
-            Tatto Flow utiliza almacenamiento privado para las imágenes, enlaces temporales para
+            Tatuoflow utiliza almacenamiento privado para las imágenes, enlaces temporales para
             visualizarlas, acceso autenticado al dashboard, secretos mantenidos fuera del frontend,
             registros técnicos sanitizados y eliminación programada de imágenes vencidas. Estas
             medidas reducen riesgos, pero ningún sistema puede garantizar seguridad absoluta.
@@ -199,7 +199,7 @@ export default function PrivacyPage() {
         <section>
           <h2>Contacto y solicitudes sobre tus datos</h2>
           <p>
-            Puedes consultar qué datos gestiona Tatto Flow o solicitar, según corresponda, su
+            Puedes consultar qué datos gestiona Tatuoflow o solicitar, según corresponda, su
             corrección o eliminación. Algunas solicitudes pueden estar sujetas a verificaciones,
             obligaciones aplicables o períodos de tratamiento propios de proveedores externos.
           </p>

@@ -49,7 +49,7 @@ describe('WhatsAppAdapter', () => {
       response(
         ConversationState.ASK_SIZE,
         [
-          'Hola, soy Nita, tu asistente virtual de Tatto Flow 👋',
+          'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋',
           '¿Qué tamaño aproximado tendrá tu tatuaje?',
         ],
         SIZE_OPTIONS,
@@ -63,7 +63,7 @@ describe('WhatsAppAdapter', () => {
         text: 'Hola',
       }),
     ).resolves.toEqual([
-      { type: 'text', text: 'Hola, soy Nita, tu asistente virtual de Tatto Flow 👋' },
+      { type: 'text', text: 'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋' },
       {
         type: 'interactive_buttons',
         body: '¿Qué tamaño aproximado tendrá tu tatuaje?',

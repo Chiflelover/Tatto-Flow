@@ -2,7 +2,7 @@
   "name": "@tatto-flow/backend",
   "version": "0.1.0",
   "type": "module",
-  "description": "Tatto Flow API",
+  "description": "Tatuoflow API",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
