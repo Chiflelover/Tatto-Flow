@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ConversationState,
   ConversationStatus,
@@ -44,6 +45,8 @@ export class ChatbotService {
     private readonly imageAnalysisWorkflow: ImageAnalysisWorkflowService,
     @Inject(NitaBusinessHoursService)
     private readonly businessHours: NitaBusinessHoursService,
+    @Inject(ConfigService)
+    private readonly configService: ConfigService,
   ) {}
 
   async processStart(customerIdentifier: string): Promise<ChatbotResponse> {
@@ -195,7 +198,7 @@ export class ChatbotService {
     const now = new Date();
     const customer = await this.customersService.findOrCreateByPhoneNumber(customerIdentifier);
 
-    if (!this.businessHours.isOpen(now)) {
+    if (!this.hasBusinessHoursTestBypass(customerIdentifier) && !this.businessHours.isOpen(now)) {
       const currentConversation = await this.conversationsService.findCurrentForCustomer(
         customer.id,
       );
@@ -221,6 +224,12 @@ export class ChatbotService {
     const { conversation } = await this.conversationsService.getOrCreateActive(customer.id);
 
     return { conversation };
+  }
+
+  private hasBusinessHoursTestBypass(customerIdentifier: string): boolean {
+    const testPhone = this.configService.get<string>('BUSINESS_HOURS_TEST_PHONE');
+
+    return Boolean(testPhone) && customerIdentifier === testPhone;
   }
 
   private async applyDecision(

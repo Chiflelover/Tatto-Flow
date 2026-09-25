@@ -7,6 +7,7 @@ import {
   type Conversation,
   type Customer,
 } from '../../generated/prisma/client.js';
+import { ConfigService } from '@nestjs/config';
 import { ConversationsService } from '../conversations/conversations.service.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { ImageAnalysisWorkflowService } from '../image-analysis/image-analysis-workflow.service.js';
@@ -61,6 +62,7 @@ describe('ChatbotService', () => {
       new NitaStateMachine(),
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
+      new ConfigService(),
     );
 
     const response = await service.processStart(customer.phoneNumber);
@@ -138,6 +140,7 @@ describe('ChatbotService', () => {
         new NitaStateMachine(),
         imageAnalysisWorkflow,
         openBusinessHours(),
+        new ConfigService(),
       );
 
       const response = await service.processImageMessage(customer.phoneNumber, {
@@ -175,6 +178,7 @@ describe('ChatbotService', () => {
       new NitaStateMachine(),
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
+      new ConfigService(),
     );
 
     const response = await service.processTextMessage(
@@ -221,6 +225,7 @@ describe('ChatbotService', () => {
         analyzeConversationImage: vi.fn().mockRejectedValue(new LeadImageStorageException()),
       } as unknown as ImageAnalysisWorkflowService,
       openBusinessHours(),
+      new ConfigService(),
     );
 
     const response = await service.processImageMessage(customer.phoneNumber, {

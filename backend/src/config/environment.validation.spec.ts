@@ -89,3 +89,24 @@ describe('storage environment validation', () => {
     expect(result.SUPABASE_STORAGE_BUCKET).toBe('tattoo-references');
   });
 });
+
+describe('business-hours test phone environment validation', () => {
+  it('keeps the bypass disabled when the optional value is absent or empty', () => {
+    expect(validateEnvironment(BASE_ENVIRONMENT).BUSINESS_HOURS_TEST_PHONE).toBeUndefined();
+    expect(
+      validateEnvironment({
+        ...BASE_ENVIRONMENT,
+        BUSINESS_HOURS_TEST_PHONE: '   ',
+      }).BUSINESS_HOURS_TEST_PHONE,
+    ).toBeUndefined();
+  });
+
+  it('trims and preserves the configured test phone for exact matching', () => {
+    expect(
+      validateEnvironment({
+        ...BASE_ENVIRONMENT,
+        BUSINESS_HOURS_TEST_PHONE: ' test-phone-authorized ',
+      }).BUSINESS_HOURS_TEST_PHONE,
+    ).toBe('test-phone-authorized');
+  });
+});

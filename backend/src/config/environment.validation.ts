@@ -18,6 +18,12 @@ function parseString(name: string, value: unknown, defaultValue: string): string
   return parsedValue.trim();
 }
 
+function parseOptionalString(name: string, value: unknown): string | undefined {
+  const parsedValue = parseString(name, value, '');
+
+  return parsedValue || undefined;
+}
+
 function parseAiFallbackProvider(value: unknown): AiFallbackProvider {
   const provider = parseString(
     'AI_FALLBACK_PROVIDER',
@@ -105,6 +111,10 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
       'SESSION_TTL_HOURS',
       environment.SESSION_TTL_HOURS,
       DEFAULT_SESSION_TTL_HOURS,
+    ),
+    BUSINESS_HOURS_TEST_PHONE: parseOptionalString(
+      'BUSINESS_HOURS_TEST_PHONE',
+      environment.BUSINESS_HOURS_TEST_PHONE,
     ),
     STORAGE_MODE: storageMode,
     SUPABASE_STORAGE_BUCKET: parseString(
