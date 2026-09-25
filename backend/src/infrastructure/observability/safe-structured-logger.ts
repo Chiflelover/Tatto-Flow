@@ -13,6 +13,7 @@ const SENSITIVE_FIELD =
   /(?:api.?key|authorization|binary|content|cron.?secret|database.?url|direct.?url|image.?bytes|image.?content|meta.?app.?secret|password|payload|phone|prompt|recipient|secret|signed.?url|storage.?path|token|webhook.?body)/i;
 const SECRET_ENV_NAMES = [
   'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
   'WHATSAPP_ACCESS_TOKEN',
   'META_APP_SECRET',
   'CRON_SECRET',

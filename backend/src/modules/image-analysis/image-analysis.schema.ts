@@ -1,4 +1,4 @@
-export const GEMINI_ANALYSIS_RESPONSE_SCHEMA = {
+export const IMAGE_ANALYSIS_RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {

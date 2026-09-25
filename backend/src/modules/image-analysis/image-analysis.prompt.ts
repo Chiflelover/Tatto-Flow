@@ -1,6 +1,6 @@
-export const GEMINI_ANALYSIS_PROMPT_VERSION = 1;
+export const IMAGE_ANALYSIS_PROMPT_VERSION = 1;
 
-export const GEMINI_ANALYSIS_PROMPT = `
+export const IMAGE_ANALYSIS_PROMPT = `
 Analiza exclusivamente la imagen de referencia de tatuaje y responde usando el schema JSON indicado.
 
 Clasificación de tamaño visual para Tatto Flow:

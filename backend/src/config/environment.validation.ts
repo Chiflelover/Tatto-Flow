@@ -1,14 +1,9 @@
-import { DetailLevel, TattooSize } from '../generated/prisma/client.js';
-
-export type AiMode = 'mock' | 'gemini';
+export type AiFallbackProvider = 'none' | 'openai';
 export type StorageMode = 'memory' | 'supabase';
 
-const DEFAULT_AI_MODE: AiMode = 'mock';
-const DEFAULT_MOCK_SIZE = TattooSize.MEDIUM;
-const DEFAULT_MOCK_SIZE_CONFIDENCE = 0.95;
-const DEFAULT_MOCK_DETAIL = DetailLevel.DETAILED;
-const DEFAULT_MOCK_DETAIL_CONFIDENCE = 0.96;
+const DEFAULT_AI_FALLBACK_PROVIDER: AiFallbackProvider = 'none';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna';
 const DEFAULT_SESSION_TTL_HOURS = 168;
 const DEFAULT_STORAGE_MODE: StorageMode = 'supabase';
 const DEFAULT_STORAGE_BUCKET = 'tattoo-references';
@@ -23,14 +18,18 @@ function parseString(name: string, value: unknown, defaultValue: string): string
   return parsedValue.trim();
 }
 
-function parseAiMode(value: unknown): AiMode {
-  const mode = parseString('AI_MODE', value, DEFAULT_AI_MODE).toLowerCase();
+function parseAiFallbackProvider(value: unknown): AiFallbackProvider {
+  const provider = parseString(
+    'AI_FALLBACK_PROVIDER',
+    value,
+    DEFAULT_AI_FALLBACK_PROVIDER,
+  ).toLowerCase();
 
-  if (mode !== 'mock' && mode !== 'gemini') {
-    throw new Error('AI_MODE debe ser "mock" o "gemini".');
+  if (provider !== 'none' && provider !== 'openai') {
+    throw new Error('AI_FALLBACK_PROVIDER debe ser "none" u "openai".');
   }
 
-  return mode;
+  return provider;
 }
 
 function parseStorageMode(value: unknown): StorageMode {
@@ -69,38 +68,6 @@ function parseSupabaseUrl(value: unknown): string {
   return parsedValue;
 }
 
-function parseEnumValue<TValue extends string>(
-  name: string,
-  value: unknown,
-  allowedValues: readonly TValue[],
-  defaultValue: TValue,
-): TValue {
-  const normalizedValue = parseString(name, value, defaultValue).toUpperCase();
-  const parsedValue = allowedValues.find((allowedValue) => allowedValue === normalizedValue);
-
-  if (!parsedValue) {
-    throw new Error(`${name} debe ser uno de: ${allowedValues.join(', ')}.`);
-  }
-
-  return parsedValue;
-}
-
-function parseConfidence(name: string, value: unknown, defaultValue: number): number {
-  const rawValue = value ?? defaultValue;
-
-  if (typeof rawValue !== 'string' && typeof rawValue !== 'number') {
-    throw new Error(`${name} debe ser un número entre 0 y 1.`);
-  }
-
-  const parsedValue = Number(rawValue);
-
-  if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 1) {
-    throw new Error(`${name} debe ser un número entre 0 y 1.`);
-  }
-
-  return parsedValue;
-}
-
 function parsePositiveInteger(name: string, value: unknown, defaultValue: number): number {
   const parsedValue = Number(value ?? defaultValue);
 
@@ -112,38 +79,26 @@ function parsePositiveInteger(name: string, value: unknown, defaultValue: number
 }
 
 export function validateEnvironment(environment: Record<string, unknown>): Record<string, unknown> {
-  const aiMode = parseAiMode(environment.AI_MODE);
+  const aiFallbackProvider = parseAiFallbackProvider(environment.AI_FALLBACK_PROVIDER);
   const storageMode = parseStorageMode(environment.STORAGE_MODE);
 
   return {
     ...environment,
-    AI_MODE: aiMode,
-    AI_MOCK_SIZE: parseEnumValue(
-      'AI_MOCK_SIZE',
-      environment.AI_MOCK_SIZE,
-      Object.values(TattooSize),
-      DEFAULT_MOCK_SIZE,
-    ),
-    AI_MOCK_SIZE_CONFIDENCE: parseConfidence(
-      'AI_MOCK_SIZE_CONFIDENCE',
-      environment.AI_MOCK_SIZE_CONFIDENCE,
-      DEFAULT_MOCK_SIZE_CONFIDENCE,
-    ),
-    AI_MOCK_DETAIL: parseEnumValue(
-      'AI_MOCK_DETAIL',
-      environment.AI_MOCK_DETAIL,
-      Object.values(DetailLevel),
-      DEFAULT_MOCK_DETAIL,
-    ),
-    AI_MOCK_DETAIL_CONFIDENCE: parseConfidence(
-      'AI_MOCK_DETAIL_CONFIDENCE',
-      environment.AI_MOCK_DETAIL_CONFIDENCE,
-      DEFAULT_MOCK_DETAIL_CONFIDENCE,
+    AI_FALLBACK_PROVIDER: aiFallbackProvider,
+    GEMINI_API_KEY: parseRequiredProviderString(
+      'GEMINI_API_KEY',
+      environment.GEMINI_API_KEY,
+      'Gemini es el proveedor principal obligatorio.',
     ),
     GEMINI_MODEL: parseString('GEMINI_MODEL', environment.GEMINI_MODEL, DEFAULT_GEMINI_MODEL),
-    ...(aiMode === 'gemini'
+    OPENAI_MODEL: parseString('OPENAI_MODEL', environment.OPENAI_MODEL, DEFAULT_OPENAI_MODEL),
+    ...(aiFallbackProvider === 'openai'
       ? {
-          GEMINI_API_KEY: parseRequiredAiString('GEMINI_API_KEY', environment.GEMINI_API_KEY),
+          OPENAI_API_KEY: parseRequiredProviderString(
+            'OPENAI_API_KEY',
+            environment.OPENAI_API_KEY,
+            'Es obligatorio cuando AI_FALLBACK_PROVIDER=openai.',
+          ),
         }
       : {}),
     SESSION_TTL_HOURS: parsePositiveInteger(
@@ -169,11 +124,11 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
   };
 }
 
-function parseRequiredAiString(name: string, value: unknown): string {
+function parseRequiredProviderString(name: string, value: unknown, reason: string): string {
   const parsedValue = parseString(name, value, '');
 
   if (!parsedValue) {
-    throw new Error(`${name} es obligatorio cuando AI_MODE=gemini.`);
+    throw new Error(`${name} es obligatorio. ${reason}`);
   }
 
   return parsedValue;

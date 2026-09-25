@@ -1,70 +1,84 @@
 import { validateEnvironment } from './environment.validation.js';
 
+const BASE_ENVIRONMENT = {
+  GEMINI_API_KEY: 'test-only-gemini-key',
+  STORAGE_MODE: 'memory',
+};
+
 describe('AI environment validation', () => {
-  it('keeps mock as the default without requiring a Gemini key', () => {
-    const result = validateEnvironment({ STORAGE_MODE: 'memory' });
-
-    expect(result.AI_MODE).toBe('mock');
-    expect(result.GEMINI_MODEL).toBe('gemini-3.8-flash');
-    expect(result.GEMINI_API_KEY).toBeUndefined();
-  });
-
-  it('requires a backend-only Gemini key when gemini mode is selected', () => {
-    expect(() => validateEnvironment({ AI_MODE: 'gemini', STORAGE_MODE: 'memory' })).toThrow(
-      'GEMINI_API_KEY es obligatorio cuando AI_MODE=gemini.',
+  it('requires Gemini credentials because Gemini is always the primary provider', () => {
+    expect(() => validateEnvironment({ STORAGE_MODE: 'memory' })).toThrow(
+      'GEMINI_API_KEY es obligatorio. Gemini es el proveedor principal obligatorio.',
     );
   });
 
-  it('accepts Gemini mode and a configurable model', () => {
+  it('defaults to Gemini without a fallback and uses the documented models', () => {
+    const result = validateEnvironment(BASE_ENVIRONMENT);
+
+    expect(result.AI_FALLBACK_PROVIDER).toBe('none');
+    expect(result.GEMINI_MODEL).toBe('gemini-3.8-flash');
+    expect(result.OPENAI_MODEL).toBe('gpt-5.6-luna');
+  });
+
+  it('accepts configurable Gemini and OpenAI models', () => {
     const result = validateEnvironment({
-      AI_MODE: 'gemini',
-      GEMINI_API_KEY: 'test-only-key',
+      ...BASE_ENVIRONMENT,
       GEMINI_MODEL: 'gemini-test-model',
-      STORAGE_MODE: 'memory',
+      OPENAI_MODEL: 'openai-test-model',
     });
 
-    expect(result.AI_MODE).toBe('gemini');
     expect(result.GEMINI_MODEL).toBe('gemini-test-model');
+    expect(result.OPENAI_MODEL).toBe('openai-test-model');
   });
 
-  it('rejects unsupported providers', () => {
-    expect(() => validateEnvironment({ AI_MODE: 'openai', STORAGE_MODE: 'memory' })).toThrow(
-      'AI_MODE debe ser "mock" o "gemini".',
-    );
-  });
-
-  it('rejects a mock confidence lower than zero', () => {
+  it('requires an OpenAI key only when the fallback is enabled', () => {
     expect(() =>
       validateEnvironment({
-        AI_MODE: 'mock',
-        AI_MOCK_SIZE_CONFIDENCE: '-0.01',
+        ...BASE_ENVIRONMENT,
+        AI_FALLBACK_PROVIDER: 'openai',
       }),
-    ).toThrow('AI_MOCK_SIZE_CONFIDENCE debe ser un número entre 0 y 1.');
+    ).toThrow('OPENAI_API_KEY es obligatorio. Es obligatorio cuando AI_FALLBACK_PROVIDER=openai.');
+
+    expect(
+      validateEnvironment({
+        ...BASE_ENVIRONMENT,
+        AI_FALLBACK_PROVIDER: 'openai',
+        OPENAI_API_KEY: 'test-only-openai-key',
+      }).AI_FALLBACK_PROVIDER,
+    ).toBe('openai');
   });
 
-  it('rejects a mock confidence higher than one', () => {
+  it('does not require an OpenAI key when the fallback is disabled', () => {
+    expect(validateEnvironment(BASE_ENVIRONMENT).OPENAI_API_KEY).toBeUndefined();
+  });
+
+  it('rejects unsupported fallback providers', () => {
     expect(() =>
       validateEnvironment({
-        AI_MODE: 'mock',
-        AI_MOCK_DETAIL_CONFIDENCE: '1.01',
+        ...BASE_ENVIRONMENT,
+        AI_FALLBACK_PROVIDER: 'mock',
       }),
-    ).toThrow('AI_MOCK_DETAIL_CONFIDENCE debe ser un número entre 0 y 1.');
+    ).toThrow('AI_FALLBACK_PROVIDER debe ser "none" u "openai".');
   });
 });
 
 describe('storage environment validation', () => {
   it('uses memory storage only when it is selected explicitly', () => {
-    expect(validateEnvironment({ STORAGE_MODE: 'memory' }).STORAGE_MODE).toBe('memory');
+    expect(validateEnvironment(BASE_ENVIRONMENT).STORAGE_MODE).toBe('memory');
   });
 
   it('requires backend Supabase credentials in supabase mode', () => {
-    expect(() => validateEnvironment({ STORAGE_MODE: 'supabase' })).toThrow(
-      'SUPABASE_URL es obligatorio cuando STORAGE_MODE=supabase.',
-    );
+    expect(() =>
+      validateEnvironment({
+        GEMINI_API_KEY: BASE_ENVIRONMENT.GEMINI_API_KEY,
+        STORAGE_MODE: 'supabase',
+      }),
+    ).toThrow('SUPABASE_URL es obligatorio cuando STORAGE_MODE=supabase.');
   });
 
   it('accepts the private bucket backend configuration without exposing its secret', () => {
     const result = validateEnvironment({
+      GEMINI_API_KEY: BASE_ENVIRONMENT.GEMINI_API_KEY,
       STORAGE_MODE: 'supabase',
       SUPABASE_URL: 'https://project-ref.supabase.co',
       SUPABASE_SECRET_KEY: 'backend-secret',

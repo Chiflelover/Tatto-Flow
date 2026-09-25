@@ -17,8 +17,8 @@ import { LeadImageService } from '../storage/lead-image.service.js';
 import { ValidationService } from '../validation/validation.service.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
 import { toImageAnalysisResult } from './domain/persisted-image-analysis.js';
+import { AIProviderError } from './ai-provider.error.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
-import { GeminiImageAnalysisError } from './gemini-image-analysis.service.js';
 
 export interface QuotationPricingSnapshot {
   ruleId: string;
@@ -424,24 +424,21 @@ export class ImageAnalysisWorkflowService {
     leadId: string,
     startedAt: number,
   ): void {
-    const code = error instanceof GeminiImageAnalysisError ? error.code : 'PROVIDER_ERROR';
-    const eventByCode: Partial<Record<GeminiImageAnalysisError['code'], string>> = {
-      RATE_LIMITED: 'ai.analysis.rate_limited',
+    const code = error instanceof AIProviderError ? error.category : 'PROVIDER_ERROR';
+    const eventByCode: Partial<Record<AIProviderError['category'], string>> = {
+      RATE_LIMIT: 'ai.analysis.rate_limited',
       TIMEOUT: 'ai.analysis.timeout',
       INVALID_RESPONSE: 'ai.analysis.invalid_response',
     };
 
-    this.logger.error(
-      eventByCode[code as GeminiImageAnalysisError['code']] ?? 'ai.analysis.failed',
-      {
-        conversationId,
-        leadId,
-        provider: this.imageAnalysisService.providerName,
-        durationMs: Date.now() - startedAt,
-        result: 'failure',
-        errorCode: code,
-      },
-    );
+    this.logger.error(eventByCode[code as AIProviderError['category']] ?? 'ai.analysis.failed', {
+      conversationId,
+      leadId,
+      provider: this.imageAnalysisService.providerName,
+      durationMs: Date.now() - startedAt,
+      result: 'failure',
+      errorCode: code,
+    });
   }
 
   private logFinalWorkflowStatus(conversationId: string, lead: Lead): void {

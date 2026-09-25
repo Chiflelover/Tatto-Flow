@@ -2,11 +2,11 @@
 
 Sistema de cotizaciones para estudios de tatuajes. Incluye una API NestJS con Prisma/PostgreSQL, referencias privadas en Supabase Storage, el flujo conversacional de Nita y un dashboard privado mobile-first construido con Next.js.
 
-OpenAI permanece en modo mock. La recepción y respuesta de Nita puede conectarse a WhatsApp Cloud API mediante el webhook firmado del backend.
+Gemini es el proveedor principal de análisis visual. OpenAI puede habilitarse como fallback técnico opcional después de que Gemini agote sus dos intentos. La recepción y respuesta de Nita puede conectarse a WhatsApp Cloud API mediante el webhook firmado del backend.
 
 ## Requisitos
 
-- Node.js 20.9 o superior
+- Node.js 22 o superior (producción usa Node.js 24)
 - npm 10 o superior
 - PostgreSQL accesible mediante `DATABASE_URL`
 - Un bucket privado de Supabase Storage llamado `tattoo-references`
@@ -35,6 +35,8 @@ Para utilizar Supabase Storage, configura solo en `backend/.env` las variables `
 Supabase es el modo predeterminado. `STORAGE_MODE=memory` existe únicamente para pruebas aisladas y no debe usarse como almacenamiento principal.
 
 Para WhatsApp Cloud API configura en `backend/.env` las variables `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_VERIFY_TOKEN`, `META_APP_SECRET` y `WHATSAPP_GRAPH_API_VERSION`. Registra en Meta el callback público HTTPS que apunte a `/api/whatsapp/webhook`; el mismo endpoint atiende la verificación GET y los eventos POST firmados. Antes de levantar esta integración aplica las migraciones para crear el registro persistente de IDs de mensajes entrantes.
+
+Para el análisis visual configura siempre `GEMINI_API_KEY` y `GEMINI_MODEL`. Gemini es fijo como proveedor primario. `AI_FALLBACK_PROVIDER=none` desactiva el fallback; para habilitarlo usa `AI_FALLBACK_PROVIDER=openai` y configura también `OPENAI_API_KEY` y `OPENAI_MODEL` (por defecto `gpt-5.6-luna`). OpenAI se invoca una sola vez y únicamente ante fallos técnicos de Gemini; una respuesta visual válida con baja confianza o discrepancias no activa el fallback.
 
 Las referencias se validan y suben a `leads/{leadId}/{uuid}.{ext}` con sobrescritura desactivada. PostgreSQL conserva únicamente `storagePath` y las fechas de retención. El dashboard obtiene una URL firmada de cinco minutos mediante un endpoint autenticado; un trabajo diario elimina el objeto al cumplir 15 días y marca `deletedAt` sin borrar el Lead, su análisis ni su precio.
 

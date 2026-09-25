@@ -20,12 +20,12 @@ import { PricingService } from '../pricing/pricing.service.js';
 import { LeadImageService } from '../storage/lead-image.service.js';
 import { ValidationService } from '../validation/validation.service.js';
 import { ImageAmbiguityLevel, type ImageAnalysisResult } from './domain/image-analysis.types.js';
+import { AIProviderError } from './ai-provider.error.js';
 import {
   type CompletedImageAnalysis,
   ImageAnalysisWorkflowService,
 } from './image-analysis-workflow.service.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
-import { GeminiImageAnalysisError } from './gemini-image-analysis.service.js';
 
 const CONVERSATION_ID = 'a459f257-b03c-48f4-9091-2dc37871ef81';
 const LEAD_ID = '290f2044-e63c-4e49-8847-067cd62426e4';
@@ -339,14 +339,21 @@ describe('ImageAnalysisWorkflowService quotation finalization', () => {
   });
 
   it.each([
-    ['API_ERROR', 'ai.analysis.failed'],
-    ['RATE_LIMITED', 'ai.analysis.rate_limited'],
+    ['SERVER_ERROR', 'ai.analysis.failed'],
+    ['RATE_LIMIT', 'ai.analysis.rate_limited'],
     ['TIMEOUT', 'ai.analysis.timeout'],
   ] as const)(
     'logs a safe %s provider failure and preserves review fallback',
     async (code, event) => {
       const errorLog = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      const fixture = createFixture({ analysisError: new GeminiImageAnalysisError(code) });
+      const fixture = createFixture({
+        analysisError: new AIProviderError({
+          provider: 'gemini',
+          category: code,
+          retryable: false,
+          fallbackEligible: false,
+        }),
+      });
 
       const result = await fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE);
 
