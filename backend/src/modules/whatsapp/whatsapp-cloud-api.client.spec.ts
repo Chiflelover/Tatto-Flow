@@ -10,6 +10,8 @@ const TEST_CONFIGURATION = {
   WHATSAPP_BUSINESS_ACCOUNT_ID: '0987654321',
   WHATSAPP_GRAPH_API_VERSION: 'v99.0',
 };
+const SIZE_GUIDE_URL = 'https://tatuoflow.example/nita-size-guide.png';
+const DETAIL_GUIDE_URL = 'https://tatuoflow.example/nita-detail-guide.png';
 
 function createClient() {
   return new WhatsAppCloudApiClient(new ConfigService(TEST_CONFIGURATION));
@@ -112,6 +114,7 @@ describe('WhatsAppCloudApiClient', () => {
     await createClient().sendMessage('51999999999', {
       type: 'interactive_buttons',
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+      headerImageUrl: SIZE_GUIDE_URL,
       buttons: [
         { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
         { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
@@ -121,15 +124,92 @@ describe('WhatsAppCloudApiClient', () => {
 
     const body = parseRequestBody(fetchMock.mock.calls[0]?.[1]) as {
       type: string;
-      interactive: { type: string; action: { buttons: unknown[] } };
+      interactive: {
+        type: string;
+        header: { type: string; image: { link: string } };
+        action: { buttons: unknown[] };
+      };
     };
     expect(body.type).toBe('interactive');
     expect(body.interactive.type).toBe('button');
+    expect(body.interactive.header).toEqual({
+      type: 'image',
+      image: { link: SIZE_GUIDE_URL },
+    });
     expect(body.interactive.action.buttons).toEqual([
       { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' } },
       { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' } },
       { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' } },
     ]);
+  });
+
+  it('retries the same size buttons without the image when its delivery fails', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 400 }))
+      .mockResolvedValueOnce(successfulResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createClient().sendMessage('51999999999', {
+      type: 'interactive_buttons',
+      body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+      headerImageUrl: SIZE_GUIDE_URL,
+      buttons: [
+        { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
+        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
+        { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
+      ],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retriedBody = parseRequestBody(fetchMock.mock.calls[1]?.[1]) as {
+      interactive: {
+        header?: unknown;
+        body: { text: string };
+        action: { buttons: unknown[] };
+      };
+    };
+    expect(retriedBody.interactive.header).toBeUndefined();
+    expect(retriedBody.interactive.body.text).toContain('¿Qué tamaño aproximado tendrá');
+    expect(retriedBody.interactive.action.buttons).toHaveLength(3);
+  });
+
+  it('retries the same detail buttons without the image when its delivery fails', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 400 }))
+      .mockResolvedValueOnce(successfulResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createClient().sendMessage('51999999999', {
+      type: 'interactive_buttons',
+      body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
+      headerImageUrl: DETAIL_GUIDE_URL,
+      buttons: [
+        { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
+        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
+        { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+      ],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = parseRequestBody(fetchMock.mock.calls[0]?.[1]) as {
+      interactive: { header?: unknown; action: { buttons: unknown[] } };
+    };
+    const retriedBody = parseRequestBody(fetchMock.mock.calls[1]?.[1]) as {
+      interactive: {
+        header?: unknown;
+        body: { text: string };
+        action: { buttons: unknown[] };
+      };
+    };
+    expect(firstBody.interactive.header).toEqual({
+      type: 'image',
+      image: { link: DETAIL_GUIDE_URL },
+    });
+    expect(retriedBody.interactive.header).toBeUndefined();
+    expect(retriedBody.interactive.body.text).toContain('¿Qué nivel de detalle buscas');
+    expect(retriedBody.interactive.action.buttons).toEqual(firstBody.interactive.action.buttons);
   });
 
   it('falls back to an equivalent text list after a deterministic button rejection', async () => {

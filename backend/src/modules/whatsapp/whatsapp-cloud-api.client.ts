@@ -46,6 +46,20 @@ export class WhatsAppCloudApiClient {
       return;
     }
 
+    if (message.headerImageUrl) {
+      try {
+        await this.sendButtons(
+          normalizedRecipient,
+          message.body,
+          message.buttons,
+          message.headerImageUrl,
+        );
+        return;
+      } catch {
+        this.logger.warn('whatsapp.visual_guide.unavailable');
+      }
+    }
+
     try {
       await this.sendButtons(normalizedRecipient, message.body, message.buttons);
     } catch (error) {
@@ -130,6 +144,7 @@ export class WhatsAppCloudApiClient {
     recipient: string,
     body: string,
     buttons: Array<{ id: string; title: string }>,
+    headerImageUrl?: string,
   ): Promise<void> {
     if (
       !body.trim() ||
@@ -140,6 +155,10 @@ export class WhatsAppCloudApiClient {
       throw new BadRequestException('El mensaje interactivo de WhatsApp no es válido.');
     }
 
+    if (headerImageUrl && !this.isPublicHttpsUrl(headerImageUrl)) {
+      throw new BadRequestException('La imagen del mensaje interactivo no es válida.');
+    }
+
     await this.postMessage({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -147,6 +166,7 @@ export class WhatsAppCloudApiClient {
       type: 'interactive',
       interactive: {
         type: 'button',
+        ...(headerImageUrl ? { header: { type: 'image', image: { link: headerImageUrl } } } : {}),
         body: { text: body },
         action: {
           buttons: buttons.map(({ id, title }) => ({
@@ -309,6 +329,20 @@ export class WhatsAppCloudApiClient {
 
   private graphBaseUrl(version: string): string {
     return `https://graph.facebook.com/${version}`;
+  }
+
+  private isPublicHttpsUrl(value: string): boolean {
+    if (value.length > 2_048) {
+      return false;
+    }
+
+    try {
+      const url = new URL(value);
+
+      return url.protocol === 'https:' && !url.username && !url.password;
+    } catch {
+      return false;
+    }
   }
 
   private parseMediaDownloadUrl(value: unknown): URL {

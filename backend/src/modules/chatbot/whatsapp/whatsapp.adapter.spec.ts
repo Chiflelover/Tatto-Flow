@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
 import type { ChatbotOption, ChatbotResponse } from '../domain/chatbot.types.js';
@@ -26,16 +27,21 @@ const DETAIL_OPTIONS: ChatbotOption[] = [
   { value: DetailLevel.MEDIUM, label: 'Medio' },
   { value: DetailLevel.DETAILED, label: 'Detallado' },
 ];
+const SIZE_GUIDE_URL = 'https://tatuoflow.example/nita-size-guide.png';
+const DETAIL_GUIDE_URL = 'https://tatuoflow.example/nita-detail-guide.png';
 
 describe('WhatsAppAdapter', () => {
   const processOptionSelection = vi.fn<ChatbotService['processOptionSelection']>();
   const processTextMessage = vi.fn<ChatbotService['processTextMessage']>();
   const processImageMessage = vi.fn<ChatbotService['processImageMessage']>();
-  const adapter = new WhatsAppAdapter({
-    processOptionSelection,
-    processTextMessage,
-    processImageMessage,
-  } as unknown as ChatbotService);
+  const adapter = new WhatsAppAdapter(
+    {
+      processOptionSelection,
+      processTextMessage,
+      processImageMessage,
+    } as unknown as ChatbotService,
+    new ConfigService({ FRONTEND_URL: 'https://tatuoflow.example' }),
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -70,6 +76,7 @@ describe('WhatsAppAdapter', () => {
       {
         type: 'interactive_buttons',
         body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+        headerImageUrl: SIZE_GUIDE_URL,
         buttons: [
           { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
           { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
@@ -100,10 +107,72 @@ describe('WhatsAppAdapter', () => {
       {
         type: 'interactive_buttons',
         body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
+        headerImageUrl: DETAIL_GUIDE_URL,
         buttons: [
           { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
           { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
           { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps the existing transition after a detail button selection', async () => {
+    processOptionSelection.mockResolvedValue(
+      response(ConversationState.ASK_BODY_PART, [
+        '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?',
+      ]),
+    );
+
+    await expect(
+      adapter.handleIncoming({
+        type: 'button_reply',
+        customerIdentifier: '+51911111111',
+        buttonId: WHATSAPP_BUTTON_IDS.LIGHT,
+      }),
+    ).resolves.toEqual([
+      {
+        type: 'text',
+        text: '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?',
+      },
+    ]);
+    expect(processOptionSelection).toHaveBeenCalledOnce();
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', DetailLevel.LIGHT);
+  });
+
+  it('keeps the size question and buttons available when no public guide URL is configured', async () => {
+    processTextMessage.mockResolvedValue(
+      response(
+        ConversationState.ASK_SIZE,
+        [
+          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+        ],
+        SIZE_OPTIONS,
+      ),
+    );
+    const adapterWithoutGuide = new WhatsAppAdapter(
+      {
+        processOptionSelection,
+        processTextMessage,
+        processImageMessage,
+      } as unknown as ChatbotService,
+      new ConfigService(),
+    );
+
+    await expect(
+      adapterWithoutGuide.handleIncoming({
+        type: 'text',
+        customerIdentifier: '+51911111111',
+        text: 'Hola',
+      }),
+    ).resolves.toEqual([
+      {
+        type: 'interactive_buttons',
+        body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+        buttons: [
+          { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
+          { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
+          { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
         ],
       },
     ]);

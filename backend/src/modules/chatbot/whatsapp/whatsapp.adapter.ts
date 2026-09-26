@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
+import { ConfigService } from '@nestjs/config';
+import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
 import type { ChatbotImageInput, ChatbotOption, ChatbotResponse } from '../domain/chatbot.types.js';
 
@@ -10,6 +11,14 @@ export const WHATSAPP_BUTTON_IDS = {
   LIGHT: 'nita_detail_light',
   DETAILED: 'nita_detail_detailed',
 } as const;
+
+const SIZE_GUIDE_PUBLIC_PATH = '/nita-size-guide.png';
+const DETAIL_GUIDE_PUBLIC_PATH = '/nita-detail-guide.png';
+
+const GUIDE_PUBLIC_PATH_BY_STATE: Readonly<Partial<Record<ConversationState, string>>> = {
+  [ConversationState.ASK_SIZE]: SIZE_GUIDE_PUBLIC_PATH,
+  [ConversationState.ASK_DETAIL]: DETAIL_GUIDE_PUBLIC_PATH,
+};
 
 const BUTTON_ID_BY_VALUE: Readonly<Record<string, string>> = {
   [TattooSize.SMALL]: WHATSAPP_BUTTON_IDS.SMALL,
@@ -43,6 +52,7 @@ export type WhatsAppOutboundMessage =
       type: 'interactive_buttons';
       body: string;
       buttons: Array<{ id: string; title: string }>;
+      headerImageUrl?: string;
     };
 
 export interface WhatsAppCapabilities {
@@ -51,7 +61,10 @@ export interface WhatsAppCapabilities {
 
 @Injectable()
 export class WhatsAppAdapter {
-  constructor(@Inject(ChatbotService) private readonly chatbotService: ChatbotService) {}
+  constructor(
+    @Inject(ChatbotService) private readonly chatbotService: ChatbotService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+  ) {}
 
   async handleIncoming(
     message: WhatsAppInboundMessage,
@@ -107,6 +120,7 @@ export class WhatsAppAdapter {
     const precedingMessages: WhatsAppOutboundMessage[] = response.messages
       .slice(0, -1)
       .map(({ text }) => ({ type: 'text', text }));
+    const headerImageUrl = this.guideUrl(response.state);
 
     if (!capabilities.interactiveButtons) {
       return [
@@ -124,8 +138,30 @@ export class WhatsAppAdapter {
         type: 'interactive_buttons',
         body: prompt,
         buttons: response.options.map((option) => this.toButton(option)),
+        ...(headerImageUrl ? { headerImageUrl } : {}),
       },
     ];
+  }
+
+  private guideUrl(state: ConversationState): string | undefined {
+    const publicPath = GUIDE_PUBLIC_PATH_BY_STATE[state];
+    const frontendUrl = this.config.get<string>('FRONTEND_URL')?.trim();
+
+    if (!publicPath || !frontendUrl) {
+      return undefined;
+    }
+
+    try {
+      const url = new URL(publicPath, frontendUrl);
+
+      if (url.protocol !== 'https:' || url.username || url.password) {
+        return undefined;
+      }
+
+      return url.toString();
+    } catch {
+      return undefined;
+    }
   }
 
   private toButton(option: ChatbotOption): { id: string; title: string } {
