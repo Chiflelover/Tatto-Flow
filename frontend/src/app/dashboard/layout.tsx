@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { DashboardNav } from '@/components/dashboard/dashboard-nav';
 import { LogoutButton } from '@/components/dashboard/logout-button';
+import { ThemeToggle } from '@/components/theme-toggle';
 import styles from '@/styles/dashboard.module.css';
 
 export const metadata: Metadata = {
@@ -32,9 +33,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <small>Panel del tatuador</small>
           </div>
         </Link>
-        <LogoutButton compact />
+        <div className={styles.mobileHeaderActions}>
+          <ThemeToggle compact />
+          <LogoutButton compact />
+        </div>
       </header>
 
+      <div className={styles.desktopThemeControl}>
+        <ThemeToggle />
+      </div>
       <main className={styles.dashboardContent}>{children}</main>
       <DashboardNav mobile />
     </div>

@@ -1,8 +1,15 @@
 .page {
   min-height: 100dvh;
   padding: clamp(1rem, 5vw, 4rem);
-  color: #090909;
-  background: #f2efe7;
+  color: var(--text);
+  background: var(--background);
+}
+
+.themeControl {
+  position: fixed;
+  z-index: 3;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
 }
 
 .policy {
@@ -19,7 +26,7 @@
   width: clamp(4rem, 13vw, 7rem);
   height: 0.35rem;
   border-radius: 62% 38% 54% 29%;
-  background: #090909;
+  background: var(--text);
   content: '';
   opacity: 0.85;
   transform: rotate(-2deg);
@@ -29,7 +36,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.72rem;
-  color: #292825;
+  color: var(--muted-strong);
   font-family: var(--font-editorial);
   font-size: 0.92rem;
   font-weight: 650;
@@ -40,10 +47,10 @@
   width: 2.5rem;
   height: 2.5rem;
   place-items: center;
-  border: 1px solid #090909;
+  border: 1px solid var(--text);
   border-radius: 52% 43% 50% 41%;
-  color: #ffffff;
-  background: #090909;
+  color: var(--on-accent);
+  background: var(--text);
   font-family: var(--font-editorial);
   font-size: 0.72rem;
   transform: rotate(-3deg);
@@ -51,7 +58,7 @@
 
 .eyebrow {
   margin-top: clamp(2.8rem, 8vw, 5rem);
-  color: #5b5852;
+  color: var(--muted);
   font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -60,7 +67,7 @@
 
 .header {
   padding-bottom: clamp(2rem, 5vw, 3.5rem);
-  border-bottom: 1px solid #090909;
+  border-bottom: 1px solid var(--text);
 }
 
 .header h1 {
@@ -75,14 +82,14 @@
 
 .updated {
   margin-top: 1rem;
-  color: #6d6962;
+  color: var(--muted);
   font-size: 0.7rem;
 }
 
 .intro {
   max-width: 40rem;
   margin-top: 1.6rem;
-  color: #403e39;
+  color: var(--muted-strong);
   font-family: var(--font-editorial);
   font-size: clamp(1rem, 2vw, 1.16rem);
   line-height: 1.7;
@@ -93,7 +100,7 @@
   grid-template-columns: 1fr;
   margin-top: clamp(2.2rem, 6vw, 4rem);
   padding-top: clamp(1.2rem, 3vw, 2rem);
-  border-top: 1px solid rgba(9, 9, 9, 0.25);
+  border-top: 1px solid var(--border);
 }
 
 .policy h2 {
@@ -114,7 +121,7 @@
 
 .policy section p,
 .policy li {
-  color: #45423d;
+  color: var(--muted-strong);
   font-size: 0.86rem;
   line-height: 1.85;
 }
@@ -131,32 +138,32 @@
 }
 
 .policy li::marker {
-  color: #090909;
+  color: var(--text);
   content: '—  ';
 }
 
 .policy code {
-  color: #090909;
+  color: var(--text);
   font-size: 0.88em;
 }
 
 .notice {
   margin-top: 1.15rem !important;
   padding: 0.85rem 0 0.85rem 1rem;
-  border-left: 0.18rem solid #090909;
-  background: rgba(255, 254, 250, 0.5);
+  border-left: 0.18rem solid var(--text);
+  background: var(--surface-translucent);
 }
 
 .providerList strong {
-  color: #090909;
+  color: var(--text);
 }
 
 .providerList a,
 .externalLink,
 .contact {
-  color: #090909;
+  color: var(--text);
   text-decoration: underline;
-  text-decoration-color: rgba(9, 9, 9, 0.38);
+  text-decoration-color: var(--border-strong);
   text-underline-offset: 0.22rem;
 }
 
@@ -190,9 +197,9 @@
 .missingContact {
   margin-top: 1rem !important;
   padding: 0.85rem 1rem;
-  border: 1px solid rgba(9, 9, 9, 0.35);
-  color: #35332f !important;
-  background: #e5e0d6;
+  border: 1px solid var(--border-strong);
+  color: var(--muted-strong) !important;
+  background: var(--surface-soft);
 }
 
 .missingContact code {
@@ -202,12 +209,12 @@
 .footer {
   margin-top: clamp(3rem, 7vw, 5rem);
   padding-top: 1.2rem;
-  border-top: 1px solid #090909;
+  border-top: 1px solid var(--text);
   text-align: right;
 }
 
 .footer a {
-  color: #54514b;
+  color: var(--muted);
   font-size: 0.74rem;
   text-decoration: underline;
   text-decoration-color: transparent;
@@ -218,7 +225,7 @@
 .footer a:focus-visible,
 .brand:hover,
 .brand:focus-visible {
-  color: #090909;
+  color: var(--text);
   text-decoration-color: currentColor;
 }
 
@@ -227,7 +234,7 @@
 .externalLink:focus-visible,
 .contact:focus-visible,
 .providerList a:focus-visible {
-  outline: 2px solid #090909;
+  outline: 2px solid var(--text);
   outline-offset: 3px;
 }
 

@@ -1,21 +1,8 @@
 .dashboardLayout {
-  --background: #f2efe7;
-  --foreground: #090909;
-  --surface: #fffefa;
-  --surface-raised: #fffefa;
-  --surface-soft: #e7e3da;
-  --muted: #74716a;
-  --muted-strong: #494640;
-  --border: rgba(9, 9, 9, 0.18);
-  --border-strong: rgba(9, 9, 9, 0.42);
-  --accent: #090909;
-  --accent-strong: #090909;
-  --on-accent: #ffffff;
   position: relative;
   min-height: 100dvh;
   color: var(--foreground);
   background: var(--background);
-  color-scheme: light;
 }
 
 .dashboardLayout::before {
@@ -26,7 +13,7 @@
   width: 15rem;
   height: 2.5rem;
   border-radius: 48% 52% 38% 62%;
-  background: rgba(9, 9, 9, 0.025);
+  background: var(--brush-subtle);
   content: '';
   filter: blur(0.35rem);
   pointer-events: none;
@@ -62,9 +49,19 @@
   justify-content: space-between;
   min-height: 4.6rem;
   padding: 0.7rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-  background: #050505;
+  border-bottom: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+  background: var(--sidebar-bg);
+}
+
+.mobileHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.desktopThemeControl {
+  display: none;
 }
 
 .brand {
@@ -105,7 +102,7 @@
 
 .brand small {
   margin-top: 0.08rem;
-  color: #aaa7a0;
+  color: var(--sidebar-muted);
   font-size: 0.59rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -136,10 +133,10 @@
   grid-template-columns: repeat(3, 1fr);
   padding: 0.35rem max(0.35rem, env(safe-area-inset-right))
     calc(0.35rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  background: #050505;
-  box-shadow: 0 -0.5rem 1.5rem rgba(0, 0, 0, 0.18);
+  border-top: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+  background: var(--sidebar-bg);
+  box-shadow: 0 -0.5rem 1.5rem var(--shadow);
 }
 
 .navLink {
@@ -149,7 +146,7 @@
   gap: 0.75rem;
   min-height: 2.85rem;
   padding: 0.55rem 0.7rem;
-  color: #8f8d88;
+  color: var(--sidebar-muted);
   font-size: 0.79rem;
   font-weight: 650;
   letter-spacing: 0.015em;
@@ -205,12 +202,12 @@
 }
 
 .navLink:hover {
-  color: #ffffff;
+  color: var(--sidebar-text);
   transform: translateX(0.1rem);
 }
 
 .navLinkActive {
-  color: #ffffff;
+  color: var(--sidebar-text);
 }
 
 .navLinkActive::after {
@@ -220,8 +217,8 @@
 
 .logoutButton,
 .logoutCompact {
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  color: #d7d4cd;
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
   background: transparent;
   font: inherit;
   font-weight: 650;
@@ -245,9 +242,9 @@
 
 .logoutButton:hover,
 .logoutCompact:hover {
-  border-color: #ffffff;
-  color: #ffffff;
-  box-shadow: 0.18rem 0 #ffffff;
+  border-color: var(--sidebar-text);
+  color: var(--sidebar-text);
+  box-shadow: 0.18rem 0 var(--sidebar-text);
 }
 
 .logoutButton:disabled,
@@ -389,7 +386,7 @@
 }
 
 .leadCard:hover {
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--surface-hover);
 }
 
 .leadLink {
@@ -516,7 +513,7 @@
 
 .errorState {
   color: var(--danger);
-  border-color: rgba(143, 41, 33, 0.45);
+  border-color: var(--danger);
   background: var(--danger-soft);
 }
 
@@ -524,7 +521,7 @@
   min-height: 2.55rem;
   padding: 0.55rem 0.8rem;
   border: 1px solid var(--ink);
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--ink);
   font: inherit;
   font-size: 0.7rem;
@@ -640,9 +637,9 @@
   min-height: 15rem;
   padding: 0.75rem;
   place-content: center;
-  color: #bcb8b0;
+  color: var(--sidebar-muted);
   border: 1px solid var(--ink);
-  background: #090909;
+  background: var(--sidebar-bg);
   text-align: center;
 }
 
@@ -687,7 +684,7 @@
   border: 1px solid var(--border-strong);
   outline: none;
   color: var(--foreground);
-  background: rgba(255, 254, 250, 0.72);
+  background: var(--input-background);
   transition:
     border-color 150ms ease,
     box-shadow 150ms ease;
@@ -731,13 +728,13 @@
 }
 
 .primaryButton {
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--ink);
 }
 
 .secondaryButton,
 .whatsappButton {
-  background: rgba(255, 254, 250, 0.48);
+  background: var(--surface-translucent);
 }
 
 .primaryButton:hover,
@@ -749,7 +746,7 @@
 
 .secondaryButton:hover,
 .whatsappButton:hover {
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--ink);
 }
 
@@ -930,7 +927,7 @@
 
 .pricingSaveError {
   padding: 0.8rem;
-  border: 1px solid rgba(143, 41, 33, 0.42);
+  border: 1px solid var(--danger);
   background: var(--danger-soft);
 }
 
@@ -944,20 +941,20 @@
   gap: 0.8rem;
   padding: 0.75rem;
   border: 1px solid var(--ink);
-  color: #ffffff;
-  background: #090909;
-  box-shadow: 0 0.7rem 1.8rem rgba(0, 0, 0, 0.16);
+  color: var(--sidebar-text);
+  background: var(--sidebar-bg);
+  box-shadow: 0 0.7rem 1.8rem var(--shadow);
 }
 
 .pricingActions > span {
-  color: #c4c0b8;
+  color: var(--sidebar-muted);
   font-size: 0.66rem;
 }
 
 .pricingActions .primaryButton {
-  border-color: #ffffff;
-  color: var(--ink);
-  background: #ffffff;
+  border-color: var(--sidebar-text);
+  color: var(--sidebar-bg);
+  background: var(--sidebar-text);
 }
 
 .leadTabs {
@@ -1069,7 +1066,7 @@
   min-height: 2.65rem;
   padding: 0.58rem 0.78rem;
   border: 1px solid var(--ink);
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--ink);
   font: inherit;
   font-size: 0.7rem;
@@ -1091,7 +1088,7 @@
 .inlineError {
   margin-bottom: 1rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid rgba(143, 41, 33, 0.45);
+  border: 1px solid var(--danger);
   color: var(--danger);
   background: var(--danger-soft);
   font-size: 0.72rem;
@@ -1123,7 +1120,7 @@
 
 .leadTable th {
   color: var(--muted-strong);
-  background: rgba(255, 254, 250, 0.42);
+  background: var(--surface-translucent);
   font-size: 0.6rem;
   font-weight: 800;
   letter-spacing: 0.07em;
@@ -1153,7 +1150,7 @@
 }
 
 .leadTable tbody tr:hover {
-  background: rgba(255, 254, 250, 0.72);
+  background: var(--surface-hover);
 }
 
 .clickableLeadRow {
@@ -1195,7 +1192,7 @@
 }
 
 .readinessReady {
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--ink);
 }
 
@@ -1248,7 +1245,7 @@
   display: block;
   height: 0.34rem;
   overflow: hidden;
-  background: #d3cfc6;
+  background: var(--surface-soft);
 }
 
 .scoreFill {
@@ -1284,25 +1281,25 @@
 
 .rowActions a:hover,
 .rowActions button:hover {
-  color: #ffffff;
+  color: var(--on-accent);
   border-color: var(--ink);
   background: var(--ink);
 }
 
 .rowActions .viewAction {
-  color: #ffffff;
+  color: var(--on-accent);
   border-color: var(--ink);
   background: var(--ink);
 }
 
 .rowActions .deleteAction {
   color: var(--danger);
-  border-color: rgba(143, 41, 33, 0.55);
+  border-color: var(--danger);
   background: transparent;
 }
 
 .rowActions .deleteAction:hover {
-  color: #ffffff;
+  color: var(--on-danger);
   border-color: var(--danger);
   background: var(--danger);
 }
@@ -1322,7 +1319,7 @@
   gap: 0.8rem;
   padding: 0.95rem;
   border: 1px solid var(--border-strong);
-  background: rgba(255, 254, 250, 0.5);
+  background: var(--surface-translucent);
 }
 
 .mobileLeadRow:hover {
@@ -1402,7 +1399,7 @@
 }
 
 .paginationBar .currentPage {
-  color: #ffffff;
+  color: var(--on-accent);
   border-color: var(--ink);
   background: var(--ink);
 }
@@ -1485,9 +1482,9 @@
 }
 
 .dangerButton:hover {
-  color: #ffffff;
+  color: var(--on-danger);
   background: var(--danger);
-  box-shadow: 0.22rem 0 #5e1712;
+  box-shadow: 0.22rem 0 var(--danger-strong);
 }
 
 .evaluationPanel {
@@ -1512,7 +1509,7 @@
 }
 
 .evaluationToggle:hover {
-  background: rgba(255, 254, 250, 0.5);
+  background: var(--surface-hover);
 }
 
 .evaluationToggle:focus-visible {
@@ -1621,7 +1618,7 @@
   display: grid;
   padding: 1rem;
   place-items: center;
-  background: rgba(0, 0, 0, 0.78);
+  background: var(--overlay);
 }
 
 .confirmationModal {
@@ -1630,7 +1627,7 @@
   border: 1px solid var(--ink);
   color: var(--ink);
   background: var(--paper-bright);
-  box-shadow: 0.55rem 0.55rem 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0.55rem 0.55rem 0 var(--brush-visible);
 }
 
 .confirmationModal h2 {
@@ -1748,8 +1745,8 @@
     gap: 2rem;
     height: 100dvh;
     padding: 1.35rem 1.05rem;
-    color: #ffffff;
-    background: #050505;
+    color: var(--sidebar-text);
+    background: var(--sidebar-bg);
   }
 
   .sidebar::after {
@@ -1758,7 +1755,7 @@
     bottom: 9%;
     width: 1px;
     height: 38%;
-    background: #77736d;
+    background: var(--sidebar-muted);
     content: '';
     opacity: 0.5;
     transform: rotate(0.8deg);
@@ -1769,9 +1766,17 @@
     display: none;
   }
 
+  .desktopThemeControl {
+    position: fixed;
+    z-index: 30;
+    top: 1.15rem;
+    right: 1.15rem;
+    display: block;
+  }
+
   .dashboardContent {
     min-height: 100dvh;
-    padding: 2.5rem clamp(1.8rem, 4vw, 4.5rem);
+    padding: 4.75rem clamp(1.8rem, 4vw, 4.5rem) 2.5rem;
   }
 
   .leadFilters {
@@ -1798,7 +1803,7 @@
   .detailSide .panel {
     padding: 1.2rem;
     border: 1px solid var(--ink);
-    background: rgba(255, 254, 250, 0.62);
+    background: var(--surface-translucent);
   }
 
   .pricingMatrixHeader,

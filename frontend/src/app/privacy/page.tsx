@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ThemeToggle } from '@/components/theme-toggle';
 import styles from './privacy.module.css';
 
 export const metadata: Metadata = {
@@ -17,6 +18,9 @@ const externalLinkProps = {
 export default function PrivacyPage() {
   return (
     <main className={styles.page}>
+      <div className={styles.themeControl}>
+        <ThemeToggle />
+      </div>
       <article className={styles.policy}>
         <header className={styles.header}>
           <Link className={styles.brand} href="/login" aria-label="Ir al inicio de sesión">
