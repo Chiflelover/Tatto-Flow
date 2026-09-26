@@ -2,19 +2,12 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { LeadListQueryDto, SaveManualPriceDto, UpdatePricingRulesDto } from './dashboard.dto.js';
+import { LeadListQueryDto, UpdatePricingRulesDto } from './dashboard.dto.js';
 
 const RULE_ID = '00000000-0000-4000-8000-000000000001';
 
 function validatePayload(payload: object) {
   return validate(plainToInstance(UpdatePricingRulesDto, payload), {
-    forbidNonWhitelisted: true,
-    whitelist: true,
-  });
-}
-
-function validateManualPrice(payload: object) {
-  return validate(plainToInstance(SaveManualPriceDto, payload), {
     forbidNonWhitelisted: true,
     whitelist: true,
   });
@@ -55,35 +48,6 @@ describe('LeadListQueryDto', () => {
     [{ search: '123456789012345678901' }],
   ])('rejects unsupported lead query values', async (payload) => {
     await expect(validateLeadQuery(payload)).resolves.not.toHaveLength(0);
-  });
-});
-
-describe('SaveManualPriceDto', () => {
-  it('accepts finite non-negative numeric prices', async () => {
-    await expect(validateManualPrice({ minPrice: 420, maxPrice: 610 })).resolves.toHaveLength(0);
-  });
-
-  it.each([
-    [{ maxPrice: 610 }],
-    [{ minPrice: 420 }],
-    [{ minPrice: '', maxPrice: 610 }],
-    [{ minPrice: '420', maxPrice: 610 }],
-    [{ minPrice: -1, maxPrice: 610 }],
-  ])('rejects missing or invalid manual price input', async (payload) => {
-    await expect(validateManualPrice(payload)).resolves.not.toHaveLength(0);
-  });
-
-  it('rejects attempts to set lead status or an automatic price through the manual DTO', async () => {
-    const errors = await validateManualPrice({
-      minPrice: 420,
-      maxPrice: 610,
-      status: 'VERIFIED',
-      pricingRuleId: RULE_ID,
-    });
-
-    expect(errors.map(({ property }) => property)).toEqual(
-      expect.arrayContaining(['status', 'pricingRuleId']),
-    );
   });
 });
 

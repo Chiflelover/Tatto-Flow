@@ -70,7 +70,6 @@ export interface LeadDetail extends LeadSummary {
     blockers: LeadScoringBlocker[];
     evaluatedAt: string;
   } | null;
-  priceSentAt: string | null;
   whatsappUrl: string | null;
 }
 
@@ -116,13 +115,6 @@ export interface UpdatePricingRulesResult {
 
 export interface TattooArtistSession {
   user: { id: string; email: string };
-}
-
-export interface SendPriceResult {
-  sent: boolean;
-  alreadySent: boolean;
-  confirmation: string;
-  priceSentAt: string;
 }
 
 export interface LeadListQuery {
@@ -246,21 +238,6 @@ export function getLead(leadId: string): Promise<LeadDetail> {
 
 export function getLeadReference(leadId: string): Promise<LeadReferenceAccess> {
   return dashboardRequest(`dashboard/leads/${encodeURIComponent(leadId)}/reference`);
-}
-
-export function saveManualPrice(
-  leadId: string,
-  minPrice: number,
-  maxPrice: number,
-): Promise<LeadDetail> {
-  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/price`, 'PATCH', {
-    minPrice,
-    maxPrice,
-  });
-}
-
-export function sendPrice(leadId: string): Promise<SendPriceResult> {
-  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/send-price`, 'POST');
 }
 
 export function completeLead(leadId: string): Promise<LeadDetail> {

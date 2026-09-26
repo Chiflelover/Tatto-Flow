@@ -84,18 +84,6 @@ export class LeadListQueryDto {
   pageSize = 20;
 }
 
-export class SaveManualPriceDto {
-  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(99_999_999.99)
-  minPrice!: number;
-
-  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(99_999_999.99)
-  maxPrice!: number;
-}
-
 export class PricingRulePriceUpdateDto {
   @IsUUID('4')
   pricingRuleId!: string;

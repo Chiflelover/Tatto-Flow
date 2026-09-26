@@ -581,8 +581,7 @@
 }
 
 .dataList dt,
-.analysisFacts dt,
-.priceForm label span {
+.analysisFacts dt {
   color: var(--muted);
   font-size: 0.64rem;
   letter-spacing: 0.04em;
@@ -657,26 +656,6 @@
   font-weight: 500;
 }
 
-.priceForm {
-  display: grid;
-  gap: 0.8rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px dotted var(--border-strong);
-}
-
-.priceFields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
-}
-
-.priceForm label {
-  display: grid;
-  gap: 0.38rem;
-}
-
-.priceForm input,
 .pricingInputWrap input,
 .leadFilters select,
 .phoneSearch input {
@@ -690,12 +669,6 @@
     box-shadow 150ms ease;
 }
 
-.priceForm input {
-  min-height: 2.85rem;
-  padding: 0.65rem 0.75rem;
-}
-
-.priceForm input:focus,
 .pricingInputWrap input:focus,
 .leadFilters select:focus,
 .phoneSearch input:focus {

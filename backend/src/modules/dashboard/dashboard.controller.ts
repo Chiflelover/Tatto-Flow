@@ -7,7 +7,6 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
-  Post,
   Query,
   Req,
   UseGuards,
@@ -15,11 +14,7 @@ import {
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
 import { DashboardService } from './dashboard.service.js';
-import {
-  LeadListQueryDto,
-  SaveManualPriceDto,
-  UpdatePricingRulesDto,
-} from './dto/dashboard.dto.js';
+import { LeadListQueryDto, UpdatePricingRulesDto } from './dto/dashboard.dto.js';
 
 @Controller('dashboard')
 @UseGuards(SessionAuthGuard)
@@ -44,19 +39,6 @@ export class DashboardController {
   @Get('leads/:id/reference')
   getLeadReference(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
     return this.dashboardService.getLeadReference(leadId);
-  }
-
-  @Patch('leads/:id/price')
-  saveManualPrice(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string,
-    @Body() dto: SaveManualPriceDto,
-  ) {
-    return this.dashboardService.saveManualPrice(leadId, dto.minPrice, dto.maxPrice);
-  }
-
-  @Post('leads/:id/send-price')
-  sendPrice(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
-    return this.dashboardService.sendPrice(leadId);
   }
 
   @Patch('leads/:id/complete')

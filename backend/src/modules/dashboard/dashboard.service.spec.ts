@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import {
   DetailLevel,
   LeadStatus,
@@ -15,7 +15,6 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
-import { CustomerMessagingService } from './customer-messaging.service.js';
 import { DashboardService } from './dashboard.service.js';
 import type { LeadListQueryDto } from './dto/dashboard.dto.js';
 
@@ -89,18 +88,12 @@ function leadQuery(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto 
   };
 }
 
-function serviceWith(
-  prismaShape: object,
-  sendPrice = vi.fn().mockResolvedValue(undefined),
-  pricingShape: object = {},
-  storageShape: object = {},
-) {
+function serviceWith(prismaShape: object, pricingShape: object = {}, storageShape: object = {}) {
   const prisma = prismaShape as PrismaService;
-  const messaging = { sendPrice } as unknown as CustomerMessagingService;
   const pricing = pricingShape as PricingService;
   const storage = storageShape as StorageService;
 
-  return { service: new DashboardService(prisma, messaging, pricing, storage), sendPrice };
+  return { service: new DashboardService(prisma, pricing, storage) };
 }
 
 describe('DashboardService', () => {
@@ -186,6 +179,7 @@ describe('DashboardService', () => {
       'La IA no tuvo suficiente confianza al identificar el nivel de detalle.',
     ]);
     expect(result.reviewMessages.join(' ')).not.toContain('SIZE_MISMATCH');
+    expect(result).not.toHaveProperty('priceSentAt');
   });
 
   it('creates a five-minute signed URL only for a current stored image', async () => {
@@ -203,7 +197,6 @@ describe('DashboardService', () => {
           }),
         },
       },
-      vi.fn(),
       {},
       { exists, createSignedUrl },
     );
@@ -239,7 +232,6 @@ describe('DashboardService', () => {
           findUnique: vi.fn().mockResolvedValue({ id: LEAD_ID, images }),
         },
       },
-      vi.fn(),
       {},
       { exists, createSignedUrl },
     );
@@ -274,7 +266,6 @@ describe('DashboardService', () => {
           }),
         },
       },
-      vi.fn(),
       {},
       { exists, createSignedUrl },
     );
@@ -283,306 +274,6 @@ describe('DashboardService', () => {
 
     expect(result.message).toBe('Imagen eliminada por política de retención.');
     expect(createSignedUrl).not.toHaveBeenCalled();
-  });
-
-  it('saves a valid manual range for a lead that requires review', async () => {
-    const updatedLead = makeLead({
-      status: LeadStatus.REQUIRES_REVIEW,
-      calculatedMinPrice: new Prisma.Decimal(420),
-      calculatedMaxPrice: new Prisma.Decimal(610),
-      pricingRuleId: null,
-      pricingRuleVersion: null,
-    });
-    const findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ status: LeadStatus.REQUIRES_REVIEW, priceSentAt: null })
-      .mockResolvedValueOnce(updatedLead);
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const { service } = serviceWith({ lead: { findUnique, updateMany } });
-
-    const result = await service.saveManualPrice(LEAD_ID, 420, 610);
-
-    expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        id: LEAD_ID,
-        status: LeadStatus.REQUIRES_REVIEW,
-        priceSentAt: null,
-      },
-      data: {
-        calculatedMinPrice: new Prisma.Decimal(420),
-        calculatedMaxPrice: new Prisma.Decimal(610),
-      },
-    });
-    expect(result.price).toEqual({ minimum: '420', maximum: '610' });
-  });
-
-  it('does not overwrite a price when the lead changes during a concurrent save', async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const { service } = serviceWith({
-      lead: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue({ status: LeadStatus.REQUIRES_REVIEW, priceSentAt: null }),
-        updateMany,
-      },
-    });
-
-    await expect(service.saveManualPrice(LEAD_ID, 420, 610)).rejects.toEqual(
-      new ConflictException('Este pedido ya no admite cambios de precio.'),
-    );
-    expect(updateMany).toHaveBeenCalledOnce();
-  });
-
-  it('rejects a manual range whose maximum is below its minimum', async () => {
-    const findUnique = vi.fn();
-    const { service } = serviceWith({ lead: { findUnique } });
-
-    await expect(service.saveManualPrice(LEAD_ID, 700, 500)).rejects.toEqual(
-      new BadRequestException('El precio máximo debe ser igual o mayor al precio mínimo.'),
-    );
-    expect(findUnique).not.toHaveBeenCalled();
-  });
-
-  it('rejects non-finite manual price values before accessing the database', async () => {
-    const findUnique = vi.fn();
-    const { service } = serviceWith({ lead: { findUnique } });
-
-    await expect(service.saveManualPrice(LEAD_ID, Number.NaN, 500)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(findUnique).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['minimum', null, new Prisma.Decimal(610)],
-    ['maximum', new Prisma.Decimal(420), null],
-  ] as const)('does not send when the %s price is missing', async (_field, minimum, maximum) => {
-    const updateMany = vi.fn();
-    const sendPrice = vi.fn();
-    const { service } = serviceWith(
-      {
-        lead: {
-          findUnique: vi.fn().mockResolvedValue(
-            makeLead({
-              status: LeadStatus.REQUIRES_REVIEW,
-              calculatedMinPrice: minimum,
-              calculatedMaxPrice: maximum,
-            }),
-          ),
-          updateMany,
-        },
-      },
-      sendPrice,
-    );
-
-    await expect(service.sendPrice(LEAD_ID)).rejects.toEqual(
-      new BadRequestException('Guarda un precio mínimo y máximo antes de enviarlo.'),
-    );
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(sendPrice).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['negative minimum', new Prisma.Decimal(-1), new Prisma.Decimal(100)],
-    ['maximum below minimum', new Prisma.Decimal(700), new Prisma.Decimal(500)],
-  ] as const)('does not send an invalid persisted range: %s', async (_case, minimum, maximum) => {
-    const updateMany = vi.fn();
-    const sendPrice = vi.fn();
-    const { service } = serviceWith(
-      {
-        lead: {
-          findUnique: vi.fn().mockResolvedValue(
-            makeLead({
-              status: LeadStatus.REQUIRES_REVIEW,
-              calculatedMinPrice: minimum,
-              calculatedMaxPrice: maximum,
-            }),
-          ),
-          updateMany,
-        },
-      },
-      sendPrice,
-    );
-
-    await expect(service.sendPrice(LEAD_ID)).rejects.toEqual(
-      new BadRequestException('El rango de precios guardado no es válido.'),
-    );
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(sendPrice).not.toHaveBeenCalled();
-  });
-
-  it('does not expose manual sending for an automatically VERIFIED lead', async () => {
-    const updateMany = vi.fn();
-    const sendPrice = vi.fn();
-    const { service } = serviceWith(
-      {
-        lead: {
-          findUnique: vi.fn().mockResolvedValue(makeLead({ status: LeadStatus.VERIFIED })),
-          updateMany,
-        },
-      },
-      sendPrice,
-    );
-
-    await expect(service.sendPrice(LEAD_ID)).rejects.toEqual(
-      new ConflictException(
-        'Solo los pedidos que requieren revisión admiten el envío manual de precio.',
-      ),
-    );
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(sendPrice).not.toHaveBeenCalled();
-  });
-
-  it('sends the mock price once and records priceSentAt', async () => {
-    let lead = makeLead({
-      status: LeadStatus.REQUIRES_REVIEW,
-      calculatedMinPrice: new Prisma.Decimal(420),
-      calculatedMaxPrice: new Prisma.Decimal(610),
-      pricingRuleId: null,
-      pricingRuleVersion: null,
-    });
-    const updateMany = vi.fn(
-      (arguments_: {
-        where: {
-          id: string;
-          status: LeadStatus;
-          priceSentAt: null;
-          calculatedMinPrice: Prisma.Decimal;
-          calculatedMaxPrice: Prisma.Decimal;
-        };
-        data: { priceSentAt: Date; status: LeadStatus };
-      }) => {
-        lead = {
-          ...lead,
-          status: LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
-          priceSentAt: arguments_.data.priceSentAt,
-        };
-        return Promise.resolve({ count: 1 });
-      },
-    );
-    const { service, sendPrice } = serviceWith({
-      lead: {
-        findUnique: vi.fn(() => Promise.resolve(lead)),
-        findUniqueOrThrow: vi.fn(() => Promise.resolve(lead)),
-        updateMany,
-      },
-    });
-
-    const result = await service.sendPrice(LEAD_ID);
-
-    expect(result).toMatchObject({
-      sent: true,
-      alreadySent: false,
-      confirmation: 'Precio enviado correctamente (modo prueba).',
-    });
-    expect(updateMany.mock.calls[0]?.[0].data.priceSentAt).toBeInstanceOf(Date);
-    const updateArguments = updateMany.mock.calls[0]?.[0];
-    expect(updateArguments?.where).toEqual({
-      id: LEAD_ID,
-      status: LeadStatus.REQUIRES_REVIEW,
-      priceSentAt: null,
-      calculatedMinPrice: new Prisma.Decimal(420),
-      calculatedMaxPrice: new Prisma.Decimal(610),
-    });
-    expect(updateArguments?.data.status).toBe(LeadStatus.HANDOFF_TO_TATTOO_ARTIST);
-    expect(sendPrice).toHaveBeenCalledWith({
-      phoneNumber: '+51 999999999',
-      message:
-        'El tatuador revisó tu diseño. El precio aproximado estaría entre S/420 y S/610. El precio final se confirma antes de realizar el trabajo.',
-      idempotencyKey: `lead:${LEAD_ID}:price`,
-    });
-  });
-
-  it('does not duplicate the mock action when send is repeated', async () => {
-    let lead = makeLead({
-      status: LeadStatus.REQUIRES_REVIEW,
-      priceSentAt: null,
-    });
-    const updateMany = vi.fn().mockImplementation(() => {
-      lead = {
-        ...lead,
-        status: LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
-        priceSentAt: new Date(),
-      };
-      return Promise.resolve({ count: 1 });
-    });
-    const { service, sendPrice } = serviceWith({
-      lead: {
-        findUnique: vi.fn(() => Promise.resolve(lead)),
-        findUniqueOrThrow: vi.fn(() => Promise.resolve(lead)),
-        updateMany,
-      },
-    });
-
-    await service.sendPrice(LEAD_ID);
-    const repeated = await service.sendPrice(LEAD_ID);
-
-    expect(repeated).toMatchObject({ sent: false, alreadySent: true });
-    expect(updateMany).toHaveBeenCalledOnce();
-    expect(sendPrice).toHaveBeenCalledOnce();
-  });
-
-  it('does not send again when a concurrent request already claimed the lead', async () => {
-    const sentAt = new Date('2026-09-14T12:30:00.000Z');
-    const sendPrice = vi.fn();
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const { service } = serviceWith(
-      {
-        lead: {
-          findUnique: vi.fn().mockResolvedValue(
-            makeLead({
-              status: LeadStatus.REQUIRES_REVIEW,
-              calculatedMinPrice: new Prisma.Decimal(420),
-              calculatedMaxPrice: new Prisma.Decimal(610),
-              priceSentAt: null,
-            }),
-          ),
-          findUniqueOrThrow: vi.fn().mockResolvedValue({
-            status: LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
-            priceSentAt: sentAt,
-          }),
-          updateMany,
-        },
-      },
-      sendPrice,
-    );
-
-    await expect(service.sendPrice(LEAD_ID)).resolves.toMatchObject({
-      sent: false,
-      alreadySent: true,
-      priceSentAt: sentAt.toISOString(),
-    });
-    expect(sendPrice).not.toHaveBeenCalled();
-  });
-
-  it('does not send a stale range when another request changes the price first', async () => {
-    const sendPrice = vi.fn();
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const { service } = serviceWith(
-      {
-        lead: {
-          findUnique: vi.fn().mockResolvedValue(
-            makeLead({
-              status: LeadStatus.REQUIRES_REVIEW,
-              calculatedMinPrice: new Prisma.Decimal(420),
-              calculatedMaxPrice: new Prisma.Decimal(610),
-              priceSentAt: null,
-            }),
-          ),
-          findUniqueOrThrow: vi.fn().mockResolvedValue({
-            status: LeadStatus.REQUIRES_REVIEW,
-            priceSentAt: null,
-          }),
-          updateMany,
-        },
-      },
-      sendPrice,
-    );
-
-    await expect(service.sendPrice(LEAD_ID)).rejects.toEqual(
-      new ConflictException('Este pedido ya no admite el envío manual de precio.'),
-    );
-    expect(sendPrice).not.toHaveBeenCalled();
   });
 
   it('marks an attended lead as COMPLETED so the customer can request a new quotation', async () => {
@@ -671,7 +362,7 @@ describe('DashboardService', () => {
       updatedAt: new Date('2026-09-14T12:00:00.000Z'),
     };
     const listActiveRules = vi.fn().mockResolvedValue([rule]);
-    const { service } = serviceWith({}, vi.fn(), { listActiveRules });
+    const { service } = serviceWith({}, { listActiveRules });
 
     const result = await service.getPricingRules();
 
@@ -708,7 +399,7 @@ describe('DashboardService', () => {
       rules: [updatedRule],
       updatedCount: 1,
     });
-    const { service } = serviceWith({}, vi.fn(), { updateActiveRules });
+    const { service } = serviceWith({}, { updateActiveRules });
 
     const result = await service.updatePricingRules([update], USER_ID);
 

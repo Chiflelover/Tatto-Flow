@@ -10,7 +10,6 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
-import { CustomerMessagingService } from './customer-messaging.service.js';
 import { DashboardService } from './dashboard.service.js';
 import type { LeadListQueryDto, LeadSortField } from './dto/dashboard.dto.js';
 
@@ -32,7 +31,6 @@ function query(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto {
 function createService(prismaShape: object, storageShape: object = {}) {
   return new DashboardService(
     prismaShape as PrismaService,
-    {} as CustomerMessagingService,
     {} as PricingService,
     storageShape as StorageService,
   );

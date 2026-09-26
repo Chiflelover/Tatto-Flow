@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -17,7 +16,6 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { PricingService, type PricingRulePriceUpdate } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
-import { CustomerMessagingService } from './customer-messaging.service.js';
 import {
   buildWhatsappUrl,
   detailLabel,
@@ -57,11 +55,9 @@ interface LeadDeletionCandidate {
   status: LeadStatus;
   calculatedMinPrice: Prisma.Decimal | null;
   calculatedMaxPrice: Prisma.Decimal | null;
-  priceSentAt: Date | null;
   evaluation: { readinessStatus: ReadinessStatus } | null;
 }
 
-const PRICE_SENT_CONFIRMATION = 'Precio enviado correctamente (modo prueba).';
 const RETAINED_IMAGE_MESSAGE = 'Imagen eliminada por política de retención.';
 const SIGNED_URL_TTL_SECONDS = 5 * 60;
 const COMPLETABLE_LEAD_STATUSES = [
@@ -75,8 +71,6 @@ export class DashboardService {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
-    @Inject(CustomerMessagingService)
-    private readonly customerMessaging: CustomerMessagingService,
     @Inject(PricingService)
     private readonly pricingService: PricingService,
     @Inject(StorageService)
@@ -192,133 +186,6 @@ export class DashboardService {
     }
   }
 
-  async saveManualPrice(leadId: string, minPrice: number, maxPrice: number) {
-    if (
-      !Number.isFinite(minPrice) ||
-      !Number.isFinite(maxPrice) ||
-      minPrice < 0 ||
-      maxPrice < minPrice
-    ) {
-      throw new BadRequestException('El precio máximo debe ser igual o mayor al precio mínimo.');
-    }
-
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
-      select: { status: true, priceSentAt: true },
-    });
-
-    if (!lead) {
-      throw new NotFoundException('No encontramos ese pedido.');
-    }
-
-    if (lead.status !== LeadStatus.REQUIRES_REVIEW || lead.priceSentAt) {
-      throw new ConflictException('Este pedido ya no admite cambios de precio.');
-    }
-
-    const update = await this.prisma.lead.updateMany({
-      where: {
-        id: leadId,
-        status: LeadStatus.REQUIRES_REVIEW,
-        priceSentAt: null,
-      },
-      data: {
-        calculatedMinPrice: new Prisma.Decimal(minPrice),
-        calculatedMaxPrice: new Prisma.Decimal(maxPrice),
-      },
-    });
-
-    if (update.count === 0) {
-      throw new ConflictException('Este pedido ya no admite cambios de precio.');
-    }
-
-    return this.getLead(leadId);
-  }
-
-  async sendPrice(leadId: string) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
-      select: {
-        id: true,
-        status: true,
-        calculatedMinPrice: true,
-        calculatedMaxPrice: true,
-        priceSentAt: true,
-        customer: { select: { phoneNumber: true } },
-      },
-    });
-
-    if (!lead) {
-      throw new NotFoundException('No encontramos ese pedido.');
-    }
-
-    if (lead.priceSentAt) {
-      return this.alreadySentResponse(lead.priceSentAt);
-    }
-
-    if (lead.status !== LeadStatus.REQUIRES_REVIEW) {
-      throw new ConflictException(
-        'Solo los pedidos que requieren revisión admiten el envío manual de precio.',
-      );
-    }
-
-    if (lead.calculatedMinPrice === null || lead.calculatedMaxPrice === null) {
-      throw new BadRequestException('Guarda un precio mínimo y máximo antes de enviarlo.');
-    }
-
-    if (
-      lead.calculatedMinPrice.isNegative() ||
-      lead.calculatedMaxPrice.lessThan(lead.calculatedMinPrice)
-    ) {
-      throw new BadRequestException('El rango de precios guardado no es válido.');
-    }
-
-    const priceSentAt = new Date();
-    const update = await this.prisma.lead.updateMany({
-      where: {
-        id: lead.id,
-        status: LeadStatus.REQUIRES_REVIEW,
-        priceSentAt: null,
-        calculatedMinPrice: lead.calculatedMinPrice,
-        calculatedMaxPrice: lead.calculatedMaxPrice,
-      },
-      data: {
-        priceSentAt,
-        status: LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
-      },
-    });
-
-    if (update.count === 0) {
-      const alreadyUpdated = await this.prisma.lead.findUniqueOrThrow({
-        where: { id: lead.id },
-        select: { priceSentAt: true, status: true },
-      });
-
-      if (alreadyUpdated.priceSentAt) {
-        return this.alreadySentResponse(alreadyUpdated.priceSentAt);
-      }
-
-      throw new ConflictException('Este pedido ya no admite el envío manual de precio.');
-    }
-
-    const message =
-      `El tatuador revisó tu diseño. El precio aproximado estaría entre ` +
-      `S/${formatMoney(lead.calculatedMinPrice)} y S/${formatMoney(lead.calculatedMaxPrice)}. ` +
-      'El precio final se confirma antes de realizar el trabajo.';
-
-    await this.customerMessaging.sendPrice({
-      phoneNumber: lead.customer.phoneNumber,
-      message,
-      idempotencyKey: `lead:${lead.id}:price`,
-    });
-
-    return {
-      sent: true,
-      alreadySent: false,
-      confirmation: PRICE_SENT_CONFIRMATION,
-      priceSentAt: priceSentAt.toISOString(),
-    };
-  }
-
   async completeLead(leadId: string) {
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
@@ -378,7 +245,6 @@ export class DashboardService {
         status: true,
         calculatedMinPrice: true,
         calculatedMaxPrice: true,
-        priceSentAt: true,
         evaluation: { select: { readinessStatus: true } },
         images: { select: { storagePath: true } },
       },
@@ -543,7 +409,6 @@ export class DashboardService {
             evaluatedAt: lead.evaluation.evaluatedAt.toISOString(),
           }
         : null,
-      priceSentAt: lead.priceSentAt?.toISOString() ?? null,
       whatsappUrl: buildWhatsappUrl(lead.customer.phoneNumber),
     };
   }
@@ -566,8 +431,7 @@ export class DashboardService {
       lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
       lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
       lead.calculatedMinPrice === null &&
-      lead.calculatedMaxPrice === null &&
-      lead.priceSentAt === null
+      lead.calculatedMaxPrice === null
     );
   }
 
@@ -586,15 +450,6 @@ export class DashboardService {
     return minimum && maximum
       ? { minimum: formatMoney(minimum), maximum: formatMoney(maximum) }
       : null;
-  }
-
-  private alreadySentResponse(priceSentAt: Date) {
-    return {
-      sent: false,
-      alreadySent: true,
-      confirmation: 'Este precio ya fue enviado anteriormente.',
-      priceSentAt: priceSentAt.toISOString(),
-    };
   }
 
   private toPricingRule(rule: PricingRule) {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
 import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
 import {
@@ -11,8 +11,6 @@ import {
   getLead,
   getLeadReference,
   isUnauthorized,
-  saveManualPrice,
-  sendPrice,
   type LeadDetail,
   type LeadReferenceAccess,
 } from '@/lib/dashboard-api';
@@ -55,12 +53,10 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [reference, setReference] = useState<LeadReferenceAccess | null>(null);
   const [referenceError, setReferenceError] = useState<string | null>(null);
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'complete' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'complete' | null>(null);
   const [evaluationExpanded, setEvaluationExpanded] = useState(false);
 
   const loadLead = useCallback(async () => {
@@ -68,8 +64,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       const result = await getLead(leadId);
       setError(null);
       setLead(result);
-      setMinPrice(result.price?.minimum ?? '');
-      setMaxPrice(result.price?.maximum ?? '');
     } catch (requestError) {
       if (isUnauthorized(requestError)) {
         router.replace('/login');
@@ -87,8 +81,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       .then((result) => {
         if (active) {
           setLead(result);
-          setMinPrice(result.price?.minimum ?? '');
-          setMaxPrice(result.price?.maximum ?? '');
         }
       })
       .catch((requestError: unknown) => {
@@ -137,69 +129,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     };
   }, [leadId, router]);
 
-  async function handleSavePrice(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const minimum = Number(minPrice);
-    const maximum = Number(maxPrice);
-
-    setActionError(null);
-    setConfirmation(null);
-
-    if (
-      !minPrice ||
-      !maxPrice ||
-      !Number.isFinite(minimum) ||
-      !Number.isFinite(maximum) ||
-      minimum < 0 ||
-      maximum < minimum
-    ) {
-      setActionError('Ingresa un rango válido. El precio máximo no puede ser menor al mínimo.');
-      return;
-    }
-
-    setPendingAction('save');
-
-    try {
-      const updated = await saveManualPrice(leadId, minimum, maximum);
-      setLead(updated);
-      setConfirmation('Precio guardado correctamente.');
-    } catch (requestError) {
-      if (isUnauthorized(requestError)) {
-        router.replace('/login');
-        return;
-      }
-
-      setActionError(dashboardErrorMessage(requestError));
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function handleSendPrice(): Promise<void> {
-    if (pendingAction) {
-      return;
-    }
-
-    setPendingAction('send');
-    setActionError(null);
-    setConfirmation(null);
-
-    try {
-      const result = await sendPrice(leadId);
-      setConfirmation(result.confirmation);
-      await loadLead();
-    } catch (requestError) {
-      if (isUnauthorized(requestError)) {
-        router.replace('/login');
-        return;
-      }
-
-      setActionError(dashboardErrorMessage(requestError));
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
   async function handleCompleteLead(): Promise<void> {
     if (pendingAction) {
       return;
@@ -241,7 +170,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     return <DashboardLoading label="Cargando pedido…" />;
   }
 
-  const requiresReview = lead.status === 'REQUIRES_REVIEW';
   const hasAiError =
     lead.evaluation?.blockers.some((blocker) => blocker.ruleId === 'AI_ERROR') ?? false;
   const contributionRuleIds = new Set(
@@ -439,57 +367,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               {lead.price ? `S/${lead.price.minimum} – S/${lead.price.maximum}` : 'Pendiente'}
             </p>
 
-            {requiresReview && (
-              <form className={styles.priceForm} onSubmit={(event) => void handleSavePrice(event)}>
-                <div className={styles.priceFields}>
-                  <label>
-                    <span>Precio mínimo</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99999999.99"
-                      step="0.01"
-                      value={minPrice}
-                      onChange={(event) => setMinPrice(event.target.value)}
-                      required
-                      disabled={pendingAction !== null}
-                    />
-                  </label>
-                  <label>
-                    <span>Precio máximo</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99999999.99"
-                      step="0.01"
-                      value={maxPrice}
-                      onChange={(event) => setMaxPrice(event.target.value)}
-                      required
-                      disabled={pendingAction !== null}
-                    />
-                  </label>
-                </div>
-                <button
-                  className={styles.secondaryButton}
-                  type="submit"
-                  disabled={pendingAction !== null}
-                >
-                  {pendingAction === 'save' ? 'Guardando…' : 'Guardar precio'}
-                </button>
-              </form>
-            )}
-
             <div className={styles.actionStack}>
-              {requiresReview && lead.price && !lead.priceSentAt && (
-                <button
-                  className={styles.primaryButton}
-                  type="button"
-                  onClick={() => void handleSendPrice()}
-                  disabled={pendingAction !== null}
-                >
-                  {pendingAction === 'send' ? 'Enviando…' : 'Enviar precio'}
-                </button>
-              )}
               {lead.whatsappUrl && (
                 <a
                   className={styles.whatsappButton}
@@ -512,9 +390,6 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               )}
             </div>
 
-            {lead.priceSentAt && (
-              <p className={styles.sentNote}>El precio ya fue enviado en modo de prueba.</p>
-            )}
             {actionError && (
               <p className={styles.formError} role="alert">
                 {actionError}
