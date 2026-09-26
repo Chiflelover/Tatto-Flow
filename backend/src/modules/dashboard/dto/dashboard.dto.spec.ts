@@ -2,7 +2,11 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { LeadListQueryDto, UpdatePricingRulesDto } from './dashboard.dto.js';
+import {
+  LeadListQueryDto,
+  SaveManualFinalPriceDto,
+  UpdatePricingRulesDto,
+} from './dashboard.dto.js';
 
 const RULE_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -19,6 +23,32 @@ function validateLeadQuery(payload: object) {
     whitelist: true,
   });
 }
+
+function validateManualFinalPrice(payload: object) {
+  return validate(plainToInstance(SaveManualFinalPriceDto, payload), {
+    forbidNonWhitelisted: true,
+    whitelist: true,
+  });
+}
+
+describe('SaveManualFinalPriceDto', () => {
+  it.each([650, 650.5, 650.55, 99_999_999.99])('accepts the valid price %s', async (price) => {
+    await expect(validateManualFinalPrice({ price })).resolves.toHaveLength(0);
+  });
+
+  it.each([0, -1, 650.555, 100_000_000, Number.NaN, Number.POSITIVE_INFINITY, '650'])(
+    'rejects the invalid price %s',
+    async (price) => {
+      await expect(validateManualFinalPrice({ price })).resolves.not.toHaveLength(0);
+    },
+  );
+
+  it('rejects additional fields', async () => {
+    await expect(
+      validateManualFinalPrice({ price: 650, sendWhatsapp: true }),
+    ).resolves.not.toHaveLength(0);
+  });
+});
 
 describe('LeadListQueryDto', () => {
   it('accepts readiness, archive, sorting, pagination and phone search', async () => {

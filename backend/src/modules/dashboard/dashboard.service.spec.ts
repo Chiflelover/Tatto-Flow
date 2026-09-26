@@ -40,6 +40,7 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     bodyPart: 'Brazo',
     status: LeadStatus.VERIFIED,
     reviewReasons: [],
+    manualFinalPrice: null,
     calculatedMinPrice: new Prisma.Decimal(500),
     calculatedMaxPrice: new Prisma.Decimal(700),
     pricingRuleId: 'ce16a85c-cc5b-43de-8a56-1b2ef568fd39',
@@ -182,6 +183,29 @@ describe('DashboardService', () => {
     expect(result).not.toHaveProperty('priceSentAt');
   });
 
+  it('serializes manual and automatic prices separately', async () => {
+    const findMany = vi
+      .fn()
+      .mockResolvedValue([
+        makeLead({ manualFinalPrice: new Prisma.Decimal('650.00') }),
+        makeLead({ id: crypto.randomUUID(), manualFinalPrice: null }),
+      ]);
+    const { service } = serviceWith({
+      lead: { findMany, count: vi.fn().mockResolvedValue(2) },
+    });
+
+    const result = await service.listLeads(leadQuery());
+
+    expect(result.leads[0]).toMatchObject({
+      manualFinalPrice: '650.00',
+      price: { minimum: '500', maximum: '700' },
+    });
+    expect(result.leads[1]).toMatchObject({
+      manualFinalPrice: null,
+      price: { minimum: '500', maximum: '700' },
+    });
+  });
+
   it('creates a five-minute signed URL only for a current stored image', async () => {
     const now = new Date('2026-09-14T12:00:00.000Z');
     const storagePath =
@@ -316,6 +340,91 @@ describe('DashboardService', () => {
       status: LeadStatus.COMPLETED,
     });
     expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('saves a manual final price without changing the lead status or conversation', async () => {
+    const updatedLead = makeLead({
+      status: LeadStatus.REQUIRES_REVIEW,
+      manualFinalPrice: new Prisma.Decimal('650.00'),
+      calculatedMinPrice: null,
+      calculatedMaxPrice: null,
+      evaluation: {
+        ...makeLead().evaluation!,
+        readinessStatus: ReadinessStatus.REVISAR,
+      },
+    });
+    const findUnique = vi
+      .fn()
+      .mockResolvedValueOnce({
+        calculatedMinPrice: null,
+        calculatedMaxPrice: null,
+        evaluation: { readinessStatus: ReadinessStatus.REVISAR },
+      })
+      .mockResolvedValueOnce(updatedLead);
+    const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
+    const { service } = serviceWith({ lead: { findUnique, update } });
+
+    const result = await service.saveManualFinalPrice(LEAD_ID, 650);
+
+    expect(update).toHaveBeenCalledOnce();
+    const updateCalls = update.mock.calls as Array<
+      [{ data: { manualFinalPrice: Prisma.Decimal } }]
+    >;
+    const updateData = updateCalls[0][0].data;
+    expect(Object.keys(updateData)).toEqual(['manualFinalPrice']);
+    expect(String(updateData.manualFinalPrice)).toBe('650');
+    expect(result).toMatchObject({
+      status: LeadStatus.REQUIRES_REVIEW,
+      manualFinalPrice: '650.00',
+      price: null,
+    });
+  });
+
+  it('allows editing an existing manual final price', async () => {
+    const updatedLead = makeLead({
+      status: LeadStatus.REQUIRES_REVIEW,
+      manualFinalPrice: new Prisma.Decimal('725.50'),
+      calculatedMinPrice: null,
+      calculatedMaxPrice: null,
+      evaluation: {
+        ...makeLead().evaluation!,
+        readinessStatus: ReadinessStatus.REVISAR,
+      },
+    });
+    const findUnique = vi
+      .fn()
+      .mockResolvedValueOnce({
+        calculatedMinPrice: null,
+        calculatedMaxPrice: null,
+        evaluation: { readinessStatus: ReadinessStatus.REVISAR },
+      })
+      .mockResolvedValueOnce(updatedLead);
+    const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
+    const { service } = serviceWith({ lead: { findUnique, update } });
+
+    await expect(service.saveManualFinalPrice(LEAD_ID, 725.5)).resolves.toMatchObject({
+      manualFinalPrice: '725.50',
+      status: LeadStatus.REQUIRES_REVIEW,
+    });
+  });
+
+  it('does not allow a manual final price when an automatic range exists', async () => {
+    const update = vi.fn();
+    const { service } = serviceWith({
+      lead: {
+        findUnique: vi.fn().mockResolvedValue({
+          calculatedMinPrice: new Prisma.Decimal(500),
+          calculatedMaxPrice: new Prisma.Decimal(700),
+          evaluation: { readinessStatus: ReadinessStatus.REVISAR },
+        }),
+        update,
+      },
+    });
+
+    await expect(service.saveManualFinalPrice(LEAD_ID, 650)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('does not finalize a lead while image analysis is still running', async () => {

@@ -14,7 +14,11 @@ import {
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
 import { DashboardService } from './dashboard.service.js';
-import { LeadListQueryDto, UpdatePricingRulesDto } from './dto/dashboard.dto.js';
+import {
+  LeadListQueryDto,
+  SaveManualFinalPriceDto,
+  UpdatePricingRulesDto,
+} from './dto/dashboard.dto.js';
 
 @Controller('dashboard')
 @UseGuards(SessionAuthGuard)
@@ -44,6 +48,14 @@ export class DashboardController {
   @Patch('leads/:id/complete')
   completeLead(@Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string) {
     return this.dashboardService.completeLead(leadId);
+  }
+
+  @Patch('leads/:id/final-price')
+  saveManualFinalPrice(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) leadId: string,
+    @Body() dto: SaveManualFinalPriceDto,
+  ) {
+    return this.dashboardService.saveManualFinalPrice(leadId, dto.price);
   }
 
   @Patch('leads/:id/archive')

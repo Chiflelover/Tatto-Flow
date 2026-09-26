@@ -53,6 +53,7 @@ type SummaryLead = Prisma.LeadGetPayload<{ include: typeof SUMMARY_INCLUDE }>;
 type DetailLead = Prisma.LeadGetPayload<{ include: typeof DETAIL_INCLUDE }>;
 interface LeadDeletionCandidate {
   status: LeadStatus;
+  manualFinalPrice: Prisma.Decimal | null;
   calculatedMinPrice: Prisma.Decimal | null;
   calculatedMaxPrice: Prisma.Decimal | null;
   evaluation: { readinessStatus: ReadinessStatus } | null;
@@ -215,6 +216,38 @@ export class DashboardService {
     return this.getLead(leadId);
   }
 
+  async saveManualFinalPrice(leadId: string, price: number) {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: {
+        calculatedMinPrice: true,
+        calculatedMaxPrice: true,
+        evaluation: { select: { readinessStatus: true } },
+      },
+    });
+
+    if (!lead) {
+      throw new NotFoundException('No encontramos ese pedido.');
+    }
+
+    if (
+      lead.evaluation?.readinessStatus !== ReadinessStatus.REVISAR ||
+      lead.calculatedMinPrice !== null ||
+      lead.calculatedMaxPrice !== null
+    ) {
+      throw new ConflictException(
+        'El precio final manual solo puede guardarse en pedidos que requieren revisión y no tienen precio automático.',
+      );
+    }
+
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: { manualFinalPrice: new Prisma.Decimal(price) },
+    });
+
+    return this.getLead(leadId);
+  }
+
   async archiveLead(leadId: string) {
     await this.ensureLeadExists(leadId);
     await this.prisma.lead.updateMany({
@@ -243,6 +276,7 @@ export class DashboardService {
         customerId: true,
         conversationId: true,
         status: true,
+        manualFinalPrice: true,
         calculatedMinPrice: true,
         calculatedMaxPrice: true,
         evaluation: { select: { readinessStatus: true } },
@@ -364,6 +398,7 @@ export class DashboardService {
       statusLabel: statusLabel(lead.status),
       createdAt: lead.createdAt.toISOString(),
       archivedAt: lead.archivedAt?.toISOString() ?? null,
+      manualFinalPrice: this.manualFinalPrice(lead.manualFinalPrice),
       price: this.priceRange(lead.calculatedMinPrice, lead.calculatedMaxPrice),
       deletable: this.isLeadDeletable(lead),
       readiness: lead.evaluation
@@ -430,6 +465,7 @@ export class DashboardService {
     return (
       lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
       lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
+      lead.manualFinalPrice === null &&
       lead.calculatedMinPrice === null &&
       lead.calculatedMaxPrice === null
     );
@@ -450,6 +486,10 @@ export class DashboardService {
     return minimum && maximum
       ? { minimum: formatMoney(minimum), maximum: formatMoney(maximum) }
       : null;
+  }
+
+  private manualFinalPrice(price: Prisma.Decimal | null): string | null {
+    return price?.toFixed(2) ?? null;
   }
 
   private toPricingRule(rule: PricingRule) {

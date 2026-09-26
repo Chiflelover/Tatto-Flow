@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { LeadStatus, LeadSummary } from '@/lib/dashboard-api';
+import { leadPriceLabel } from '@/lib/lead-price';
 import styles from '@/styles/dashboard.module.css';
 
 const STATUS_CLASS: Record<LeadStatus, string> = {
@@ -21,6 +22,8 @@ export function StatusBadge({ status, label }: { status: LeadStatus; label: stri
 }
 
 export function LeadCard({ lead }: { lead: LeadSummary }) {
+  const price = leadPriceLabel(lead);
+
   return (
     <article className={styles.leadCard}>
       <Link href={`/dashboard/leads/${lead.id}`} className={styles.leadLink}>
@@ -34,9 +37,7 @@ export function LeadCard({ lead }: { lead: LeadSummary }) {
         </p>
         <div className={styles.leadBottomline}>
           <span>{DATE_FORMATTER.format(new Date(lead.createdAt))}</span>
-          <strong>
-            {lead.price ? `S/${lead.price.minimum} – S/${lead.price.maximum}` : 'Precio pendiente'}
-          </strong>
+          <strong>{price === '—' ? 'Precio pendiente' : price}</strong>
         </div>
       </Link>
     </article>

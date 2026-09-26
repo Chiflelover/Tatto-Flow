@@ -142,6 +142,7 @@ model Lead {
   bodyPart           String?         @map("body_part") @db.VarChar(10)
   status             LeadStatus      @default(ANALYZING)
   reviewReasons      ReviewReason[]  @default([]) @map("review_reasons")
+  manualFinalPrice   Decimal?        @map("manual_final_price") @db.Decimal(10, 2)
   calculatedMinPrice Decimal?        @map("calculated_min_price") @db.Decimal(10, 2)
   calculatedMaxPrice Decimal?        @map("calculated_max_price") @db.Decimal(10, 2)
   pricingRuleId      String?         @map("pricing_rule_id") @db.Uuid

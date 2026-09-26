@@ -35,6 +35,7 @@ import {
   type TattooSize,
 } from '@/lib/dashboard-api';
 import { createSingleFlightRunner } from '@/lib/single-flight';
+import { leadPriceLabel } from '@/lib/lead-price';
 import styles from '@/styles/dashboard.module.css';
 
 const PAGE_SIZE = 20;
@@ -134,10 +135,6 @@ function enumValue<T extends string>(value: string | null, values: readonly T[])
 function positivePage(value: string | null): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
-}
-
-function priceLabel(lead: LeadSummary): string {
-  return lead.price ? `S/${lead.price.minimum}–${lead.price.maximum}` : '—';
 }
 
 function dateLabel(value: string): string {
@@ -581,7 +578,7 @@ function LeadsWorkspace() {
                     onKeyDown={(event) => openLead(lead.id, event)}
                   >
                     <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
-                    <td className={styles.priceCell}>{priceLabel(lead)}</td>
+                    <td className={styles.priceCell}>{leadPriceLabel(lead)}</td>
                     <td>{lead.selectedSizeLabel ?? '—'}</td>
                     <td>{lead.selectedDetailLabel ?? '—'}</td>
                     <td>
@@ -625,7 +622,7 @@ function LeadsWorkspace() {
                   </div>
                   <div>
                     <dt>Precio</dt>
-                    <dd>{priceLabel(lead)}</dd>
+                    <dd>{leadPriceLabel(lead)}</dd>
                   </div>
                   <div>
                     <dt>Fecha</dt>

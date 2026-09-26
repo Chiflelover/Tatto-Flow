@@ -656,6 +656,59 @@
   font-weight: 500;
 }
 
+.finalPriceDisplay > span,
+.manualPriceForm > label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.finalPriceDisplay .priceDisplay {
+  margin-top: 0.2rem;
+}
+
+.manualPriceForm {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.manualPriceInput {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 2.85rem;
+  border: 1px solid var(--border-strong);
+  color: var(--foreground);
+  background: var(--input-background);
+}
+
+.manualPriceInput:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0.18rem 0 var(--ink);
+}
+
+.manualPriceInput > span {
+  padding-left: 0.8rem;
+  color: var(--muted-strong);
+  font-weight: 700;
+}
+
+.manualPriceInput input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem 0.8rem 0.7rem 0.35rem;
+  border: 0;
+  outline: 0;
+  color: var(--foreground);
+  background: transparent;
+  font: inherit;
+}
+
 .pricingInputWrap input,
 .leadFilters select,
 .phoneSearch input {

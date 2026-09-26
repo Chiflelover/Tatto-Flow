@@ -29,6 +29,13 @@ export type LeadSortField = (typeof LEAD_SORT_FIELDS)[number];
 export const SORT_ORDERS = ['asc', 'desc'] as const;
 export type SortOrder = (typeof SORT_ORDERS)[number];
 
+export class SaveManualFinalPriceDto {
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(99_999_999.99)
+  price!: number;
+}
+
 export class LeadListQueryDto {
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>

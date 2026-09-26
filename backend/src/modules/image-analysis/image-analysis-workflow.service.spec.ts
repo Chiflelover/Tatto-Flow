@@ -123,6 +123,7 @@ function createFixture(options: FixtureOptions = {}) {
         bodyPart: 'Brazo',
         status: LeadStatus.ANALYZING,
         reviewReasons: [],
+        manualFinalPrice: null,
         calculatedMinPrice: null,
         calculatedMaxPrice: null,
         pricingRuleId: null,

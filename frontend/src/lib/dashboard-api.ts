@@ -37,6 +37,7 @@ export interface LeadSummary {
   statusLabel: string;
   createdAt: string;
   archivedAt: string | null;
+  manualFinalPrice: string | null;
   price: PriceRange | null;
   deletable: boolean;
   readiness: {
@@ -242,6 +243,12 @@ export function getLeadReference(leadId: string): Promise<LeadReferenceAccess> {
 
 export function completeLead(leadId: string): Promise<LeadDetail> {
   return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/complete`, 'PATCH');
+}
+
+export function saveManualFinalPrice(leadId: string, price: number): Promise<LeadDetail> {
+  return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}/final-price`, 'PATCH', {
+    price,
+  });
 }
 
 export function archiveLead(leadId: string): Promise<LeadDetail> {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
 import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
 import {
@@ -11,6 +11,7 @@ import {
   getLead,
   getLeadReference,
   isUnauthorized,
+  saveManualFinalPrice,
   type LeadDetail,
   type LeadReferenceAccess,
 } from '@/lib/dashboard-api';
@@ -56,7 +57,8 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<'complete' | null>(null);
+  const [manualPriceInput, setManualPriceInput] = useState('');
+  const [pendingAction, setPendingAction] = useState<'complete' | 'save-price' | null>(null);
   const [evaluationExpanded, setEvaluationExpanded] = useState(false);
 
   const loadLead = useCallback(async () => {
@@ -64,6 +66,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       const result = await getLead(leadId);
       setError(null);
       setLead(result);
+      setManualPriceInput(result.manualFinalPrice ?? '');
     } catch (requestError) {
       if (isUnauthorized(requestError)) {
         router.replace('/login');
@@ -81,6 +84,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       .then((result) => {
         if (active) {
           setLead(result);
+          setManualPriceInput(result.manualFinalPrice ?? '');
         }
       })
       .catch((requestError: unknown) => {
@@ -142,6 +146,48 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       const completed = await completeLead(leadId);
       setLead(completed);
       setConfirmation('Pedido finalizado. Nita podrá iniciar una nueva cotización del cliente.');
+    } catch (requestError) {
+      if (isUnauthorized(requestError)) {
+        router.replace('/login');
+        return;
+      }
+
+      setActionError(dashboardErrorMessage(requestError));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleSaveManualPrice(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (pendingAction) {
+      return;
+    }
+
+    const normalizedPrice = manualPriceInput.trim().replace(',', '.');
+    const price = Number(normalizedPrice);
+
+    if (
+      !/^\d+(?:\.\d{1,2})?$/.test(normalizedPrice) ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      price > 99_999_999.99
+    ) {
+      setActionError('Ingresa un precio válido, mayor que cero y con máximo 2 decimales.');
+      setConfirmation(null);
+      return;
+    }
+
+    setPendingAction('save-price');
+    setActionError(null);
+    setConfirmation(null);
+
+    try {
+      const updatedLead = await saveManualFinalPrice(leadId, price);
+      setLead(updatedLead);
+      setManualPriceInput(updatedLead.manualFinalPrice ?? normalizedPrice);
+      setConfirmation('Precio final guardado correctamente.');
     } catch (requestError) {
       if (isUnauthorized(requestError)) {
         router.replace('/login');
@@ -363,9 +409,45 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             <div className={styles.panelHeader}>
               <h2>Precio</h2>
             </div>
-            <p className={styles.priceDisplay}>
-              {lead.price ? `S/${lead.price.minimum} – S/${lead.price.maximum}` : 'Pendiente'}
-            </p>
+            {lead.manualFinalPrice ? (
+              <div className={styles.finalPriceDisplay}>
+                <span>Precio final</span>
+                <p className={styles.priceDisplay}>S/{lead.manualFinalPrice}</p>
+              </div>
+            ) : (
+              <p className={styles.priceDisplay}>
+                {lead.price ? `S/${lead.price.minimum} – S/${lead.price.maximum}` : 'Pendiente'}
+              </p>
+            )}
+
+            {!lead.price && lead.readiness?.status === 'REVISAR' && (
+              <form className={styles.manualPriceForm} onSubmit={handleSaveManualPrice}>
+                <label htmlFor="manual-final-price">Precio final</label>
+                <div className={styles.manualPriceInput}>
+                  <span aria-hidden="true">S/</span>
+                  <input
+                    id="manual-final-price"
+                    name="manualFinalPrice"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    max="99999999.99"
+                    step="0.01"
+                    required
+                    value={manualPriceInput}
+                    onChange={(event) => setManualPriceInput(event.target.value)}
+                    disabled={pendingAction !== null}
+                  />
+                </div>
+                <button
+                  className={styles.primaryButton}
+                  type="submit"
+                  disabled={pendingAction !== null}
+                >
+                  {pendingAction === 'save-price' ? 'Guardando…' : 'Guardar precio'}
+                </button>
+              </form>
+            )}
 
             <div className={styles.actionStack}>
               {lead.whatsappUrl && (

@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/lib/single-flight.test.mjs",
+    "test": "node --test src/lib/single-flight.test.mjs src/lib/lead-price.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
