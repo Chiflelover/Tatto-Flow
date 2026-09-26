@@ -167,6 +167,34 @@ describe('WhatsAppWebhookService', () => {
     expect(fixture.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('claims the same simultaneous WhatsApp message ID only once before side effects', async () => {
+    const fixture = createFixture();
+    const claimedIds = new Set<string>();
+    fixture.claim.mockImplementation((messageId: string) => {
+      if (claimedIds.has(messageId)) {
+        return Promise.resolve(false);
+      }
+
+      claimedIds.add(messageId);
+      return Promise.resolve(true);
+    });
+    const rawBody = payload({
+      id: MESSAGE_ID,
+      from: CUSTOMER,
+      type: 'text',
+      text: { body: 'Hola' },
+    });
+
+    await Promise.all([
+      fixture.service.handleWebhook(rawBody, 'sha256=valid'),
+      fixture.service.handleWebhook(rawBody, 'sha256=valid'),
+    ]);
+
+    expect(fixture.claim).toHaveBeenCalledTimes(2);
+    expect(fixture.handleIncoming).toHaveBeenCalledOnce();
+    expect(fixture.sendMessage).toHaveBeenCalledOnce();
+  });
+
   it('retains the message ID if delivery fails after Nita advanced the conversation', async () => {
     const fixture = createFixture();
     fixture.sendMessage.mockRejectedValue(new Error('provider unavailable'));
@@ -262,6 +290,7 @@ describe('WhatsAppWebhookService', () => {
 
     expect(fixture.claim).not.toHaveBeenCalled();
     expect(fixture.handleIncoming).not.toHaveBeenCalled();
+    expect(fixture.sendMessage).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith('whatsapp.webhook.ignored', {
       reason: 'statuses_without_messages',
       object: 'whatsapp_business_account',

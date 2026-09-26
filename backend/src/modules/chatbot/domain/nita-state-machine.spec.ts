@@ -78,7 +78,9 @@ describe('NitaStateMachine', () => {
         selectedDetail: detail,
         currentState: ConversationState.ASK_BODY_PART,
       });
-      expect(decision.response.messages[0]?.text).toBe('¿En qué parte del cuerpo será el tatuaje?');
+      expect(decision.response.messages).toEqual([
+        { type: 'text', text: '¿En qué parte del cuerpo será el tatuaje?' },
+      ]);
       expect(decision.response.options).toEqual([]);
     },
   );
@@ -105,6 +107,32 @@ describe('NitaStateMachine', () => {
     expect(decision.update).toEqual({
       bodyPart: 'brazo',
       currentState: ConversationState.WAITING_IMAGE,
+    });
+    expect(decision.response.messages).toEqual([
+      {
+        type: 'text',
+        text: 'Ahora envíame una imagen de referencia del tatuaje que deseas.',
+      },
+    ]);
+  });
+
+  it('ignores an obsolete interactive reply while waiting for the body part', () => {
+    const decision = stateMachine.process(
+      context(ConversationState.ASK_BODY_PART, {
+        selectedSize: TattooSize.SMALL,
+        selectedDetail: DetailLevel.DETAILED,
+      }),
+      { type: 'option', value: DetailLevel.LIGHT },
+    );
+
+    expect(decision).toEqual({
+      ignored: true,
+      update: {},
+      response: {
+        state: ConversationState.ASK_BODY_PART,
+        messages: [],
+        options: [],
+      },
     });
   });
 

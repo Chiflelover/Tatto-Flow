@@ -58,4 +58,5 @@ export interface ChatbotConversationUpdate {
 export interface ChatbotDecision {
   response: ChatbotResponse;
   update: ChatbotConversationUpdate;
+  ignored?: boolean;
 }

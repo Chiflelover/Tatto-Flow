@@ -145,6 +145,10 @@ export class NitaStateMachine {
   }
 
   private processBodyPart(input: ChatbotInput): ChatbotDecision {
+    if (input.type === 'option') {
+      return this.ignored(ConversationState.ASK_BODY_PART);
+    }
+
     if (input.type !== 'text') {
       return this.unchanged(
         ConversationState.ASK_BODY_PART,
@@ -206,6 +210,14 @@ export class NitaStateMachine {
     return {
       update: {},
       response: this.createResponse(state, messages),
+    };
+  }
+
+  private ignored(state: ConversationState): ChatbotDecision {
+    return {
+      ignored: true,
+      update: {},
+      response: this.createResponse(state, []),
     };
   }
 

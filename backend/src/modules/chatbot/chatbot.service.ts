@@ -108,7 +108,7 @@ export class ChatbotService {
         return this.silentHandoff();
       }
 
-      return this.stateMachine.prompt(transition.conversation);
+      return this.silentResponse(transition.conversation.currentState);
     }
 
     if (decision.update.currentState !== ConversationState.ANALYZING) {
@@ -191,6 +191,10 @@ export class ChatbotService {
 
     const decision = this.stateMachine.process(conversation, input);
 
+    if (decision.ignored) {
+      return decision.response;
+    }
+
     return this.applyDecision(conversation, decision);
   }
 
@@ -247,7 +251,7 @@ export class ChatbotService {
         return this.silentHandoff();
       }
 
-      return this.stateMachine.prompt(result.conversation);
+      return this.silentResponse(result.conversation.currentState);
     }
 
     return decision.response;
@@ -261,8 +265,12 @@ export class ChatbotService {
   }
 
   private silentHandoff(): ChatbotResponse {
+    return this.silentResponse(ConversationState.HANDOFF_TO_TATTOO_ARTIST);
+  }
+
+  private silentResponse(state: ConversationState): ChatbotResponse {
     return {
-      state: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+      state,
       messages: [],
       options: [],
     };

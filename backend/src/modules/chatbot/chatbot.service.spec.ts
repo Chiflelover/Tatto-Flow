@@ -75,6 +75,149 @@ describe('ChatbotService', () => {
     expect(response.state).toBe(ConversationState.ASK_SIZE);
   });
 
+  it('lets only one of two simultaneous detail replies enter BODY_PART and send its prompt', async () => {
+    const now = new Date();
+    const customer = makeCustomer(now);
+    const detailConversation = makeConversation(customer.id, now, {
+      currentState: ConversationState.ASK_DETAIL,
+      status: ConversationStatus.ACTIVE,
+      selectedDetail: null,
+      bodyPart: null,
+    });
+    let currentConversation = detailConversation;
+    const appliedUpdates: Array<{ selectedDetail?: DetailLevel }> = [];
+    const applyTransition = vi.fn<ConversationsService['applyTransition']>(
+      (_conversationId, expectedState, update) => {
+        if (currentConversation.currentState !== expectedState) {
+          return Promise.resolve({ applied: false, conversation: currentConversation });
+        }
+
+        appliedUpdates.push(update);
+        currentConversation = { ...currentConversation, ...update };
+        return Promise.resolve({ applied: true, conversation: currentConversation });
+      },
+    );
+    const service = new ChatbotService(
+      {
+        findOrCreateByPhoneNumber: vi.fn().mockResolvedValue(customer),
+      } as unknown as CustomersService,
+      {
+        getOrCreateActive: vi.fn().mockResolvedValue({
+          conversation: detailConversation,
+          created: false,
+        }),
+        applyTransition,
+      } as unknown as ConversationsService,
+      new NitaStateMachine(),
+      {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
+      new ConfigService(),
+    );
+
+    const responses = await Promise.all([
+      service.processOptionSelection(customer.phoneNumber, DetailLevel.DETAILED),
+      service.processOptionSelection(customer.phoneNumber, DetailLevel.LIGHT),
+    ]);
+
+    expect(appliedUpdates).toHaveLength(1);
+    expect(currentConversation.currentState).toBe(ConversationState.ASK_BODY_PART);
+    expect([DetailLevel.DETAILED, DetailLevel.LIGHT]).toContain(currentConversation.selectedDetail);
+    expect(responses.flatMap(({ messages }) => messages)).toEqual([
+      { type: 'text', text: '¿En qué parte del cuerpo será el tatuaje?' },
+    ]);
+  });
+
+  it('ignores a late detail button in BODY_PART without changing the selected detail', async () => {
+    const now = new Date();
+    const customer = makeCustomer(now);
+    const bodyPartConversation = makeConversation(customer.id, now, {
+      currentState: ConversationState.ASK_BODY_PART,
+      status: ConversationStatus.ACTIVE,
+      selectedDetail: DetailLevel.DETAILED,
+      bodyPart: null,
+    });
+    const applyTransition = vi.fn<ConversationsService['applyTransition']>();
+    const service = new ChatbotService(
+      {
+        findOrCreateByPhoneNumber: vi.fn().mockResolvedValue(customer),
+      } as unknown as CustomersService,
+      {
+        getOrCreateActive: vi.fn().mockResolvedValue({
+          conversation: bodyPartConversation,
+          created: false,
+        }),
+        applyTransition,
+      } as unknown as ConversationsService,
+      new NitaStateMachine(),
+      {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
+      new ConfigService(),
+    );
+
+    const response = await service.processOptionSelection(customer.phoneNumber, DetailLevel.LIGHT);
+
+    expect(response).toEqual({
+      state: ConversationState.ASK_BODY_PART,
+      messages: [],
+      options: [],
+    });
+    expect(applyTransition).not.toHaveBeenCalled();
+    expect(bodyPartConversation.selectedDetail).toBe(DetailLevel.DETAILED);
+  });
+
+  it('accepts a valid text in BODY_PART and continues to the image request', async () => {
+    const now = new Date();
+    const customer = makeCustomer(now);
+    const bodyPartConversation = makeConversation(customer.id, now, {
+      currentState: ConversationState.ASK_BODY_PART,
+      status: ConversationStatus.ACTIVE,
+      selectedDetail: DetailLevel.DETAILED,
+      bodyPart: null,
+    });
+    const waitingImageConversation = {
+      ...bodyPartConversation,
+      currentState: ConversationState.WAITING_IMAGE,
+      bodyPart: 'brazo',
+    };
+    const applyTransition = vi
+      .fn<ConversationsService['applyTransition']>()
+      .mockResolvedValue({ applied: true, conversation: waitingImageConversation });
+    const service = new ChatbotService(
+      {
+        findOrCreateByPhoneNumber: vi.fn().mockResolvedValue(customer),
+      } as unknown as CustomersService,
+      {
+        getOrCreateActive: vi.fn().mockResolvedValue({
+          conversation: bodyPartConversation,
+          created: false,
+        }),
+        applyTransition,
+      } as unknown as ConversationsService,
+      new NitaStateMachine(),
+      {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
+      new ConfigService(),
+    );
+
+    const response = await service.processTextMessage(customer.phoneNumber, '  brazo  ');
+
+    expect(applyTransition).toHaveBeenCalledWith(
+      bodyPartConversation.id,
+      ConversationState.ASK_BODY_PART,
+      { bodyPart: 'brazo', currentState: ConversationState.WAITING_IMAGE },
+    );
+    expect(response).toEqual({
+      state: ConversationState.WAITING_IMAGE,
+      messages: [
+        {
+          type: 'text',
+          text: 'Ahora envíame una imagen de referencia del tatuaje que deseas.',
+        },
+      ],
+      options: [],
+    });
+  });
+
   it.each([
     {
       status: LeadStatus.VERIFIED,
