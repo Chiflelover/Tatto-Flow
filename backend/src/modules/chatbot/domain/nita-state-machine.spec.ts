@@ -21,8 +21,12 @@ describe('NitaStateMachine', () => {
   it('returns Nita welcome and the fixed size options at conversation start', () => {
     const decision = stateMachine.begin();
 
-    expect(decision.response.messages[0]?.text).toContain('Hola, soy Nita');
-    expect(decision.response.messages[1]?.text).toBe('¿Qué tamaño aproximado tendrá tu tatuaje?');
+    expect(decision.response.messages[0]?.text).toBe(
+      'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.',
+    );
+    expect(decision.response.messages[1]?.text).toBe(
+      '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+    );
     expect(decision.response.options).toEqual([
       { value: TattooSize.SMALL, label: 'Pequeño' },
       { value: TattooSize.MEDIUM, label: 'Mediano' },
@@ -79,7 +83,7 @@ describe('NitaStateMachine', () => {
         currentState: ConversationState.ASK_BODY_PART,
       });
       expect(decision.response.messages).toEqual([
-        { type: 'text', text: '¿En qué parte del cuerpo será el tatuaje?' },
+        { type: 'text', text: '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?' },
       ]);
       expect(decision.response.options).toEqual([]);
     },
@@ -111,7 +115,7 @@ describe('NitaStateMachine', () => {
     expect(decision.response.messages).toEqual([
       {
         type: 'text',
-        text: 'Ahora envíame una imagen de referencia del tatuaje que deseas.',
+        text: 'Perfecto. Ahora envíame una imagen de referencia del tatuaje que tienes en mente.\n\nNo tiene que ser exactamente el mismo diseño. Lo ideal es que sea un tatuaje ya hecho sobre la piel, parecido a lo que buscas en tamaño y nivel de detalle.\n\n(Puede ser un tatuaje que hayas encontrado en Instagram, Pinterest o cualquier otra referencia.)',
       },
     ]);
   });

@@ -111,7 +111,7 @@ describe('WhatsAppCloudApiClient', () => {
 
     await createClient().sendMessage('51999999999', {
       type: 'interactive_buttons',
-      body: '¿Qué tamaño aproximado tendrá tu tatuaje?',
+      body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       buttons: [
         { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
         { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
@@ -141,7 +141,7 @@ describe('WhatsAppCloudApiClient', () => {
 
     await createClient().sendMessage('51999999999', {
       type: 'interactive_buttons',
-      body: '¿Qué nivel de detalle tiene el diseño?',
+      body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       buttons: [
         { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
         { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
@@ -156,7 +156,7 @@ describe('WhatsAppCloudApiClient', () => {
     };
     expect(fallback.type).toBe('text');
     expect(fallback.text.body).toBe(
-      '¿Qué nivel de detalle tiene el diseño?\n\n- Ligero\n- Medio\n- Detallado',
+      '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)\n\n- Ligero\n- Medio\n- Detallado',
     );
   });
 

@@ -9,11 +9,14 @@ import type {
 } from './chatbot.types.js';
 
 const WELCOME_MESSAGE =
-  'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋\nTe haré unas preguntas para poder atenderte mejor.';
-const SIZE_QUESTION = '¿Qué tamaño aproximado tendrá tu tatuaje?';
-const DETAIL_QUESTION = '¿Qué nivel de detalle tiene el diseño?';
-const BODY_PART_QUESTION = '¿En qué parte del cuerpo será el tatuaje?';
-const IMAGE_QUESTION = 'Ahora envíame una imagen de referencia del tatuaje que deseas.';
+  'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.';
+const SIZE_QUESTION =
+  '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)';
+const DETAIL_QUESTION =
+  '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)';
+const BODY_PART_QUESTION = '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?';
+const IMAGE_QUESTION =
+  'Perfecto. Ahora envíame una imagen de referencia del tatuaje que tienes en mente.\n\nNo tiene que ser exactamente el mismo diseño. Lo ideal es que sea un tatuaje ya hecho sobre la piel, parecido a lo que buscas en tamaño y nivel de detalle.\n\n(Puede ser un tatuaje que hayas encontrado en Instagram, Pinterest o cualquier otra referencia.)';
 
 const SIZE_OPTIONS: ChatbotOption[] = [
   { value: TattooSize.SMALL, label: 'Pequeño' },

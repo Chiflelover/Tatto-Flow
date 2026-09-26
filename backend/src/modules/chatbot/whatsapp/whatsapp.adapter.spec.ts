@@ -49,8 +49,8 @@ describe('WhatsAppAdapter', () => {
       response(
         ConversationState.ASK_SIZE,
         [
-          'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋',
-          '¿Qué tamaño aproximado tendrá tu tatuaje?',
+          'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.',
+          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
         ],
         SIZE_OPTIONS,
       ),
@@ -63,10 +63,13 @@ describe('WhatsAppAdapter', () => {
         text: 'Hola',
       }),
     ).resolves.toEqual([
-      { type: 'text', text: 'Hola, soy Nita, tu asistente virtual de Tatuoflow 👋' },
+      {
+        type: 'text',
+        text: 'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.',
+      },
       {
         type: 'interactive_buttons',
-        body: '¿Qué tamaño aproximado tendrá tu tatuaje?',
+        body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
         buttons: [
           { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
           { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
@@ -80,7 +83,9 @@ describe('WhatsAppAdapter', () => {
     processOptionSelection.mockResolvedValue(
       response(
         ConversationState.ASK_DETAIL,
-        ['¿Qué nivel de detalle tiene el diseño?'],
+        [
+          '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
+        ],
         DETAIL_OPTIONS,
       ),
     );
@@ -94,7 +99,7 @@ describe('WhatsAppAdapter', () => {
     ).resolves.toEqual([
       {
         type: 'interactive_buttons',
-        body: '¿Qué nivel de detalle tiene el diseño?',
+        body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
         buttons: [
           { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
           { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
@@ -163,7 +168,9 @@ describe('WhatsAppAdapter', () => {
     processTextMessage.mockResolvedValue(
       response(
         ConversationState.ASK_SIZE,
-        ['¿Qué tamaño aproximado tendrá tu tatuaje?'],
+        [
+          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
+        ],
         SIZE_OPTIONS,
       ),
     );
@@ -177,7 +184,7 @@ describe('WhatsAppAdapter', () => {
     expect(outgoing).toEqual([
       {
         type: 'text',
-        text: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n- Pequeño\n- Mediano\n- Grande',
+        text: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)\n\n- Pequeño\n- Mediano\n- Grande',
       },
     ]);
 

@@ -20,9 +20,9 @@ import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 
 const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
-  `Por lo que me indicaste, el precio aproximado estaría entre S/${minimum} y S/${maximum}. El precio final lo confirma el tatuador después de revisar el diseño.`;
+  `Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/${minimum} y S/${maximum}.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.`;
 const REQUIRES_REVIEW_MESSAGE =
-  'Perfecto. Ya tengo la información y la referencia. Un tatuador del estudio revisará tu idea para darte el precio exacto.';
+  'Perfecto, ya tengo toda la información y tu referencia.\n\nUn tatuador del estudio revisará tu idea para darte el precio exacto.\n\nTu solicitud ya está en revisión y te avisaremos cuando esté lista.';
 const OUT_OF_HOURS_MESSAGE =
   'Hola 👋 En este momento estamos fuera de nuestro horario de atención.\nNuestro horario es de 6:00 a. m. a 10:00 p. m.\nEscríbenos nuevamente dentro de ese horario y Nita te ayudará con tu cotización.';
 

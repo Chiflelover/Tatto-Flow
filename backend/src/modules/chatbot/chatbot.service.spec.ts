@@ -123,7 +123,7 @@ describe('ChatbotService', () => {
     expect(currentConversation.currentState).toBe(ConversationState.ASK_BODY_PART);
     expect([DetailLevel.DETAILED, DetailLevel.LIGHT]).toContain(currentConversation.selectedDetail);
     expect(responses.flatMap(({ messages }) => messages)).toEqual([
-      { type: 'text', text: '¿En qué parte del cuerpo será el tatuaje?' },
+      { type: 'text', text: '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?' },
     ]);
   });
 
@@ -211,7 +211,7 @@ describe('ChatbotService', () => {
       messages: [
         {
           type: 'text',
-          text: 'Ahora envíame una imagen de referencia del tatuaje que deseas.',
+          text: 'Perfecto. Ahora envíame una imagen de referencia del tatuaje que tienes en mente.\n\nNo tiene que ser exactamente el mismo diseño. Lo ideal es que sea un tatuaje ya hecho sobre la piel, parecido a lo que buscas en tamaño y nivel de detalle.\n\n(Puede ser un tatuaje que hayas encontrado en Instagram, Pinterest o cualquier otra referencia.)',
         },
       ],
       options: [],
@@ -228,13 +228,13 @@ describe('ChatbotService', () => {
         maxPrice: '700',
       },
       expected:
-        'Por lo que me indicaste, el precio aproximado estaría entre S/500 y S/700. El precio final lo confirma el tatuador después de revisar el diseño.',
+        'Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/500 y S/700.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.',
     },
     {
       status: LeadStatus.REQUIRES_REVIEW,
       pricingRule: null,
       expected:
-        'Perfecto. Ya tengo la información y la referencia. Un tatuador del estudio revisará tu idea para darte el precio exacto.',
+        'Perfecto, ya tengo toda la información y tu referencia.\n\nUn tatuador del estudio revisará tu idea para darte el precio exacto.\n\nTu solicitud ya está en revisión y te avisaremos cuando esté lista.',
     },
   ])(
     'returns the exact final Nita message for $status',
