@@ -1927,3 +1927,570 @@
     transition: none;
   }
 }
+
+/* Sumi-e visual layer: organic strokes, restrained surfaces and warm ink contrast. */
+.dashboardLayout::before {
+  top: auto;
+  right: -2rem;
+  bottom: -1rem;
+  width: min(52vw, 43rem);
+  height: min(40vw, 25rem);
+  border-radius: 0;
+  background: var(--brush-subtle);
+  filter: none;
+  mask: url('/sumi-e/ink-wash.svg') right bottom / 100% 100% no-repeat;
+  transform: none;
+}
+
+.dashboardLayout::after {
+  position: fixed;
+  z-index: 0;
+  top: 5.5rem;
+  right: -5rem;
+  width: min(38vw, 28rem);
+  height: min(20vw, 13rem);
+  background: var(--brush-subtle);
+  content: '';
+  mask: url('/sumi-e/ink-wash.svg') center / 100% 100% no-repeat;
+  opacity: 0.72;
+  pointer-events: none;
+  transform: rotate(180deg);
+}
+
+.pageHeader::after,
+.sectionHeader::after,
+.panel::before,
+.leadDetailSummary::before,
+.leadTabs::after {
+  height: 0.36rem;
+  border: 0;
+  background: var(--sumi-stroke);
+  content: '';
+  mask: url('/sumi-e/brush-line.svg') center / 100% 100% no-repeat;
+  opacity: 0.72;
+  transform: none;
+}
+
+.pageHeader::after {
+  right: 0;
+  bottom: -0.08rem;
+  left: 0;
+}
+
+.sectionHeader {
+  position: relative;
+  padding-bottom: 0.9rem;
+  border-bottom: 0;
+}
+
+.sectionHeader::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.sectionHeader h2,
+.panelHeader h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sectionHeader h2::after,
+.panelHeader h2::after {
+  display: inline-block;
+  width: clamp(3.5rem, 12vw, 8rem);
+  height: 0.32rem;
+  flex: 0 1 auto;
+  background: var(--sumi-stroke);
+  content: '';
+  mask: url('/sumi-e/brush-line.svg') center / 100% 100% no-repeat;
+  opacity: 0.64;
+}
+
+.metricsGrid {
+  gap: 0.65rem;
+  border: 0;
+}
+
+.metricCard,
+.metricCard:nth-child(2n),
+.metricCard:nth-child(-n + 2) {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow:
+    inset 0.16rem 0 var(--brush-visible),
+    0 0.65rem 1.8rem -1.45rem var(--shadow);
+}
+
+.leadList {
+  gap: 0.65rem;
+  border-bottom: 0;
+}
+
+.leadCard {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow: inset 0.14rem 0 var(--brush-visible);
+}
+
+.leadCard:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.leadLink {
+  padding: 1.05rem;
+}
+
+.panel {
+  position: relative;
+  padding-top: 1.15rem;
+  border-top: 0;
+}
+
+.panel::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+
+.panelHeader {
+  position: relative;
+}
+
+.dataList,
+.analysisFacts {
+  overflow: hidden;
+  padding: 0.18rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow:
+    inset 0.16rem 0 var(--brush-visible),
+    0 0.7rem 1.9rem -1.55rem var(--shadow);
+}
+
+.dataList > div,
+.analysisFacts > div {
+  border-color: var(--border);
+}
+
+.referenceBox {
+  position: relative;
+  min-height: 17rem;
+  overflow: hidden;
+  padding: clamp(0.75rem, 2vw, 1.15rem);
+  border-color: var(--border-strong);
+  border-radius: var(--radius-lg) var(--radius-md) var(--radius-lg) var(--radius-sm);
+  background: var(--sidebar-bg);
+  box-shadow:
+    inset 0 0 0 1px rgba(242, 239, 231, 0.04),
+    0 1rem 2.4rem -1.7rem var(--shadow);
+}
+
+.referenceBox::before {
+  position: absolute;
+  right: -3rem;
+  bottom: -1rem;
+  width: min(55%, 25rem);
+  height: 55%;
+  background: rgba(242, 239, 231, 0.055);
+  content: '';
+  mask: url('/sumi-e/ink-corner.svg') right bottom / contain no-repeat;
+  pointer-events: none;
+}
+
+.referenceImage {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--radius-sm);
+}
+
+.detailSide .panel {
+  overflow: hidden;
+  padding: 1.15rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg) var(--radius-md) var(--radius-lg) var(--radius-sm);
+  background: var(--surface-translucent);
+  box-shadow:
+    inset 0.16rem 0 var(--brush-visible),
+    0 1.1rem 2.6rem -1.7rem var(--shadow);
+}
+
+.detailSide .panel::before {
+  top: -0.06rem;
+  right: 0.85rem;
+  left: 0.85rem;
+  opacity: 0.48;
+}
+
+.detailSide .panel::after,
+.leadDetailSummary::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0.18rem;
+  background: var(--sumi-stroke-soft);
+  content: '';
+  mask: url('/sumi-e/brush-frame.svg') center / 100% 100% no-repeat;
+  opacity: 0.34;
+  pointer-events: none;
+}
+
+.priceDisplay {
+  font-size: clamp(2rem, 5vw, 2.7rem);
+}
+
+.manualPriceForm {
+  position: relative;
+  border-top: 0;
+}
+
+.manualPriceForm::before {
+  width: 100%;
+  height: 0.28rem;
+  margin-bottom: 0.25rem;
+  background: var(--sumi-stroke-soft);
+  content: '';
+  mask: url('/sumi-e/brush-line.svg') center / 100% 100% no-repeat;
+}
+
+.manualPriceInput {
+  overflow: hidden;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-sm) var(--radius-md) var(--radius-sm) var(--radius-md);
+  background: var(--input-background);
+  box-shadow: inset 0.12rem 0 var(--brush-visible);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.manualPriceInput:focus-within {
+  border-color: var(--sumi-stroke);
+  background: var(--input-background);
+  box-shadow:
+    inset 0.15rem 0 var(--sumi-stroke),
+    0 0 0 2px var(--brush-visible);
+}
+
+.manualPriceInput input,
+.pricingInputWrap input {
+  appearance: textfield;
+  color: var(--foreground);
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  caret-color: var(--foreground);
+}
+
+.manualPriceInput input::-webkit-inner-spin-button,
+.manualPriceInput input::-webkit-outer-spin-button,
+.pricingInputWrap input::-webkit-inner-spin-button,
+.pricingInputWrap input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.manualPriceInput input:-webkit-autofill,
+.manualPriceInput input:-webkit-autofill:hover,
+.manualPriceInput input:-webkit-autofill:focus,
+.pricingInputWrap input:-webkit-autofill,
+.pricingInputWrap input:-webkit-autofill:hover,
+.pricingInputWrap input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  box-shadow: 0 0 0 1000px var(--input-background) inset !important;
+  caret-color: var(--foreground);
+}
+
+.primaryButton,
+.secondaryButton,
+.whatsappButton,
+.dangerButton,
+.logoutButton,
+.logoutCompact,
+.phoneSearch button,
+.sortDirection,
+.rowActions a,
+.rowActions button,
+.paginationBar button,
+.errorState button {
+  border-radius: var(--radius-sm) var(--radius-md) var(--radius-sm) var(--radius-md);
+}
+
+.primaryButton,
+.phoneSearch button,
+.rowActions .viewAction,
+.paginationBar .currentPage {
+  clip-path: polygon(1% 5%, 99% 0, 98% 94%, 2% 100%);
+  box-shadow:
+    inset 0 -0.16rem var(--brush-visible),
+    inset 0.12rem 0 var(--brush-visible);
+}
+
+.secondaryButton,
+.whatsappButton {
+  box-shadow: inset 0.12rem 0 var(--brush-visible);
+}
+
+.detailBlockers,
+.inlineError,
+.pricingSaveError,
+.errorState,
+.confirmation {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--danger) 72%, var(--border));
+  border-radius: var(--radius-sm) var(--radius-lg) var(--radius-md) var(--radius-sm);
+  background: color-mix(in srgb, var(--danger-soft) 68%, var(--surface));
+  box-shadow: inset 0.22rem 0 var(--danger);
+}
+
+.detailBlockers {
+  color: var(--foreground);
+}
+
+.detailBlockers::after,
+.inlineError::after {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.5rem;
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 50% 42% 55% 38%;
+  background: var(--sumi-red);
+  box-shadow:
+    -0.48rem 0.4rem 0 -0.08rem var(--sumi-red),
+    0.2rem 0.72rem 0 -0.12rem var(--sumi-red);
+  content: '';
+  opacity: 0.82;
+}
+
+.statusBadge,
+.readinessBadge {
+  border-radius: var(--radius-sm) var(--radius-md) var(--radius-sm) var(--radius-md);
+  box-shadow: inset 0.1rem 0 var(--brush-visible);
+}
+
+.readinessReview,
+.statusReview {
+  color: var(--danger-strong);
+  border-color: var(--danger);
+}
+
+.scoreTrack {
+  height: 0.42rem;
+  background: var(--surface-soft);
+  mask: url('/sumi-e/brush-underline.svg') center / 100% 100% no-repeat;
+}
+
+.scoreFill {
+  background: var(--ink);
+}
+
+.leadTabs {
+  position: relative;
+  border-bottom: 0;
+}
+
+.leadTabs::after {
+  position: absolute;
+  right: 1rem;
+  bottom: 0;
+  left: 1rem;
+  opacity: 0.46;
+}
+
+.leadFilters {
+  overflow: hidden;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow: inset 0.14rem 0 var(--brush-visible);
+}
+
+.leadFilters select,
+.phoneSearch input,
+.pricingInputWrap input {
+  border-radius: var(--radius-sm);
+  background: var(--input-background);
+}
+
+.phoneSearch input {
+  border-right: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.phoneSearch button {
+  margin-left: -1px;
+  border-radius: 0 var(--radius-md) var(--radius-sm) 0;
+}
+
+.leadTableShell {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg) var(--radius-md) var(--radius-lg) var(--radius-sm);
+  background: var(--surface-translucent);
+  box-shadow: 0 1rem 2.5rem -1.8rem var(--shadow);
+}
+
+.leadTable th {
+  background: color-mix(in srgb, var(--surface-raised) 84%, transparent);
+  font-family: var(--font-editorial);
+  letter-spacing: 0.09em;
+}
+
+.leadTable th,
+.leadTable td {
+  border-bottom-style: dotted;
+  border-bottom-color: var(--border);
+}
+
+.leadTable tbody tr {
+  transition: background 140ms ease;
+}
+
+.rowActions a,
+.rowActions button {
+  box-shadow: inset 0.1rem 0 var(--brush-subtle);
+}
+
+.mobileLeadRow,
+.confirmationModal,
+.pricingActions,
+.pricingRow {
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+}
+
+.mobileLeadRow {
+  box-shadow:
+    inset 0.14rem 0 var(--brush-visible),
+    0 0.8rem 2rem -1.6rem var(--shadow);
+}
+
+.leadDetailSummary {
+  position: relative;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow: inset 0.14rem 0 var(--brush-visible);
+}
+
+.leadDetailSummary::before {
+  position: absolute;
+  top: -0.1rem;
+  right: 1rem;
+  left: 1rem;
+  opacity: 0.48;
+}
+
+.evaluationPanel {
+  padding: 0.2rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
+  background: var(--surface-translucent);
+  box-shadow: inset 0.14rem 0 var(--brush-visible);
+}
+
+.evaluationPanel::before {
+  display: none;
+}
+
+.evaluationToggle {
+  border-radius: var(--radius-sm);
+}
+
+.confirmationModal {
+  box-shadow:
+    inset 0.16rem 0 var(--brush-visible),
+    0.55rem 0.55rem 0 var(--brush-visible);
+}
+
+.pricingRow {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-translucent);
+  box-shadow: inset 0.14rem 0 var(--brush-visible);
+}
+
+.pricingActions {
+  overflow: hidden;
+  box-shadow:
+    inset 0.15rem 0 var(--brush-visible),
+    0 0.7rem 1.8rem var(--shadow);
+}
+
+@media (min-width: 46rem) {
+  .analysisFacts > div {
+    border-right-style: dotted;
+  }
+
+  .leadList {
+    row-gap: 0.85rem;
+  }
+}
+
+@media (min-width: 62rem) {
+  .sidebar {
+    overflow: hidden;
+    border-right: 1px solid var(--sidebar-border);
+  }
+
+  .sidebar::before {
+    position: absolute;
+    right: -4rem;
+    bottom: -1rem;
+    width: 18rem;
+    height: 13rem;
+    background: rgba(242, 239, 231, 0.055);
+    content: '';
+    mask: url('/sumi-e/ink-wash.svg') center / 100% 100% no-repeat;
+    pointer-events: none;
+  }
+
+  .sidebar::after {
+    right: -0.15rem;
+    bottom: 8%;
+    width: 0.45rem;
+    height: 43%;
+    background: var(--sidebar-muted);
+    mask: url('/sumi-e/brush-line.svg') center / 100% 100% no-repeat;
+    opacity: 0.42;
+    transform: none;
+  }
+
+  .detailSide .panel {
+    padding: 1.35rem;
+  }
+}
+
+@media (max-width: 45.99rem) {
+  .dashboardLayout::after {
+    display: none;
+  }
+
+  .metricsGrid {
+    gap: 0.5rem;
+  }
+
+  .leadFilters {
+    padding: 0.8rem;
+  }
+
+  .detailGrid,
+  .detailMain,
+  .detailSide {
+    gap: 1.35rem;
+  }
+
+  .referenceBox {
+    min-height: 12rem;
+  }
+}

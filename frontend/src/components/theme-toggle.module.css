@@ -5,8 +5,10 @@
   min-height: 2.45rem;
   padding: 0.45rem 0.7rem;
   border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm) var(--radius-md) var(--radius-sm) var(--radius-md);
   color: var(--text);
   background: var(--surface-translucent);
+  box-shadow: inset 0.1rem 0 var(--brush-visible);
   font: inherit;
   font-size: 0.66rem;
   font-weight: 750;
