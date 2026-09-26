@@ -16,6 +16,7 @@ import type { LeadListQueryDto, LeadSortField } from './dto/dashboard.dto.js';
 
 const LEAD_ID = '290f2044-e63c-4e49-8847-067cd62426e4';
 const CONVERSATION_ID = 'a459f257-b03c-48f4-9091-2dc37871ef81';
+const CUSTOMER_ID = '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e';
 
 function query(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto {
   return {
@@ -155,6 +156,26 @@ describe('DashboardService lead management', () => {
     expect(result.pagination).toEqual({ page: 2, pageSize: 10, total: 31, totalPages: 4 });
   });
 
+  it('exposes finalized leads as deletable so the frontend follows backend policy', async () => {
+    const finalizedLead = {
+      ...completeLeadDetail(),
+      status: LeadStatus.COMPLETED,
+      calculatedMinPrice: new Prisma.Decimal(150),
+      calculatedMaxPrice: new Prisma.Decimal(200),
+      priceSentAt: new Date('2026-09-20T12:00:00.000Z'),
+    };
+    const service = createService({
+      lead: {
+        findMany: vi.fn().mockResolvedValue([finalizedLead]),
+        count: vi.fn().mockResolvedValue(1),
+      },
+    });
+
+    const result = await service.listLeads(query());
+
+    expect(result.leads[0]).toMatchObject({ id: LEAD_ID, deletable: true });
+  });
+
   it('archives a lead logically and removes it from the normal inbox query', async () => {
     const detail = completeLeadDetail(new Date());
     const findUnique = vi.fn().mockResolvedValue(detail);
@@ -189,16 +210,18 @@ describe('DashboardService lead management', () => {
     const deleteObject = vi.fn().mockResolvedValue('deleted');
     const deleteLead = vi.fn().mockResolvedValue({ id: LEAD_ID });
     const deleteConversation = vi.fn().mockResolvedValue({ count: 1 });
-    const deleteCustomer = vi.fn();
+    const deleteCustomer = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = {
       lead: { delete: deleteLead },
       conversation: { deleteMany: deleteConversation },
+      customer: { deleteMany: deleteCustomer },
     };
     const service = createService(
       {
         lead: {
           findUnique: vi.fn().mockResolvedValue({
             id: LEAD_ID,
+            customerId: CUSTOMER_ID,
             conversationId: CONVERSATION_ID,
             status: LeadStatus.ANALYZING,
             calculatedMinPrice: null,
@@ -223,9 +246,66 @@ describe('DashboardService lead management', () => {
     expect(deleteObject).toHaveBeenCalledWith(storagePath);
     expect(deleteLead).toHaveBeenCalledWith({ where: { id: LEAD_ID } });
     expect(deleteConversation).toHaveBeenCalledWith({
-      where: { id: CONVERSATION_ID, status: ConversationStatus.ABANDONED },
+      where: {
+        id: CONVERSATION_ID,
+        status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
+      },
     });
-    expect(deleteCustomer).not.toHaveBeenCalled();
+    expect(deleteCustomer).toHaveBeenCalledWith({
+      where: {
+        id: CUSTOMER_ID,
+        leads: { none: {} },
+        conversations: { none: {} },
+      },
+    });
+  });
+
+  it('deletes a finalized lead regardless of its previous readiness and quoted price', async () => {
+    const storagePath = `leads/${LEAD_ID}/${crypto.randomUUID()}.webp`;
+    const deleteObject = vi.fn().mockResolvedValue('deleted');
+    const deleteLead = vi.fn().mockResolvedValue({ id: LEAD_ID });
+    const deleteConversation = vi.fn().mockResolvedValue({ count: 1 });
+    const deleteCustomer = vi.fn().mockResolvedValue({ count: 1 });
+    const transaction = {
+      lead: { delete: deleteLead },
+      conversation: { deleteMany: deleteConversation },
+      customer: { deleteMany: deleteCustomer },
+    };
+    const service = createService(
+      {
+        lead: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: LEAD_ID,
+            customerId: CUSTOMER_ID,
+            conversationId: CONVERSATION_ID,
+            status: LeadStatus.COMPLETED,
+            calculatedMinPrice: new Prisma.Decimal(150),
+            calculatedMaxPrice: new Prisma.Decimal(200),
+            priceSentAt: new Date('2026-09-20T12:00:00.000Z'),
+            evaluation: { readinessStatus: ReadinessStatus.REVISAR },
+            images: [{ storagePath }],
+          }),
+        },
+        $transaction: vi.fn((callback: (client: typeof transaction) => Promise<void>) =>
+          callback(transaction),
+        ),
+      },
+      { delete: deleteObject },
+    );
+
+    await expect(service.deleteIncompleteLead(LEAD_ID)).resolves.toEqual({
+      deleted: true,
+      leadId: LEAD_ID,
+    });
+    expect(deleteObject).toHaveBeenCalledWith(storagePath);
+    expect(deleteLead).toHaveBeenCalledWith({ where: { id: LEAD_ID } });
+    expect(deleteConversation).toHaveBeenCalledWith({
+      where: {
+        id: CONVERSATION_ID,
+        status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
+      },
+    });
+    expect(deleteCustomer).toHaveBeenCalledOnce();
   });
 
   it.each([ReadinessStatus.LISTO, ReadinessStatus.REVISAR])(
@@ -238,6 +318,7 @@ describe('DashboardService lead management', () => {
           lead: {
             findUnique: vi.fn().mockResolvedValue({
               id: LEAD_ID,
+              customerId: CUSTOMER_ID,
               conversationId: CONVERSATION_ID,
               status: LeadStatus.ANALYZING,
               calculatedMinPrice: null,

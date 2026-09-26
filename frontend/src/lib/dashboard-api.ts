@@ -38,6 +38,7 @@ export interface LeadSummary {
   createdAt: string;
   archivedAt: string | null;
   price: PriceRange | null;
+  deletable: boolean;
   readiness: {
     status: ReadinessStatus;
     score: number;

@@ -53,6 +53,13 @@ const DETAIL_INCLUDE = {
 
 type SummaryLead = Prisma.LeadGetPayload<{ include: typeof SUMMARY_INCLUDE }>;
 type DetailLead = Prisma.LeadGetPayload<{ include: typeof DETAIL_INCLUDE }>;
+interface LeadDeletionCandidate {
+  status: LeadStatus;
+  calculatedMinPrice: Prisma.Decimal | null;
+  calculatedMaxPrice: Prisma.Decimal | null;
+  priceSentAt: Date | null;
+  evaluation: { readinessStatus: ReadinessStatus } | null;
+}
 
 const PRICE_SENT_CONFIRMATION = 'Precio enviado correctamente (modo prueba).';
 const RETAINED_IMAGE_MESSAGE = 'Imagen eliminada por política de retención.';
@@ -366,6 +373,7 @@ export class DashboardService {
       where: { id: leadId },
       select: {
         id: true,
+        customerId: true,
         conversationId: true,
         status: true,
         calculatedMinPrice: true,
@@ -380,15 +388,7 @@ export class DashboardService {
       throw new NotFoundException('No encontramos ese pedido.');
     }
 
-    const isValidIncompleteLead =
-      lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
-      lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
-      lead.status !== LeadStatus.COMPLETED &&
-      lead.calculatedMinPrice === null &&
-      lead.calculatedMaxPrice === null &&
-      lead.priceSentAt === null;
-
-    if (!isValidIncompleteLead) {
+    if (!this.isLeadDeletable(lead)) {
       throw new ConflictException('Solo se pueden eliminar leads incompletos sin cotización.');
     }
 
@@ -409,10 +409,18 @@ export class DashboardService {
         await transaction.conversation.deleteMany({
           where: {
             id: lead.conversationId,
-            status: ConversationStatus.ABANDONED,
+            status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
           },
         });
       }
+
+      await transaction.customer.deleteMany({
+        where: {
+          id: lead.customerId,
+          leads: { none: {} },
+          conversations: { none: {} },
+        },
+      });
     });
 
     return { deleted: true, leadId: lead.id };
@@ -491,6 +499,7 @@ export class DashboardService {
       createdAt: lead.createdAt.toISOString(),
       archivedAt: lead.archivedAt?.toISOString() ?? null,
       price: this.priceRange(lead.calculatedMinPrice, lead.calculatedMaxPrice),
+      deletable: this.isLeadDeletable(lead),
       readiness: lead.evaluation
         ? {
             status: lead.evaluation.readinessStatus,
@@ -546,6 +555,20 @@ export class DashboardService {
       expiresInSeconds: null,
       message: RETAINED_IMAGE_MESSAGE,
     };
+  }
+
+  private isLeadDeletable(lead: LeadDeletionCandidate): boolean {
+    if (lead.status === LeadStatus.COMPLETED) {
+      return true;
+    }
+
+    return (
+      lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
+      lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
+      lead.calculatedMinPrice === null &&
+      lead.calculatedMaxPrice === null &&
+      lead.priceSentAt === null
+    );
   }
 
   private async ensureLeadExists(leadId: string): Promise<void> {

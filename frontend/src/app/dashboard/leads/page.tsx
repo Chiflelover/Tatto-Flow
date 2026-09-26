@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -33,6 +34,7 @@ import {
   type SortOrder,
   type TattooSize,
 } from '@/lib/dashboard-api';
+import { createSingleFlightRunner } from '@/lib/single-flight';
 import styles from '@/styles/dashboard.module.css';
 
 const PAGE_SIZE = 20;
@@ -197,6 +199,7 @@ function LeadsWorkspace() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<LeadSummary | null>(null);
+  const runSingleFlight = useRef(createSingleFlightRunner()).current;
   const [refreshKey, setRefreshKey] = useState(0);
   const currentRequestKey = `${requestKey}:${refreshKey}`;
   const [requestState, setRequestState] = useState<{
@@ -313,28 +316,38 @@ function LeadsWorkspace() {
   }
 
   async function runAction(leadId: string, action: () => Promise<unknown>): Promise<void> {
-    if (pendingLeadId) {
-      return;
-    }
+    await runSingleFlight(async () => {
+      setPendingLeadId(leadId);
+      setActionError(null);
 
-    setPendingLeadId(leadId);
-    setActionError(null);
+      try {
+        await action();
+        setDeleteCandidate(null);
+        setRefreshKey((current) => current + 1);
+      } catch (requestError) {
+        if (isUnauthorized(requestError)) {
+          router.replace('/login');
+          return;
+        }
 
-    try {
-      await action();
-      setDeleteCandidate(null);
-      setRefreshKey((current) => current + 1);
-    } catch (requestError) {
-      if (isUnauthorized(requestError)) {
-        router.replace('/login');
-        return;
+        setActionError(dashboardErrorMessage(requestError));
+      } finally {
+        setPendingLeadId(null);
       }
-
-      setActionError(dashboardErrorMessage(requestError));
-    } finally {
-      setPendingLeadId(null);
-    }
+    });
   }
+
+  const renderDeleteAction = (lead: LeadSummary) =>
+    lead.deletable ? (
+      <button
+        className={styles.deleteAction}
+        type="button"
+        onClick={() => setDeleteCandidate(lead)}
+        disabled={pendingLeadId !== null}
+      >
+        Eliminar
+      </button>
+    ) : null;
 
   const renderActions = (lead: LeadSummary) => (
     <div className={styles.rowActions}>
@@ -342,16 +355,19 @@ function LeadsWorkspace() {
         Ver
       </Link>
       {archived ? (
-        <button
-          type="button"
-          onClick={() => void runAction(lead.id, () => restoreLead(lead.id))}
-          disabled={pendingLeadId !== null}
-        >
-          {pendingLeadId === lead.id ? 'Restaurando…' : 'Restaurar'}
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => void runAction(lead.id, () => restoreLead(lead.id))}
+            disabled={pendingLeadId !== null}
+          >
+            {pendingLeadId === lead.id ? 'Restaurando…' : 'Restaurar'}
+          </button>
+          {renderDeleteAction(lead)}
+        </>
       ) : (
-        lead.readiness?.status === 'INCOMPLETO' && (
-          <>
+        <>
+          {lead.readiness?.status === 'INCOMPLETO' && (
             <button
               type="button"
               onClick={() => void runAction(lead.id, () => archiveLead(lead.id))}
@@ -359,16 +375,9 @@ function LeadsWorkspace() {
             >
               {pendingLeadId === lead.id ? 'Archivando…' : 'Archivar'}
             </button>
-            <button
-              className={styles.deleteAction}
-              type="button"
-              onClick={() => setDeleteCandidate(lead)}
-              disabled={pendingLeadId !== null}
-            >
-              Eliminar
-            </button>
-          </>
-        )
+          )}
+          {renderDeleteAction(lead)}
+        </>
       )}
     </div>
   );
@@ -681,7 +690,7 @@ function LeadsWorkspace() {
             aria-labelledby="delete-lead-title"
           >
             <span className={styles.eyebrow}>Confirmar eliminación</span>
-            <h2 id="delete-lead-title">¿Eliminar este lead incompleto?</h2>
+            <h2 id="delete-lead-title">¿Eliminar este lead?</h2>
             <p>Esta acción no se puede deshacer.</p>
             <div className={styles.modalActions}>
               <button
@@ -700,7 +709,7 @@ function LeadsWorkspace() {
                 }
                 disabled={pendingLeadId !== null}
               >
-                {pendingLeadId === deleteCandidate.id ? 'Eliminando…' : 'Eliminar'}
+                {pendingLeadId === deleteCandidate.id ? 'Eliminando...' : 'Eliminar'}
               </button>
             </div>
           </section>
