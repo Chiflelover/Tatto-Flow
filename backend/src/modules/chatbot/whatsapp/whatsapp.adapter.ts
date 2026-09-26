@@ -2,15 +2,23 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
-import type { ChatbotImageInput, ChatbotOption, ChatbotResponse } from '../domain/chatbot.types.js';
+import type {
+  ChatbotImageInput,
+  ChatbotOption,
+  ChatbotOptionSelection,
+  ChatbotResponse,
+} from '../domain/chatbot.types.js';
 
 export const WHATSAPP_BUTTON_IDS = {
-  SMALL: 'nita_size_small',
-  MEDIUM: 'nita_value_medium',
-  LARGE: 'nita_size_large',
-  LIGHT: 'nita_detail_light',
-  DETAILED: 'nita_detail_detailed',
+  SIZE_SMALL: 'nita_size_small',
+  SIZE_MEDIUM: 'nita_size_medium',
+  SIZE_LARGE: 'nita_size_large',
+  DETAIL_LIGHT: 'nita_detail_light',
+  DETAIL_MEDIUM: 'nita_detail_medium',
+  DETAIL_DETAILED: 'nita_detail_detailed',
 } as const;
+
+const LEGACY_AMBIGUOUS_MEDIUM_BUTTON_ID = 'nita_value_medium';
 
 const SIZE_GUIDE_PUBLIC_PATH = '/nita-size-guide.png';
 const DETAIL_GUIDE_PUBLIC_PATH = '/nita-detail-guide.png';
@@ -20,25 +28,34 @@ const GUIDE_PUBLIC_PATH_BY_STATE: Readonly<Partial<Record<ConversationState, str
   [ConversationState.ASK_DETAIL]: DETAIL_GUIDE_PUBLIC_PATH,
 };
 
-const BUTTON_ID_BY_VALUE: Readonly<Record<string, string>> = {
-  [TattooSize.SMALL]: WHATSAPP_BUTTON_IDS.SMALL,
-  [TattooSize.MEDIUM]: WHATSAPP_BUTTON_IDS.MEDIUM,
-  [TattooSize.LARGE]: WHATSAPP_BUTTON_IDS.LARGE,
-  [DetailLevel.LIGHT]: WHATSAPP_BUTTON_IDS.LIGHT,
-  [DetailLevel.DETAILED]: WHATSAPP_BUTTON_IDS.DETAILED,
+const SIZE_BUTTON_ID_BY_VALUE: Readonly<Record<TattooSize, string>> = {
+  [TattooSize.SMALL]: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
+  [TattooSize.MEDIUM]: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM,
+  [TattooSize.LARGE]: WHATSAPP_BUTTON_IDS.SIZE_LARGE,
 };
 
-const VALUE_BY_BUTTON_ID = new Map(
-  Object.entries(BUTTON_ID_BY_VALUE).map(([value, buttonId]) => [buttonId, value]),
-);
+const DETAIL_BUTTON_ID_BY_VALUE: Readonly<Record<DetailLevel, string>> = {
+  [DetailLevel.LIGHT]: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT,
+  [DetailLevel.MEDIUM]: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM,
+  [DetailLevel.DETAILED]: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED,
+};
 
-const FALLBACK_VALUE_BY_TEXT = new Map([
-  ['pequeño', TattooSize.SMALL],
-  ['mediano', TattooSize.MEDIUM],
-  ['grande', TattooSize.LARGE],
-  ['ligero', DetailLevel.LIGHT],
-  ['medio', DetailLevel.MEDIUM],
-  ['detallado', DetailLevel.DETAILED],
+const SELECTION_BY_BUTTON_ID = new Map<string, ChatbotOptionSelection>([
+  [WHATSAPP_BUTTON_IDS.SIZE_SMALL, { stage: 'size', value: TattooSize.SMALL }],
+  [WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, { stage: 'size', value: TattooSize.MEDIUM }],
+  [WHATSAPP_BUTTON_IDS.SIZE_LARGE, { stage: 'size', value: TattooSize.LARGE }],
+  [WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, { stage: 'detail', value: DetailLevel.LIGHT }],
+  [WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, { stage: 'detail', value: DetailLevel.MEDIUM }],
+  [WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, { stage: 'detail', value: DetailLevel.DETAILED }],
+]);
+
+const FALLBACK_SELECTION_BY_TEXT = new Map<string, ChatbotOptionSelection>([
+  ['pequeño', { stage: 'size', value: TattooSize.SMALL }],
+  ['mediano', { stage: 'size', value: TattooSize.MEDIUM }],
+  ['grande', { stage: 'size', value: TattooSize.LARGE }],
+  ['ligero', { stage: 'detail', value: DetailLevel.LIGHT }],
+  ['medio', { stage: 'detail', value: DetailLevel.MEDIUM }],
+  ['detallado', { stage: 'detail', value: DetailLevel.DETAILED }],
 ]);
 
 export type WhatsAppInboundMessage =
@@ -72,32 +89,43 @@ export class WhatsAppAdapter {
   ): Promise<WhatsAppOutboundMessage[]> {
     const response = await this.toChatbotResponse(message, capabilities);
 
+    if (!response) {
+      return [];
+    }
+
     return this.toWhatsAppMessages(response, capabilities);
   }
 
   private toChatbotResponse(
     message: WhatsAppInboundMessage,
     capabilities: WhatsAppCapabilities,
-  ): Promise<ChatbotResponse> {
+  ): Promise<ChatbotResponse | null> {
     switch (message.type) {
       case 'button_reply': {
-        const value = VALUE_BY_BUTTON_ID.get(message.buttonId);
-
-        if (!value) {
-          throw new BadRequestException('La opción seleccionada ya no es válida.');
+        if (message.buttonId === LEGACY_AMBIGUOUS_MEDIUM_BUTTON_ID) {
+          return Promise.resolve(null);
         }
 
-        return this.chatbotService.processOptionSelection(message.customerIdentifier, value);
+        const selection = SELECTION_BY_BUTTON_ID.get(message.buttonId);
+
+        if (!selection) {
+          return Promise.resolve(null);
+        }
+
+        return this.chatbotService.processOptionSelection(message.customerIdentifier, selection);
       }
       case 'image':
         return this.chatbotService.processImageMessage(message.customerIdentifier, message.image);
       case 'text': {
-        const fallbackValue = capabilities.interactiveButtons
+        const fallbackSelection = capabilities.interactiveButtons
           ? undefined
-          : FALLBACK_VALUE_BY_TEXT.get(message.text.trim().toLowerCase());
+          : FALLBACK_SELECTION_BY_TEXT.get(message.text.trim().toLowerCase());
 
-        return fallbackValue
-          ? this.chatbotService.processOptionSelection(message.customerIdentifier, fallbackValue)
+        return fallbackSelection
+          ? this.chatbotService.processOptionSelection(
+              message.customerIdentifier,
+              fallbackSelection,
+            )
           : this.chatbotService.processTextMessage(message.customerIdentifier, message.text);
       }
     }
@@ -137,7 +165,7 @@ export class WhatsAppAdapter {
       {
         type: 'interactive_buttons',
         body: prompt,
-        buttons: response.options.map((option) => this.toButton(option)),
+        buttons: response.options.map((option) => this.toButton(response.state, option)),
         ...(headerImageUrl ? { headerImageUrl } : {}),
       },
     ];
@@ -164,8 +192,13 @@ export class WhatsAppAdapter {
     }
   }
 
-  private toButton(option: ChatbotOption): { id: string; title: string } {
-    const id = BUTTON_ID_BY_VALUE[option.value];
+  private toButton(state: ConversationState, option: ChatbotOption): { id: string; title: string } {
+    const id =
+      state === ConversationState.ASK_SIZE
+        ? SIZE_BUTTON_ID_BY_VALUE[option.value as TattooSize]
+        : state === ConversationState.ASK_DETAIL
+          ? DETAIL_BUTTON_ID_BY_VALUE[option.value as DetailLevel]
+          : undefined;
 
     if (!id) {
       throw new BadRequestException('La respuesta contiene una opción no compatible con WhatsApp.');

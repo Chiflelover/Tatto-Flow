@@ -14,6 +14,7 @@ import type {
   ChatbotDecision,
   ChatbotImageInput,
   ChatbotInput,
+  ChatbotOptionSelection,
   ChatbotResponse,
 } from './domain/chatbot.types.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
@@ -72,8 +73,11 @@ export class ChatbotService {
     return this.applyDecision(conversation, this.stateMachine.begin());
   }
 
-  processOptionSelection(customerIdentifier: string, option: string): Promise<ChatbotResponse> {
-    return this.processInput(customerIdentifier, { type: 'option', value: option });
+  processOptionSelection(
+    customerIdentifier: string,
+    selection: ChatbotOptionSelection,
+  ): Promise<ChatbotResponse> {
+    return this.processInput(customerIdentifier, { type: 'option', ...selection });
   }
 
   processTextMessage(customerIdentifier: string, message: string): Promise<ChatbotResponse> {

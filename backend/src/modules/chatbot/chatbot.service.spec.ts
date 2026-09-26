@@ -115,8 +115,14 @@ describe('ChatbotService', () => {
     );
 
     const responses = await Promise.all([
-      service.processOptionSelection(customer.phoneNumber, DetailLevel.DETAILED),
-      service.processOptionSelection(customer.phoneNumber, DetailLevel.LIGHT),
+      service.processOptionSelection(customer.phoneNumber, {
+        stage: 'detail',
+        value: DetailLevel.DETAILED,
+      }),
+      service.processOptionSelection(customer.phoneNumber, {
+        stage: 'detail',
+        value: DetailLevel.LIGHT,
+      }),
     ]);
 
     expect(appliedUpdates).toHaveLength(1);
@@ -154,7 +160,10 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processOptionSelection(customer.phoneNumber, DetailLevel.LIGHT);
+    const response = await service.processOptionSelection(customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     expect(response).toEqual({
       state: ConversationState.ASK_BODY_PART,
@@ -163,6 +172,49 @@ describe('ChatbotService', () => {
     });
     expect(applyTransition).not.toHaveBeenCalled();
     expect(bodyPartConversation.selectedDetail).toBe(DetailLevel.DETAILED);
+  });
+
+  it('does not overwrite SMALL when a delayed size button arrives in ASK_DETAIL', async () => {
+    const now = new Date();
+    const customer = makeCustomer(now);
+    const detailConversation = makeConversation(customer.id, now, {
+      currentState: ConversationState.ASK_DETAIL,
+      status: ConversationStatus.ACTIVE,
+      selectedSize: TattooSize.SMALL,
+      selectedDetail: null,
+      bodyPart: null,
+    });
+    const applyTransition = vi.fn<ConversationsService['applyTransition']>();
+    const service = new ChatbotService(
+      {
+        findOrCreateByPhoneNumber: vi.fn().mockResolvedValue(customer),
+      } as unknown as CustomersService,
+      {
+        getOrCreateActive: vi.fn().mockResolvedValue({
+          conversation: detailConversation,
+          created: false,
+        }),
+        applyTransition,
+      } as unknown as ConversationsService,
+      new NitaStateMachine(),
+      {} as ImageAnalysisWorkflowService,
+      openBusinessHours(),
+      new ConfigService(),
+    );
+
+    const response = await service.processOptionSelection(customer.phoneNumber, {
+      stage: 'size',
+      value: TattooSize.MEDIUM,
+    });
+
+    expect(response).toEqual({
+      state: ConversationState.ASK_DETAIL,
+      messages: [],
+      options: [],
+    });
+    expect(applyTransition).not.toHaveBeenCalled();
+    expect(detailConversation.selectedSize).toBe(TattooSize.SMALL);
+    expect(detailConversation.selectedDetail).toBeNull();
   });
 
   it('accepts a valid text in BODY_PART and continues to the image request', async () => {

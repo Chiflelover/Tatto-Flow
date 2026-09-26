@@ -38,8 +38,11 @@ export interface ChatbotResponse {
 
 export type ChatbotImageInput = TattooImageInput;
 
+export type ChatbotOptionSelection =
+  { stage: 'size'; value: TattooSize } | { stage: 'detail'; value: DetailLevel };
+
 export type ChatbotInput =
-  | { type: 'option'; value: string }
+  | ({ type: 'option' } & ChatbotOptionSelection)
   | { type: 'text'; value: string }
   | { type: 'image'; image: ChatbotImageInput };
 

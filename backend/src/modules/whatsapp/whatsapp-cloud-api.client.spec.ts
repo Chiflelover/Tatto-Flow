@@ -116,9 +116,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
-        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
-        { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
       ],
     });
 
@@ -137,9 +137,9 @@ describe('WhatsAppCloudApiClient', () => {
       image: { link: SIZE_GUIDE_URL },
     });
     expect(body.interactive.action.buttons).toEqual([
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' } },
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' } },
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' } },
     ]);
   });
 
@@ -155,9 +155,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
-        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
-        { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
+        { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
       ],
     });
 
@@ -186,9 +186,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       headerImageUrl: DETAIL_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
-        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
-        { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
       ],
     });
 
@@ -223,9 +223,9 @@ describe('WhatsAppCloudApiClient', () => {
       type: 'interactive_buttons',
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
-        { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
-        { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
+        { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
       ],
     });
 

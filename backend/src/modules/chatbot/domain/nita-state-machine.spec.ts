@@ -49,6 +49,7 @@ describe('NitaStateMachine', () => {
     (size) => {
       const decision = stateMachine.process(context(ConversationState.ASK_SIZE), {
         type: 'option',
+        stage: 'size',
         value: size,
       });
 
@@ -63,7 +64,8 @@ describe('NitaStateMachine', () => {
   it('keeps ASK_SIZE when the size is invalid', () => {
     const decision = stateMachine.process(context(ConversationState.ASK_SIZE), {
       type: 'option',
-      value: 'EXTRA_LARGE',
+      stage: 'size',
+      value: 'EXTRA_LARGE' as TattooSize,
     });
 
     expect(decision.update).toEqual({});
@@ -75,7 +77,7 @@ describe('NitaStateMachine', () => {
     (detail) => {
       const decision = stateMachine.process(
         context(ConversationState.ASK_DETAIL, { selectedSize: TattooSize.SMALL }),
-        { type: 'option', value: detail },
+        { type: 'option', stage: 'detail', value: detail },
       );
 
       expect(decision.update).toEqual({
@@ -97,6 +99,41 @@ describe('NitaStateMachine', () => {
 
     expect(decision.update).toEqual({});
     expect(decision.response.state).toBe(ConversationState.ASK_DETAIL);
+  });
+
+  it('silently ignores a detail button while asking for size', () => {
+    const decision = stateMachine.process(context(ConversationState.ASK_SIZE), {
+      type: 'option',
+      stage: 'detail',
+      value: DetailLevel.MEDIUM,
+    });
+
+    expect(decision).toEqual({
+      ignored: true,
+      update: {},
+      response: {
+        state: ConversationState.ASK_SIZE,
+        messages: [],
+        options: [],
+      },
+    });
+  });
+
+  it('silently ignores a size button while asking for detail', () => {
+    const decision = stateMachine.process(
+      context(ConversationState.ASK_DETAIL, { selectedSize: TattooSize.SMALL }),
+      { type: 'option', stage: 'size', value: TattooSize.MEDIUM },
+    );
+
+    expect(decision).toEqual({
+      ignored: true,
+      update: {},
+      response: {
+        state: ConversationState.ASK_DETAIL,
+        messages: [],
+        options: [],
+      },
+    });
   });
 
   it('trims and accepts a valid body part', () => {
@@ -126,7 +163,7 @@ describe('NitaStateMachine', () => {
         selectedSize: TattooSize.SMALL,
         selectedDetail: DetailLevel.DETAILED,
       }),
-      { type: 'option', value: DetailLevel.LIGHT },
+      { type: 'option', stage: 'detail', value: DetailLevel.LIGHT },
     );
 
     expect(decision).toEqual({
@@ -186,13 +223,61 @@ describe('NitaStateMachine', () => {
     expect(decision.response.state).toBe(ConversationState.ANALYZING);
   });
 
+  it('keeps the complete namespaced option flow working normally', () => {
+    const sizeDecision = stateMachine.process(context(ConversationState.ASK_SIZE), {
+      type: 'option',
+      stage: 'size',
+      value: TattooSize.SMALL,
+    });
+    const detailDecision = stateMachine.process(
+      context(ConversationState.ASK_DETAIL, {
+        selectedSize: sizeDecision.update.selectedSize,
+      }),
+      { type: 'option', stage: 'detail', value: DetailLevel.MEDIUM },
+    );
+    const bodyPartDecision = stateMachine.process(
+      context(ConversationState.ASK_BODY_PART, {
+        selectedSize: sizeDecision.update.selectedSize,
+        selectedDetail: detailDecision.update.selectedDetail,
+      }),
+      { type: 'text', value: 'brazo' },
+    );
+    const imageDecision = stateMachine.process(
+      context(ConversationState.WAITING_IMAGE, {
+        selectedSize: sizeDecision.update.selectedSize,
+        selectedDetail: detailDecision.update.selectedDetail,
+        bodyPart: bodyPartDecision.update.bodyPart,
+      }),
+      {
+        type: 'image',
+        image: { content: new Uint8Array([1]), mimeType: 'image/jpeg' },
+      },
+    );
+
+    expect(sizeDecision.update).toEqual({
+      selectedSize: TattooSize.SMALL,
+      currentState: ConversationState.ASK_DETAIL,
+    });
+    expect(detailDecision.update).toEqual({
+      selectedDetail: DetailLevel.MEDIUM,
+      currentState: ConversationState.ASK_BODY_PART,
+    });
+    expect(bodyPartDecision.update).toEqual({
+      bodyPart: 'brazo',
+      currentState: ConversationState.WAITING_IMAGE,
+    });
+    expect(imageDecision.update).toEqual({ currentState: ConversationState.ANALYZING });
+  });
+
   it('keeps two customer contexts independent', () => {
     const firstCustomer = stateMachine.process(context(ConversationState.ASK_SIZE), {
       type: 'option',
+      stage: 'size',
       value: TattooSize.SMALL,
     });
     const secondCustomer = stateMachine.process(context(ConversationState.ASK_SIZE), {
       type: 'option',
+      stage: 'size',
       value: TattooSize.LARGE,
     });
 

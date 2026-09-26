@@ -103,10 +103,10 @@ describe('ChatbotService business-hour gating', () => {
       businessHoursTestPhone: 'different-test-identifier',
     });
 
-    const response = await fixture.service.processOptionSelection(
-      fixture.customer.phoneNumber,
-      DetailLevel.LIGHT,
-    );
+    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     expect(response).toEqual({
       state: ConversationState.ASK_DETAIL,
@@ -124,10 +124,10 @@ describe('ChatbotService business-hour gating', () => {
       authorizeCustomerPhone: true,
     });
 
-    const response = await fixture.service.processOptionSelection(
-      fixture.customer.phoneNumber,
-      DetailLevel.LIGHT,
-    );
+    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(
@@ -153,10 +153,10 @@ describe('ChatbotService business-hour gating', () => {
       businessHoursTestPhone: authorized ? undefined : 'different-test-identifier',
     });
 
-    const response = await fixture.service.processOptionSelection(
-      fixture.customer.phoneNumber,
-      DetailLevel.LIGHT,
-    );
+    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledOnce();
@@ -202,13 +202,16 @@ describe('ChatbotService business-hour gating', () => {
     const fixture = createFixture();
     vi.setSystemTime(new Date('2026-09-15T03:00:00.000Z'));
 
-    await fixture.service.processOptionSelection(fixture.customer.phoneNumber, DetailLevel.LIGHT);
+    await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     vi.setSystemTime(new Date('2026-09-15T11:00:00.000Z'));
-    const response = await fixture.service.processOptionSelection(
-      fixture.customer.phoneNumber,
-      DetailLevel.LIGHT,
-    );
+    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
 
     expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(

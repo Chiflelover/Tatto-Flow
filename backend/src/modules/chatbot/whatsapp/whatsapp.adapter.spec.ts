@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
@@ -50,6 +49,18 @@ describe('WhatsAppAdapter', () => {
     processImageMessage.mockResolvedValue(response(ConversationState.HANDOFF_TO_TATTOO_ARTIST));
   });
 
+  it('uses distinct stage-namespaced IDs for every new interactive button', () => {
+    expect(WHATSAPP_BUTTON_IDS).toEqual({
+      SIZE_SMALL: 'nita_size_small',
+      SIZE_MEDIUM: 'nita_size_medium',
+      SIZE_LARGE: 'nita_size_large',
+      DETAIL_LIGHT: 'nita_detail_light',
+      DETAIL_MEDIUM: 'nita_detail_medium',
+      DETAIL_DETAILED: 'nita_detail_detailed',
+    });
+    expect(WHATSAPP_BUTTON_IDS.SIZE_MEDIUM).not.toBe(WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM);
+  });
+
   it('renders the exact size question as three interactive buttons with stable IDs', async () => {
     processTextMessage.mockResolvedValue(
       response(
@@ -78,9 +89,9 @@ describe('WhatsAppAdapter', () => {
         body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
         headerImageUrl: SIZE_GUIDE_URL,
         buttons: [
-          { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
-          { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
-          { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
         ],
       },
     ]);
@@ -101,7 +112,7 @@ describe('WhatsAppAdapter', () => {
       adapter.handleIncoming({
         type: 'button_reply',
         customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.SMALL,
+        buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
       }),
     ).resolves.toEqual([
       {
@@ -109,9 +120,9 @@ describe('WhatsAppAdapter', () => {
         body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
         headerImageUrl: DETAIL_GUIDE_URL,
         buttons: [
-          { id: WHATSAPP_BUTTON_IDS.LIGHT, title: 'Ligero' },
-          { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Medio' },
-          { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+          { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
+          { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
+          { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
         ],
       },
     ]);
@@ -128,7 +139,7 @@ describe('WhatsAppAdapter', () => {
       adapter.handleIncoming({
         type: 'button_reply',
         customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.LIGHT,
+        buttonId: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT,
       }),
     ).resolves.toEqual([
       {
@@ -137,7 +148,10 @@ describe('WhatsAppAdapter', () => {
       },
     ]);
     expect(processOptionSelection).toHaveBeenCalledOnce();
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', DetailLevel.LIGHT);
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'detail',
+      value: DetailLevel.LIGHT,
+    });
   });
 
   it('keeps the size question and buttons available when no public guide URL is configured', async () => {
@@ -170,18 +184,18 @@ describe('WhatsAppAdapter', () => {
         type: 'interactive_buttons',
         body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
         buttons: [
-          { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
-          { id: WHATSAPP_BUTTON_IDS.MEDIUM, title: 'Mediano' },
-          { id: WHATSAPP_BUTTON_IDS.LARGE, title: 'Grande' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
+          { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
         ],
       },
     ]);
   });
 
   it.each([
-    [WHATSAPP_BUTTON_IDS.SMALL, TattooSize.SMALL],
-    [WHATSAPP_BUTTON_IDS.MEDIUM, TattooSize.MEDIUM],
-    [WHATSAPP_BUTTON_IDS.LARGE, TattooSize.LARGE],
+    [WHATSAPP_BUTTON_IDS.SIZE_SMALL, TattooSize.SMALL],
+    [WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, TattooSize.MEDIUM],
+    [WHATSAPP_BUTTON_IDS.SIZE_LARGE, TattooSize.LARGE],
   ])('maps size button %s to the internal value %s', async (buttonId, value) => {
     await adapter.handleIncoming({
       type: 'button_reply',
@@ -189,13 +203,16 @@ describe('WhatsAppAdapter', () => {
       buttonId,
     });
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', value);
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'size',
+      value,
+    });
   });
 
   it.each([
-    [WHATSAPP_BUTTON_IDS.LIGHT, DetailLevel.LIGHT],
-    [WHATSAPP_BUTTON_IDS.MEDIUM, DetailLevel.MEDIUM],
-    [WHATSAPP_BUTTON_IDS.DETAILED, DetailLevel.DETAILED],
+    [WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, DetailLevel.LIGHT],
+    [WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, DetailLevel.MEDIUM],
+    [WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, DetailLevel.DETAILED],
   ])('maps detail button %s to the internal value %s', async (buttonId, value) => {
     await adapter.handleIncoming({
       type: 'button_reply',
@@ -203,7 +220,10 @@ describe('WhatsAppAdapter', () => {
       buttonId,
     });
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', value);
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'detail',
+      value,
+    });
   });
 
   it('passes free body text to ChatbotService without trimming or state logic', async () => {
@@ -261,19 +281,40 @@ describe('WhatsAppAdapter', () => {
       { type: 'text', customerIdentifier: '+51911111111', text: '  Pequeño ' },
       fallback,
     );
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', TattooSize.SMALL);
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'size',
+      value: TattooSize.SMALL,
+    });
   });
 
-  it('rejects stale or unknown button IDs before reaching ChatbotService', async () => {
+  it.each(['stale-button', 'nita_value_medium'])(
+    'silently ignores stale or ambiguous legacy button ID %s',
+    async (buttonId) => {
+      await expect(
+        adapter.handleIncoming({
+          type: 'button_reply',
+          customerIdentifier: '+51911111111',
+          buttonId,
+        }),
+      ).resolves.toEqual([]);
+
+      expect(processOptionSelection).not.toHaveBeenCalled();
+    },
+  );
+
+  it('passes the stage namespace through for a delayed size button', async () => {
     await expect(
       adapter.handleIncoming({
         type: 'button_reply',
         customerIdentifier: '+51911111111',
-        buttonId: 'stale-button',
+        buttonId: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).resolves.toBeDefined();
 
-    expect(processOptionSelection).not.toHaveBeenCalled();
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'size',
+      value: TattooSize.MEDIUM,
+    });
   });
 
   it('keeps simultaneous replies from different customers separate', async () => {
@@ -281,16 +322,22 @@ describe('WhatsAppAdapter', () => {
       adapter.handleIncoming({
         type: 'button_reply',
         customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.SMALL,
+        buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
       }),
       adapter.handleIncoming({
         type: 'button_reply',
         customerIdentifier: '+51922222222',
-        buttonId: WHATSAPP_BUTTON_IDS.LARGE,
+        buttonId: WHATSAPP_BUTTON_IDS.SIZE_LARGE,
       }),
     ]);
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', TattooSize.SMALL);
-    expect(processOptionSelection).toHaveBeenCalledWith('+51922222222', TattooSize.LARGE);
+    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+      stage: 'size',
+      value: TattooSize.SMALL,
+    });
+    expect(processOptionSelection).toHaveBeenCalledWith('+51922222222', {
+      stage: 'size',
+      value: TattooSize.LARGE,
+    });
   });
 });

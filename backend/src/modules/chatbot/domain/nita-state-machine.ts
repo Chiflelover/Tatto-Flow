@@ -102,6 +102,10 @@ export class NitaStateMachine {
   }
 
   private processSize(input: ChatbotInput): ChatbotDecision {
+    if (input.type === 'option' && input.stage !== 'size') {
+      return this.ignored(ConversationState.ASK_SIZE);
+    }
+
     if (input.type !== 'option' || !VALID_SIZES.has(input.value)) {
       return {
         update: {},
@@ -115,7 +119,7 @@ export class NitaStateMachine {
 
     return {
       update: {
-        selectedSize: input.value as TattooSize,
+        selectedSize: input.value,
         currentState: ConversationState.ASK_DETAIL,
       },
       response: this.createResponse(
@@ -127,6 +131,10 @@ export class NitaStateMachine {
   }
 
   private processDetail(input: ChatbotInput): ChatbotDecision {
+    if (input.type === 'option' && input.stage !== 'detail') {
+      return this.ignored(ConversationState.ASK_DETAIL);
+    }
+
     if (input.type !== 'option' || !VALID_DETAILS.has(input.value)) {
       return {
         update: {},
@@ -140,7 +148,7 @@ export class NitaStateMachine {
 
     return {
       update: {
-        selectedDetail: input.value as DetailLevel,
+        selectedDetail: input.value,
         currentState: ConversationState.ASK_BODY_PART,
       },
       response: this.createResponse(ConversationState.ASK_BODY_PART, [BODY_PART_QUESTION]),

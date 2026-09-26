@@ -102,14 +102,14 @@ describe('WhatsAppWebhookService', () => {
       'button_reply',
       {
         type: 'button_reply',
-        button_reply: { id: WHATSAPP_BUTTON_IDS.SMALL, title: 'Pequeño' },
+        button_reply: { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
       },
     ],
     [
       'list_reply',
       {
         type: 'list_reply',
-        list_reply: { id: WHATSAPP_BUTTON_IDS.DETAILED, title: 'Detallado' },
+        list_reply: { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
       },
     ],
   ])('maps an interactive %s using its stable ID', async (_type, interactive) => {
