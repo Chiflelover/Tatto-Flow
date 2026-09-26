@@ -275,3 +275,75 @@
     transition: none;
   }
 }
+
+/* Figurative Sumi-e accents remain behind the form and never capture input. */
+.page::before {
+  top: auto;
+  bottom: -1rem;
+  left: -4rem;
+  width: min(58vw, 39rem);
+  height: min(32vw, 21rem);
+  background: var(--brush-subtle);
+  mask: url('/sumi-e/mountain-wash.svg') left bottom / 100% 100% no-repeat;
+  opacity: 0.85;
+  transform: none;
+}
+
+.page::after {
+  top: -2rem;
+  right: -3rem;
+  bottom: auto;
+  width: min(46vw, 30rem);
+  height: min(25vw, 16rem);
+  background: url('/sumi-e/red-blossom-branch.svg') right top / contain no-repeat;
+  mask: none;
+  opacity: 0.58;
+}
+
+.card {
+  isolation: isolate;
+  background-color: var(--surface);
+  background-image: url('/sumi-e/japanese-seal.svg'), url('/sumi-e/enso-circle.svg');
+  background-position:
+    right 1.1rem bottom 1.1rem,
+    right -5rem top 1rem;
+  background-repeat: no-repeat;
+  background-size:
+    2.2rem 2.2rem,
+    14rem 14rem;
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.card::before {
+  z-index: 2;
+}
+
+.card::after {
+  z-index: 0;
+  background: var(--brush-subtle);
+  mask: url('/sumi-e/brush-corner.svg') right bottom / contain no-repeat;
+  opacity: 0.38;
+  transform: rotate(180deg);
+}
+
+@media (max-width: 34rem) {
+  .page::after {
+    right: -6rem;
+    width: 19rem;
+    height: 11rem;
+    opacity: 0.42;
+  }
+
+  .card {
+    background-position:
+      right 0.75rem bottom 0.75rem,
+      right -6rem top 1rem;
+    background-size:
+      1.8rem 1.8rem,
+      13rem 13rem;
+  }
+}

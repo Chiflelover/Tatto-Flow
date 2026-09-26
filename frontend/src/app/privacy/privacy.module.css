@@ -319,3 +319,65 @@
     grid-row: 1 / span 20;
   }
 }
+
+/* Figurative Sumi-e accents for the public policy page. */
+.page::before {
+  top: auto;
+  bottom: -1rem;
+  left: -5rem;
+  width: min(58vw, 43rem);
+  height: min(31vw, 22rem);
+  background: var(--brush-subtle);
+  mask: url('/sumi-e/mountain-wash.svg') left bottom / 100% 100% no-repeat;
+  opacity: 0.82;
+  transform: none;
+}
+
+.page::after {
+  top: -2.5rem;
+  right: -4rem;
+  bottom: auto;
+  width: min(42vw, 30rem);
+  height: min(24vw, 17rem);
+  background: url('/sumi-e/red-blossom-branch.svg') right top / contain no-repeat;
+  mask: none;
+  opacity: 0.54;
+}
+
+.policy {
+  background-image: url('/sumi-e/enso-circle.svg');
+  background-position: right -4rem top 7rem;
+  background-repeat: no-repeat;
+  background-size: min(30vw, 18rem) min(30vw, 18rem);
+}
+
+.policy > * {
+  position: relative;
+  z-index: 1;
+}
+
+.footer {
+  min-height: 3.6rem;
+  background-image: url('/sumi-e/japanese-seal.svg');
+  background-position: left 0 bottom 0;
+  background-repeat: no-repeat;
+  background-size: 2.5rem 2.5rem;
+}
+
+@media (max-width: 45.99rem) {
+  .page::after {
+    right: -7rem;
+    width: 20rem;
+    height: 12rem;
+    opacity: 0.38;
+  }
+
+  .policy {
+    background-position: right -5rem top 9rem;
+    background-size: 13rem 13rem;
+  }
+
+  .footer {
+    padding-left: 3.25rem;
+  }
+}
