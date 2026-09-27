@@ -327,9 +327,9 @@
   left: -5rem;
   width: min(58vw, 43rem);
   height: min(31vw, 22rem);
-  background: var(--brush-subtle);
-  mask: url('/sumi-e/mountain-wash.svg') left bottom / 100% 100% no-repeat;
-  opacity: 0.82;
+  background: url('/imagenes_sumi-e/valley-panorama.png') left bottom / 100% 100% no-repeat;
+  mask: none;
+  opacity: 0.15;
   transform: none;
 }
 
@@ -339,13 +339,13 @@
   bottom: auto;
   width: min(42vw, 30rem);
   height: min(24vw, 17rem);
-  background: url('/sumi-e/red-blossom-branch.svg') right top / contain no-repeat;
+  background: url('/imagenes_sumi-e/blossom-branch.png') right top / contain no-repeat;
   mask: none;
   opacity: 0.54;
 }
 
 .policy {
-  background-image: url('/sumi-e/enso-circle.svg');
+  background-image: url('/imagenes_sumi-e/enso.png');
   background-position: right -4rem top 7rem;
   background-repeat: no-repeat;
   background-size: min(30vw, 18rem) min(30vw, 18rem);
@@ -358,7 +358,7 @@
 
 .footer {
   min-height: 3.6rem;
-  background-image: url('/sumi-e/japanese-seal.svg');
+  background-image: url('/imagenes_sumi-e/seal.png');
   background-position: left 0 bottom 0;
   background-repeat: no-repeat;
   background-size: 2.5rem 2.5rem;

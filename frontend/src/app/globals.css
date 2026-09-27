@@ -113,10 +113,9 @@ body::after {
   bottom: -2rem;
   width: min(72vw, 64rem);
   height: min(34vw, 27rem);
-  background: var(--brush-subtle);
+  background: url('/imagenes_sumi-e/valley-panorama.png') right bottom / contain no-repeat;
   content: '';
-  mask: url('/sumi-e/ink-landscape.svg') right bottom / 100% 100% no-repeat;
-  opacity: 0.44;
+  opacity: 0.12;
   pointer-events: none;
 }
 
@@ -126,7 +125,7 @@ html[data-theme='light'] body::before {
 }
 
 html[data-theme='light'] body::after {
-  opacity: 0.32;
+  opacity: 0.16;
 }
 
 body > * {

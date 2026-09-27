@@ -283,9 +283,9 @@
   left: -4rem;
   width: min(58vw, 39rem);
   height: min(32vw, 21rem);
-  background: var(--brush-subtle);
-  mask: url('/sumi-e/mountain-wash.svg') left bottom / 100% 100% no-repeat;
-  opacity: 0.85;
+  background: url('/imagenes_sumi-e/mountain-panorama.png') left bottom / 100% 100% no-repeat;
+  mask: none;
+  opacity: 0.16;
   transform: none;
 }
 
@@ -295,15 +295,15 @@
   bottom: auto;
   width: min(46vw, 30rem);
   height: min(25vw, 16rem);
-  background: url('/sumi-e/red-blossom-branch.svg') right top / contain no-repeat;
+  background: url('/imagenes_sumi-e/bird.png') right top / contain no-repeat;
   mask: none;
-  opacity: 0.58;
+  opacity: 0.28;
 }
 
 .card {
   isolation: isolate;
   background-color: var(--surface);
-  background-image: url('/sumi-e/japanese-seal.svg'), url('/sumi-e/enso-circle.svg');
+  background-image: url('/imagenes_sumi-e/seal.png'), url('/imagenes_sumi-e/enso.png');
   background-position:
     right 1.1rem bottom 1.1rem,
     right -5rem top 1rem;
