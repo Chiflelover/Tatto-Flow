@@ -5,21 +5,6 @@
   background: var(--background);
 }
 
-.dashboardLayout::before {
-  position: fixed;
-  z-index: 0;
-  top: 8rem;
-  right: -5rem;
-  width: 15rem;
-  height: 2.5rem;
-  border-radius: 48% 52% 38% 62%;
-  background: var(--brush-subtle);
-  content: '';
-  filter: blur(0.35rem);
-  pointer-events: none;
-  transform: rotate(-17deg);
-}
-
 .dashboardLayout :focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
@@ -1929,34 +1914,6 @@
 }
 
 /* Sumi-e visual layer: organic strokes, restrained surfaces and warm ink contrast. */
-.dashboardLayout::before {
-  top: auto;
-  right: -2rem;
-  bottom: -1rem;
-  width: min(52vw, 43rem);
-  height: min(40vw, 25rem);
-  border-radius: 0;
-  background: var(--brush-subtle);
-  filter: none;
-  mask: url('/sumi-e/ink-wash.svg') right bottom / 100% 100% no-repeat;
-  transform: none;
-}
-
-.dashboardLayout::after {
-  position: fixed;
-  z-index: 0;
-  top: 5.5rem;
-  right: -5rem;
-  width: min(38vw, 28rem);
-  height: min(20vw, 13rem);
-  background: var(--brush-subtle);
-  content: '';
-  mask: url('/sumi-e/ink-wash.svg') center / 100% 100% no-repeat;
-  opacity: 0.72;
-  pointer-events: none;
-  transform: rotate(180deg);
-}
-
 .pageHeader::after,
 .sectionHeader::after,
 .panel::before,
@@ -2472,10 +2429,6 @@
 }
 
 @media (max-width: 45.99rem) {
-  .dashboardLayout::after {
-    display: none;
-  }
-
   .metricsGrid {
     gap: 0.5rem;
   }
@@ -2521,15 +2474,6 @@
   isolation: isolate;
   overflow: hidden;
   background-color: var(--surface-translucent);
-  background-image:
-    url('/imagenes_sumi-e/blossom-branch.png'), url('/imagenes_sumi-e/mountain-panorama.png');
-  background-position:
-    right -1.6rem top -0.8rem,
-    right bottom;
-  background-repeat: no-repeat;
-  background-size:
-    min(30vw, 18rem) auto,
-    min(56vw, 38rem) 72%;
 }
 
 .leadDetailSummary > * {
@@ -2543,8 +2487,7 @@
   isolation: isolate;
 }
 
-.dataList::before,
-.analysisFacts::before {
+.dataList::before {
   position: absolute;
   z-index: -1;
   right: -1.5rem;
@@ -2559,11 +2502,6 @@
 
 .dataList::before {
   mask: url('/sumi-e/ink-cloud.svg') right bottom / 100% 100% no-repeat;
-}
-
-.analysisFacts::before {
-  background: url('/imagenes_sumi-e/mountain-panorama.png') right bottom / 100% 100% no-repeat;
-  mask: none;
 }
 
 .dataList > div,
@@ -2596,17 +2534,6 @@
   background: url('/imagenes_sumi-e/bamboo.png') left bottom / contain no-repeat;
   mask: none;
   opacity: 0.16;
-}
-
-.referenceBox::after {
-  position: absolute;
-  z-index: 3;
-  inset: 0.12rem;
-  background: var(--sumi-stroke);
-  content: '';
-  mask: url('/sumi-e/brush-frame.svg') center / 100% 100% no-repeat;
-  opacity: 0.56;
-  pointer-events: none;
 }
 
 .referenceImage {
@@ -2683,15 +2610,6 @@
   .pageHeader::before {
     right: -5rem;
     width: 17rem;
-  }
-
-  .leadDetailSummary {
-    background-position:
-      right -5rem top -0.6rem,
-      right bottom;
-    background-size:
-      14rem auto,
-      23rem 58%;
   }
 
   .referenceBox {
