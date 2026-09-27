@@ -2674,14 +2674,6 @@
   z-index: 1;
 }
 
-.pricingRow {
-  background-color: var(--surface-translucent);
-  background-image: url('/imagenes_sumi-e/mountain-panorama.png');
-  background-position: right bottom;
-  background-repeat: no-repeat;
-  background-size: min(42vw, 29rem) 72%;
-}
-
 @media (max-width: 45.99rem) {
   .pageHeader {
     background-position: right -4rem bottom 0;
