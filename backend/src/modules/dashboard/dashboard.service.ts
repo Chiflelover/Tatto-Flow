@@ -78,23 +78,28 @@ export class DashboardService {
     private readonly storage: StorageService,
   ) {}
 
-  async getMetrics() {
+  async getMetrics(accountId: string) {
     const [newOrders, verified, requiresReview, completed, recentLeads] = await Promise.all([
       this.prisma.lead.count({
         where: {
+          accountId,
           archivedAt: null,
           status: {
             in: [LeadStatus.ANALYZING, LeadStatus.VERIFIED, LeadStatus.REQUIRES_REVIEW],
           },
         },
       }),
-      this.prisma.lead.count({ where: { archivedAt: null, status: LeadStatus.VERIFIED } }),
       this.prisma.lead.count({
-        where: { archivedAt: null, status: LeadStatus.REQUIRES_REVIEW },
+        where: { accountId, archivedAt: null, status: LeadStatus.VERIFIED },
       }),
-      this.prisma.lead.count({ where: { archivedAt: null, status: LeadStatus.COMPLETED } }),
+      this.prisma.lead.count({
+        where: { accountId, archivedAt: null, status: LeadStatus.REQUIRES_REVIEW },
+      }),
+      this.prisma.lead.count({
+        where: { accountId, archivedAt: null, status: LeadStatus.COMPLETED },
+      }),
       this.prisma.lead.findMany({
-        where: { archivedAt: null },
+        where: { accountId, archivedAt: null },
         include: SUMMARY_INCLUDE,
         orderBy: { createdAt: 'desc' },
         take: 5,
@@ -107,8 +112,8 @@ export class DashboardService {
     };
   }
 
-  async listLeads(query: LeadListQueryDto) {
-    const where = this.filterWhere(query);
+  async listLeads(accountId: string, query: LeadListQueryDto) {
+    const where = this.filterWhere(accountId, query);
     const skip = (query.page - 1) * query.pageSize;
     const [leads, total] = await Promise.all([
       this.prisma.lead.findMany({
@@ -132,9 +137,9 @@ export class DashboardService {
     };
   }
 
-  async getLead(leadId: string) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  async getLead(accountId: string, leadId: string) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       include: DETAIL_INCLUDE,
     });
 
@@ -145,9 +150,9 @@ export class DashboardService {
     return this.toDetail(lead);
   }
 
-  async getLeadReference(leadId: string, now = new Date()) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  async getLeadReference(accountId: string, leadId: string, now = new Date()) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       select: {
         id: true,
         images: {
@@ -187,9 +192,9 @@ export class DashboardService {
     }
   }
 
-  async completeLead(leadId: string) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  async completeLead(accountId: string, leadId: string) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       select: { status: true },
     });
 
@@ -198,12 +203,13 @@ export class DashboardService {
     }
 
     if (lead.status === LeadStatus.COMPLETED) {
-      return this.getLead(leadId);
+      return this.getLead(accountId, leadId);
     }
 
     const update = await this.prisma.lead.updateMany({
       where: {
         id: leadId,
+        accountId,
         status: { in: COMPLETABLE_LEAD_STATUSES },
       },
       data: { status: LeadStatus.COMPLETED },
@@ -213,12 +219,12 @@ export class DashboardService {
       throw new ConflictException('Este pedido todavía no puede marcarse como finalizado.');
     }
 
-    return this.getLead(leadId);
+    return this.getLead(accountId, leadId);
   }
 
-  async saveManualFinalPrice(leadId: string, price: number) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  async saveManualFinalPrice(accountId: string, leadId: string, price: number) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       select: {
         calculatedMinPrice: true,
         calculatedMaxPrice: true,
@@ -241,36 +247,36 @@ export class DashboardService {
     }
 
     await this.prisma.lead.update({
-      where: { id: leadId },
+      where: { id: leadId, accountId },
       data: { manualFinalPrice: new Prisma.Decimal(price) },
     });
 
-    return this.getLead(leadId);
+    return this.getLead(accountId, leadId);
   }
 
-  async archiveLead(leadId: string) {
-    await this.ensureLeadExists(leadId);
+  async archiveLead(accountId: string, leadId: string) {
+    await this.ensureLeadExists(accountId, leadId);
     await this.prisma.lead.updateMany({
-      where: { id: leadId, archivedAt: null },
+      where: { id: leadId, accountId, archivedAt: null },
       data: { archivedAt: new Date() },
     });
 
-    return this.getLead(leadId);
+    return this.getLead(accountId, leadId);
   }
 
-  async restoreLead(leadId: string) {
-    await this.ensureLeadExists(leadId);
+  async restoreLead(accountId: string, leadId: string) {
+    await this.ensureLeadExists(accountId, leadId);
     await this.prisma.lead.updateMany({
-      where: { id: leadId, archivedAt: { not: null } },
+      where: { id: leadId, accountId, archivedAt: { not: null } },
       data: { archivedAt: null },
     });
 
-    return this.getLead(leadId);
+    return this.getLead(accountId, leadId);
   }
 
-  async deleteIncompleteLead(leadId: string) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  async deleteIncompleteLead(accountId: string, leadId: string) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       select: {
         id: true,
         customerId: true,
@@ -309,6 +315,7 @@ export class DashboardService {
         await transaction.conversation.deleteMany({
           where: {
             id: lead.conversationId,
+            accountId,
             status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
           },
         });
@@ -317,6 +324,7 @@ export class DashboardService {
       await transaction.customer.deleteMany({
         where: {
           id: lead.customerId,
+          accountId,
           leads: { none: {} },
           conversations: { none: {} },
         },
@@ -326,16 +334,20 @@ export class DashboardService {
     return { deleted: true, leadId: lead.id };
   }
 
-  async getPricingRules() {
-    const rules = await this.pricingService.listActiveRules();
+  async getPricingRules(accountId: string) {
+    const rules = await this.pricingService.listActiveRules(accountId);
 
     return {
       rules: rules.map((rule) => this.toPricingRule(rule)),
     };
   }
 
-  async updatePricingRules(updates: PricingRulePriceUpdate[], changedByUserId: string) {
-    const result = await this.pricingService.updateActiveRules(updates, changedByUserId);
+  async updatePricingRules(
+    accountId: string,
+    updates: PricingRulePriceUpdate[],
+    changedByUserId: string,
+  ) {
+    const result = await this.pricingService.updateActiveRules(accountId, updates, changedByUserId);
 
     return {
       rules: result.rules.map((rule) => this.toPricingRule(rule)),
@@ -344,7 +356,7 @@ export class DashboardService {
     };
   }
 
-  private filterWhere(query: LeadListQueryDto): Prisma.LeadWhereInput {
+  private filterWhere(accountId: string, query: LeadListQueryDto): Prisma.LeadWhereInput {
     const statusByFilter: Partial<Record<LeadFilter, LeadStatus>> = {
       verified: LeadStatus.VERIFIED,
       'requires-review': LeadStatus.REQUIRES_REVIEW,
@@ -353,6 +365,7 @@ export class DashboardService {
     const operationalStatus = statusByFilter[query.filter];
 
     return {
+      accountId,
       archivedAt: query.archived ? { not: null } : null,
       ...(operationalStatus ? { status: operationalStatus } : {}),
       ...(query.status ? { evaluation: { is: { readinessStatus: query.status } } } : {}),
@@ -471,9 +484,9 @@ export class DashboardService {
     );
   }
 
-  private async ensureLeadExists(leadId: string): Promise<void> {
-    const exists = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+  private async ensureLeadExists(accountId: string, leadId: string): Promise<void> {
+    const exists = await this.prisma.lead.findFirst({
+      where: { id: leadId, accountId },
       select: { id: true },
     });
 

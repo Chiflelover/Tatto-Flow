@@ -42,7 +42,7 @@ describe('WhatsAppCloudApiClient', () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(successfulResponse());
     vi.stubGlobal('fetch', fetchMock);
 
-    await createClient().sendMessage('+51 999-999-999', {
+    await createClient().sendMessage('1234567890', '+51 999-999-999', {
       type: 'text',
       text: 'Hola desde Nita',
     });
@@ -86,7 +86,7 @@ describe('WhatsAppCloudApiClient', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      createClient().sendMessage('51999999999', {
+      createClient().sendMessage('1234567890', '51999999999', {
         type: 'text',
         text: 'Hola desde Nita',
       }),
@@ -111,7 +111,7 @@ describe('WhatsAppCloudApiClient', () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(successfulResponse());
     vi.stubGlobal('fetch', fetchMock);
 
-    await createClient().sendMessage('51999999999', {
+    await createClient().sendMessage('1234567890', '51999999999', {
       type: 'interactive_buttons',
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
@@ -150,7 +150,7 @@ describe('WhatsAppCloudApiClient', () => {
       .mockResolvedValueOnce(successfulResponse());
     vi.stubGlobal('fetch', fetchMock);
 
-    await createClient().sendMessage('51999999999', {
+    await createClient().sendMessage('1234567890', '51999999999', {
       type: 'interactive_buttons',
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
@@ -181,7 +181,7 @@ describe('WhatsAppCloudApiClient', () => {
       .mockResolvedValueOnce(successfulResponse());
     vi.stubGlobal('fetch', fetchMock);
 
-    await createClient().sendMessage('51999999999', {
+    await createClient().sendMessage('1234567890', '51999999999', {
       type: 'interactive_buttons',
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       headerImageUrl: DETAIL_GUIDE_URL,
@@ -219,7 +219,7 @@ describe('WhatsAppCloudApiClient', () => {
       .mockResolvedValueOnce(successfulResponse());
     vi.stubGlobal('fetch', fetchMock);
 
-    await createClient().sendMessage('51999999999', {
+    await createClient().sendMessage('1234567890', '51999999999', {
       type: 'interactive_buttons',
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       buttons: [
@@ -265,7 +265,7 @@ describe('WhatsAppCloudApiClient', () => {
       );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(createClient().downloadImage('987654321')).resolves.toEqual({
+    await expect(createClient().downloadImage('1234567890', '987654321')).resolves.toEqual({
       content: new Uint8Array(png),
       mimeType: 'image/png',
       fileName: 'whatsapp-reference.png',
@@ -291,7 +291,7 @@ describe('WhatsAppCloudApiClient', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(createClient().downloadImage('987654321')).rejects.toBeInstanceOf(
+    await expect(createClient().downloadImage('1234567890', '987654321')).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -310,7 +310,7 @@ describe('WhatsAppCloudApiClient', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(createClient().downloadImage('987654321')).rejects.toBeInstanceOf(
+    await expect(createClient().downloadImage('1234567890', '987654321')).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(fetchMock).toHaveBeenCalledOnce();

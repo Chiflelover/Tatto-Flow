@@ -66,6 +66,7 @@ export class ConversationAbandonmentService {
           bodyPart: conversation.bodyPart,
         },
         create: {
+          accountId: conversation.accountId,
           customerId: conversation.customerId,
           conversationId: conversation.id,
           selectedSize: conversation.selectedSize,

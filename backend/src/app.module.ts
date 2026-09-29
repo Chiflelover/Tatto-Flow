@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AdminModule } from './modules/admin/admin.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -20,6 +21,7 @@ import { WhatsAppModule } from './modules/whatsapp/whatsapp.module.js';
     PrismaModule,
     StorageModule,
     AuthModule,
+    AdminModule,
     ChatbotModule,
     WhatsAppModule,
     DashboardModule,

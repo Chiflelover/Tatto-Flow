@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { ConfigService } from '@nestjs/config';
 import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
@@ -76,6 +77,7 @@ describe('WhatsAppAdapter', () => {
     await expect(
       adapter.handleIncoming({
         type: 'text',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         text: 'Hola',
       }),
@@ -111,6 +113,7 @@ describe('WhatsAppAdapter', () => {
     await expect(
       adapter.handleIncoming({
         type: 'button_reply',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
       }),
@@ -138,6 +141,7 @@ describe('WhatsAppAdapter', () => {
     await expect(
       adapter.handleIncoming({
         type: 'button_reply',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         buttonId: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT,
       }),
@@ -148,7 +152,7 @@ describe('WhatsAppAdapter', () => {
       },
     ]);
     expect(processOptionSelection).toHaveBeenCalledOnce();
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'detail',
       value: DetailLevel.LIGHT,
     });
@@ -176,6 +180,7 @@ describe('WhatsAppAdapter', () => {
     await expect(
       adapterWithoutGuide.handleIncoming({
         type: 'text',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         text: 'Hola',
       }),
@@ -199,11 +204,12 @@ describe('WhatsAppAdapter', () => {
   ])('maps size button %s to the internal value %s', async (buttonId, value) => {
     await adapter.handleIncoming({
       type: 'button_reply',
+      accountId: ACCOUNT_ID,
       customerIdentifier: '+51911111111',
       buttonId,
     });
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'size',
       value,
     });
@@ -216,11 +222,12 @@ describe('WhatsAppAdapter', () => {
   ])('maps detail button %s to the internal value %s', async (buttonId, value) => {
     await adapter.handleIncoming({
       type: 'button_reply',
+      accountId: ACCOUNT_ID,
       customerIdentifier: '+51911111111',
       buttonId,
     });
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'detail',
       value,
     });
@@ -229,11 +236,12 @@ describe('WhatsAppAdapter', () => {
   it('passes free body text to ChatbotService without trimming or state logic', async () => {
     await adapter.handleIncoming({
       type: 'text',
+      accountId: ACCOUNT_ID,
       customerIdentifier: '+51911111111',
       text: '  brazo  ',
     });
 
-    expect(processTextMessage).toHaveBeenCalledWith('+51911111111', '  brazo  ');
+    expect(processTextMessage).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', '  brazo  ');
     expect(processOptionSelection).not.toHaveBeenCalled();
   });
 
@@ -246,11 +254,12 @@ describe('WhatsAppAdapter', () => {
 
     await adapter.handleIncoming({
       type: 'image',
+      accountId: ACCOUNT_ID,
       customerIdentifier: '+51911111111',
       image,
     });
 
-    expect(processImageMessage).toHaveBeenCalledWith('+51911111111', image);
+    expect(processImageMessage).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', image);
   });
 
   it('uses an equivalent text list and maps its reply when buttons are unavailable', async () => {
@@ -266,7 +275,7 @@ describe('WhatsAppAdapter', () => {
 
     const fallback = { interactiveButtons: false };
     const outgoing = await adapter.handleIncoming(
-      { type: 'text', customerIdentifier: '+51911111111', text: 'Hola' },
+      { type: 'text', accountId: ACCOUNT_ID, customerIdentifier: '+51911111111', text: 'Hola' },
       fallback,
     );
 
@@ -278,10 +287,15 @@ describe('WhatsAppAdapter', () => {
     ]);
 
     await adapter.handleIncoming(
-      { type: 'text', customerIdentifier: '+51911111111', text: '  Pequeño ' },
+      {
+        type: 'text',
+        accountId: ACCOUNT_ID,
+        customerIdentifier: '+51911111111',
+        text: '  Pequeño ',
+      },
       fallback,
     );
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'size',
       value: TattooSize.SMALL,
     });
@@ -293,6 +307,7 @@ describe('WhatsAppAdapter', () => {
       await expect(
         adapter.handleIncoming({
           type: 'button_reply',
+          accountId: ACCOUNT_ID,
           customerIdentifier: '+51911111111',
           buttonId,
         }),
@@ -306,12 +321,13 @@ describe('WhatsAppAdapter', () => {
     await expect(
       adapter.handleIncoming({
         type: 'button_reply',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         buttonId: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM,
       }),
     ).resolves.toBeDefined();
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'size',
       value: TattooSize.MEDIUM,
     });
@@ -321,21 +337,23 @@ describe('WhatsAppAdapter', () => {
     await Promise.all([
       adapter.handleIncoming({
         type: 'button_reply',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51911111111',
         buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
       }),
       adapter.handleIncoming({
         type: 'button_reply',
+        accountId: ACCOUNT_ID,
         customerIdentifier: '+51922222222',
         buttonId: WHATSAPP_BUTTON_IDS.SIZE_LARGE,
       }),
     ]);
 
-    expect(processOptionSelection).toHaveBeenCalledWith('+51911111111', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
       stage: 'size',
       value: TattooSize.SMALL,
     });
-    expect(processOptionSelection).toHaveBeenCalledWith('+51922222222', {
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51922222222', {
       stage: 'size',
       value: TattooSize.LARGE,
     });

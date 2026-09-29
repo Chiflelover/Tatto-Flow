@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
@@ -19,6 +20,8 @@ function makeConversation(id: string, customerId: string): Conversation {
 
   return {
     id,
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     customerId,
     currentState: ConversationState.ASK_SIZE,
     status: ConversationStatus.ACTIVE,
@@ -132,7 +135,7 @@ describe('conversation concurrency', () => {
       abandonInactiveForCustomer: vi.fn().mockResolvedValue(0),
     } as unknown as ConversationAbandonmentService);
 
-    await expect(service.getOrCreateActive(CUSTOMER_A)).resolves.toEqual({
+    await expect(service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_A)).resolves.toEqual({
       conversation: activeConversation,
       created: false,
     });

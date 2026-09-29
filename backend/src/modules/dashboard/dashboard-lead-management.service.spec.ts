@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { ConflictException } from '@nestjs/common';
 import {
   ConversationStatus,
@@ -41,6 +42,7 @@ function completeLeadDetail(archivedAt: Date | null = null) {
 
   return {
     id: LEAD_ID,
+    accountId: ACCOUNT_ID,
     customerId: crypto.randomUUID(),
     conversationId: CONVERSATION_ID,
     selectedSize: TattooSize.SMALL,
@@ -84,9 +86,11 @@ describe('DashboardService lead management', () => {
     const count = vi.fn().mockResolvedValue(0);
     const service = createService({ lead: { findMany, count } });
 
-    await service.listLeads(query({ archived }));
+    await service.listLeads(ACCOUNT_ID, query({ archived }));
 
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt } }));
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { accountId: ACCOUNT_ID, archivedAt } }),
+    );
   });
 
   it('orders the normal inbox by LISTO, REVISAR, INCOMPLETO and then score descending', async () => {
@@ -95,7 +99,7 @@ describe('DashboardService lead management', () => {
       lead: { findMany, count: vi.fn().mockResolvedValue(0) },
     });
 
-    await service.listLeads(query());
+    await service.listLeads(ACCOUNT_ID, query());
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -120,7 +124,7 @@ describe('DashboardService lead management', () => {
       lead: { findMany, count: vi.fn().mockResolvedValue(0) },
     });
 
-    await service.listLeads(query({ sortBy, sortOrder: 'asc' }));
+    await service.listLeads(ACCOUNT_ID, query({ sortBy, sortOrder: 'asc' }));
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: [expectedOrder, { createdAt: 'desc' }] }),
@@ -133,6 +137,7 @@ describe('DashboardService lead management', () => {
     const service = createService({ lead: { findMany, count } });
 
     const result = await service.listLeads(
+      ACCOUNT_ID,
       query({
         status: ReadinessStatus.REVISAR,
         size: TattooSize.MEDIUM,
@@ -144,6 +149,7 @@ describe('DashboardService lead management', () => {
     );
 
     const where = {
+      accountId: ACCOUNT_ID,
       archivedAt: null,
       evaluation: { is: { readinessStatus: ReadinessStatus.REVISAR } },
       selectedSize: TattooSize.MEDIUM,
@@ -170,36 +176,36 @@ describe('DashboardService lead management', () => {
       },
     });
 
-    const result = await service.listLeads(query());
+    const result = await service.listLeads(ACCOUNT_ID, query());
 
     expect(result.leads[0]).toMatchObject({ id: LEAD_ID, deletable: true });
   });
 
   it('archives a lead logically and removes it from the normal inbox query', async () => {
     const detail = completeLeadDetail(new Date());
-    const findUnique = vi.fn().mockResolvedValue(detail);
+    const findFirst = vi.fn().mockResolvedValue(detail);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const service = createService({ lead: { findUnique, updateMany } });
+    const service = createService({ lead: { findFirst, updateMany } });
 
-    await service.archiveLead(LEAD_ID);
+    await service.archiveLead(ACCOUNT_ID, LEAD_ID);
     const anyDate: unknown = expect.any(Date);
 
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: LEAD_ID, archivedAt: null },
+      where: { id: LEAD_ID, accountId: ACCOUNT_ID, archivedAt: null },
       data: { archivedAt: anyDate },
     });
   });
 
   it('restores an archived lead', async () => {
     const detail = completeLeadDetail(null);
-    const findUnique = vi.fn().mockResolvedValue(detail);
+    const findFirst = vi.fn().mockResolvedValue(detail);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const service = createService({ lead: { findUnique, updateMany } });
+    const service = createService({ lead: { findFirst, updateMany } });
 
-    await service.restoreLead(LEAD_ID);
+    await service.restoreLead(ACCOUNT_ID, LEAD_ID);
 
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: LEAD_ID, archivedAt: { not: null } },
+      where: { id: LEAD_ID, accountId: ACCOUNT_ID, archivedAt: { not: null } },
       data: { archivedAt: null },
     });
   });
@@ -218,8 +224,9 @@ describe('DashboardService lead management', () => {
     const service = createService(
       {
         lead: {
-          findUnique: vi.fn().mockResolvedValue({
+          findFirst: vi.fn().mockResolvedValue({
             id: LEAD_ID,
+            accountId: ACCOUNT_ID,
             customerId: CUSTOMER_ID,
             conversationId: CONVERSATION_ID,
             status: LeadStatus.ANALYZING,
@@ -239,7 +246,7 @@ describe('DashboardService lead management', () => {
       { delete: deleteObject },
     );
 
-    await expect(service.deleteIncompleteLead(LEAD_ID)).resolves.toEqual({
+    await expect(service.deleteIncompleteLead(ACCOUNT_ID, LEAD_ID)).resolves.toEqual({
       deleted: true,
       leadId: LEAD_ID,
     });
@@ -248,12 +255,14 @@ describe('DashboardService lead management', () => {
     expect(deleteConversation).toHaveBeenCalledWith({
       where: {
         id: CONVERSATION_ID,
+        accountId: ACCOUNT_ID,
         status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
       },
     });
     expect(deleteCustomer).toHaveBeenCalledWith({
       where: {
         id: CUSTOMER_ID,
+        accountId: ACCOUNT_ID,
         leads: { none: {} },
         conversations: { none: {} },
       },
@@ -274,8 +283,9 @@ describe('DashboardService lead management', () => {
     const service = createService(
       {
         lead: {
-          findUnique: vi.fn().mockResolvedValue({
+          findFirst: vi.fn().mockResolvedValue({
             id: LEAD_ID,
+            accountId: ACCOUNT_ID,
             customerId: CUSTOMER_ID,
             conversationId: CONVERSATION_ID,
             status: LeadStatus.COMPLETED,
@@ -294,7 +304,7 @@ describe('DashboardService lead management', () => {
       { delete: deleteObject },
     );
 
-    await expect(service.deleteIncompleteLead(LEAD_ID)).resolves.toEqual({
+    await expect(service.deleteIncompleteLead(ACCOUNT_ID, LEAD_ID)).resolves.toEqual({
       deleted: true,
       leadId: LEAD_ID,
     });
@@ -303,6 +313,7 @@ describe('DashboardService lead management', () => {
     expect(deleteConversation).toHaveBeenCalledWith({
       where: {
         id: CONVERSATION_ID,
+        accountId: ACCOUNT_ID,
         status: { in: [ConversationStatus.ABANDONED, ConversationStatus.COMPLETED] },
       },
     });
@@ -317,8 +328,9 @@ describe('DashboardService lead management', () => {
       const service = createService(
         {
           lead: {
-            findUnique: vi.fn().mockResolvedValue({
+            findFirst: vi.fn().mockResolvedValue({
               id: LEAD_ID,
+              accountId: ACCOUNT_ID,
               customerId: CUSTOMER_ID,
               conversationId: CONVERSATION_ID,
               status: LeadStatus.ANALYZING,
@@ -335,7 +347,7 @@ describe('DashboardService lead management', () => {
         { delete: deleteObject },
       );
 
-      await expect(service.deleteIncompleteLead(LEAD_ID)).rejects.toEqual(
+      await expect(service.deleteIncompleteLead(ACCOUNT_ID, LEAD_ID)).rejects.toEqual(
         new ConflictException('Solo se pueden eliminar leads incompletos sin cotización.'),
       );
       expect(deleteObject).not.toHaveBeenCalled();

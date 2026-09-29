@@ -5,9 +5,11 @@ import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
+import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 
 const BUSINESS_ACCOUNT_ID = '1111111111';
 const PHONE_NUMBER_ID = '2222222222';
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 const CUSTOMER = '51999999999';
 const MESSAGE_ID = 'wamid.inbound-1';
 
@@ -44,6 +46,13 @@ function createFixture() {
     mimeType: 'image/png',
     fileName: 'whatsapp-reference.png',
   });
+  const resolve = vi
+    .fn()
+    .mockImplementation((id: string) =>
+      Promise.resolve(
+        id === PHONE_NUMBER_ID ? { accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID } : null,
+      ),
+    );
   const service = new WhatsAppWebhookService(
     new ConfigService({
       WHATSAPP_BUSINESS_ACCOUNT_ID: BUSINESS_ACCOUNT_ID,
@@ -53,6 +62,7 @@ function createFixture() {
     { claim, release } as unknown as WhatsAppInboundMessageRepository,
     { handleIncoming } as unknown as WhatsAppAdapter,
     { sendMessage, downloadImage } as unknown as WhatsAppCloudApiClient,
+    { resolve } as unknown as WhatsAppChannelService,
   );
 
   return {
@@ -63,6 +73,7 @@ function createFixture() {
     handleIncoming,
     sendMessage,
     downloadImage,
+    resolve,
   };
 }
 
@@ -71,6 +82,49 @@ function observeServiceLogs(service: WhatsAppWebhookService) {
 }
 
 describe('WhatsAppWebhookService', () => {
+  it('routes the same sender to the account and outgoing Nita number of each receiving channel', async () => {
+    const fixture = createFixture();
+    const secondPhoneId = '3333333333';
+    const secondAccountId = '00000000-0000-4000-8000-000000000002';
+    fixture.resolve.mockImplementation((phoneNumberId: string) =>
+      Promise.resolve(
+        phoneNumberId === PHONE_NUMBER_ID
+          ? { accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID }
+          : phoneNumberId === secondPhoneId
+            ? { accountId: secondAccountId, phoneNumberId: secondPhoneId }
+            : null,
+      ),
+    );
+    const message = { id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } };
+
+    await fixture.service.handleWebhook(payload(message), 'sha256=valid');
+    await fixture.service.handleWebhook(
+      payload({ ...message, id: 'wamid.inbound-2' }, { phoneId: secondPhoneId }),
+      'sha256=valid',
+    );
+
+    expect(fixture.handleIncoming).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ accountId: ACCOUNT_ID, customerIdentifier: CUSTOMER }),
+    );
+    expect(fixture.handleIncoming).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ accountId: secondAccountId, customerIdentifier: CUSTOMER }),
+    );
+    expect(fixture.sendMessage).toHaveBeenNthCalledWith(
+      1,
+      PHONE_NUMBER_ID,
+      CUSTOMER,
+      expect.any(Object),
+    );
+    expect(fixture.sendMessage).toHaveBeenNthCalledWith(
+      2,
+      secondPhoneId,
+      CUSTOMER,
+      expect.any(Object),
+    );
+  });
+
   it('processes signed text and sends every structured Nita response', async () => {
     const fixture = createFixture();
     const rawBody = payload({
@@ -89,9 +143,10 @@ describe('WhatsAppWebhookService', () => {
     expect(fixture.handleIncoming).toHaveBeenCalledWith({
       type: 'text',
       customerIdentifier: CUSTOMER,
+      accountId: ACCOUNT_ID,
       text: 'Hola',
     });
-    expect(fixture.sendMessage).toHaveBeenCalledWith(CUSTOMER, {
+    expect(fixture.sendMessage).toHaveBeenCalledWith(PHONE_NUMBER_ID, CUSTOMER, {
       type: 'text',
       text: 'Respuesta de Nita',
     });
@@ -125,6 +180,7 @@ describe('WhatsAppWebhookService', () => {
     expect(fixture.handleIncoming).toHaveBeenCalledWith({
       type: 'button_reply',
       customerIdentifier: CUSTOMER,
+      accountId: ACCOUNT_ID,
       buttonId: expectedId,
     });
   });
@@ -142,10 +198,11 @@ describe('WhatsAppWebhookService', () => {
       'sha256=valid',
     );
 
-    expect(fixture.downloadImage).toHaveBeenCalledWith('media-123');
+    expect(fixture.downloadImage).toHaveBeenCalledWith(PHONE_NUMBER_ID, 'media-123');
     expect(fixture.handleIncoming).toHaveBeenCalledWith({
       type: 'image',
       customerIdentifier: CUSTOMER,
+      accountId: ACCOUNT_ID,
       image: {
         content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
         mimeType: 'image/png',

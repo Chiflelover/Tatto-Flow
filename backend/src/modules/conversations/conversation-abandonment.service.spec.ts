@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
@@ -24,6 +25,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
 
   return {
     id: crypto.randomUUID(),
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     customerId: CUSTOMER_A,
     currentState: ConversationState.ASK_SIZE,
     status: ConversationStatus.ACTIVE,

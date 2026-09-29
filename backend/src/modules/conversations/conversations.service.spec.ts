@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
@@ -51,6 +52,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
 
   return {
     id: ABANDONED_CONVERSATION_ID,
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     customerId: CUSTOMER_ID,
     currentState: ConversationState.ASK_BODY_PART,
     status: ConversationStatus.ABANDONED,
@@ -185,7 +188,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     });
     fixture.conversations.splice(0, fixture.conversations.length, active);
 
-    const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    const result = await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(result).toEqual({ conversation: active, created: false });
     expect(fixture.create).not.toHaveBeenCalled();
@@ -202,7 +205,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     });
     fixture.conversations.splice(0, fixture.conversations.length, expired);
 
-    const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    const result = await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(result.created).toBe(true);
     expect(result.conversation.currentState).toBe(ConversationState.START);
@@ -213,7 +216,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
   it('preserves the abandoned conversation and creates a fresh START conversation', async () => {
     const fixture = createFixture();
 
-    const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    const result = await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(result.created).toBe(true);
     expect(result.conversation.id).toBe('new-conversation');
@@ -232,7 +235,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
   it('preserves the original customer when the customer returns', async () => {
     const fixture = createFixture();
 
-    await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(fixture.deleteCustomer).not.toHaveBeenCalled();
     expect(fixture.findMany).not.toHaveBeenCalled();
@@ -241,7 +244,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
   it('preserves prior leads and never deletes the abandoned history', async () => {
     const fixture = createFixture();
 
-    await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(fixture.leads).toEqual([{ id: 'historical-lead', customerId: CUSTOMER_ID }]);
     expect(fixture.deleteLead).not.toHaveBeenCalled();
@@ -258,12 +261,13 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     fixture.conversations.splice(0, fixture.conversations.length, handedOff);
     fixture.leadStatusByConversation.set(handedOff.id, LeadStatus.VERIFIED);
 
-    const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    const result = await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(result).toEqual({ conversation: handedOff, created: false });
     expect(fixture.create).not.toHaveBeenCalled();
     expect(fixture.findFirst).toHaveBeenCalledWith({
       where: {
+        accountId: ACCOUNT_ID,
         customerId: CUSTOMER_ID,
         status: ConversationStatus.COMPLETED,
         currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
@@ -287,7 +291,7 @@ describe('ConversationsService abandoned conversation cleanup', () => {
     fixture.conversations.splice(0, fixture.conversations.length, handedOff);
     fixture.leadStatusByConversation.set(handedOff.id, LeadStatus.COMPLETED);
 
-    const result = await fixture.service.getOrCreateActive(CUSTOMER_ID);
+    const result = await fixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
 
     expect(result.created).toBe(true);
     expect(result.conversation).toMatchObject({

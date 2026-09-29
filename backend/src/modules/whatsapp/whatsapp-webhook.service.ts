@@ -9,6 +9,8 @@ import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 import { getRequiredWhatsAppValue } from './whatsapp.config.js';
 import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
+import { WhatsAppChannelService } from './whatsapp-channel.service.js';
+import type { WhatsAppChannel } from '../../generated/prisma/client.js';
 
 interface MetaMessage {
   id?: unknown;
@@ -59,6 +61,8 @@ export class WhatsAppWebhookService {
     private readonly adapter: WhatsAppAdapter,
     @Inject(WhatsAppCloudApiClient)
     private readonly cloudApi: WhatsAppCloudApiClient,
+    @Inject(WhatsAppChannelService)
+    private readonly channels: WhatsAppChannelService,
   ) {}
 
   verifyChallenge(mode: unknown, verifyToken: unknown, challenge: unknown): string {
@@ -77,7 +81,6 @@ export class WhatsAppWebhookService {
     }
 
     const businessAccountId = getRequiredWhatsAppValue(this.config, 'WHATSAPP_BUSINESS_ACCOUNT_ID');
-    const phoneNumberId = getRequiredWhatsAppValue(this.config, 'WHATSAPP_PHONE_NUMBER_ID');
     const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
     if (entries.length === 0) {
@@ -127,7 +130,19 @@ export class WhatsAppWebhookService {
           continue;
         }
 
-        if (value.metadata.phone_number_id !== phoneNumberId) {
+        const receivingPhoneNumberId = value.metadata.phone_number_id;
+        if (typeof receivingPhoneNumberId !== 'string' || !/^\d+$/.test(receivingPhoneNumberId)) {
+          this.logIgnored(
+            'phone_number_id_mismatch',
+            payload.object,
+            'change.value.metadata.phone_number_id',
+            value,
+          );
+          continue;
+        }
+
+        const channel = await this.channels.resolve(receivingPhoneNumberId);
+        if (!channel) {
           this.logIgnored(
             'phone_number_id_mismatch',
             payload.object,
@@ -149,7 +164,7 @@ export class WhatsAppWebhookService {
 
         for (const message of value.messages) {
           if (this.isRecord(message)) {
-            await this.processMessage(message);
+            await this.processMessage(message, channel);
           } else {
             this.logIgnored(
               'invalid_message_shape',
@@ -165,7 +180,7 @@ export class WhatsAppWebhookService {
     return { received: true };
   }
 
-  private async processMessage(message: MetaMessage): Promise<void> {
+  private async processMessage(message: MetaMessage, channel: WhatsAppChannel): Promise<void> {
     const messageId = this.requiredString(message.id, 'ID');
     const customerIdentifier = this.requiredString(message.from, 'remitente');
 
@@ -186,7 +201,12 @@ export class WhatsAppWebhookService {
     let chatbotProcessed = false;
 
     try {
-      const inbound = await this.toInboundMessage(message, customerIdentifier);
+      const inbound = await this.toInboundMessage(
+        message,
+        channel.accountId,
+        channel.phoneNumberId,
+        customerIdentifier,
+      );
 
       if (!inbound) {
         return;
@@ -196,7 +216,7 @@ export class WhatsAppWebhookService {
       chatbotProcessed = true;
 
       for (const response of outbound) {
-        await this.cloudApi.sendMessage(customerIdentifier, response);
+        await this.cloudApi.sendMessage(channel.phoneNumberId, customerIdentifier, response);
         this.logger.info('whatsapp.response.sent', {
           whatsappMessageId: messageId,
           responseType: response.type,
@@ -218,20 +238,25 @@ export class WhatsAppWebhookService {
 
   private async toInboundMessage(
     message: MetaMessage,
+    accountId: string,
+    phoneNumberId: string,
     customerIdentifier: string,
   ): Promise<WhatsAppInboundMessage | null> {
     switch (message.type) {
       case 'text':
         return {
           type: 'text',
+          accountId,
           customerIdentifier,
           text: this.requiredString(message.text?.body, 'texto', 1_000),
         };
       case 'image':
         return {
           type: 'image',
+          accountId,
           customerIdentifier,
           image: await this.cloudApi.downloadImage(
+            phoneNumberId,
             this.requiredString(message.image?.id, 'media ID'),
           ),
         };
@@ -241,6 +266,7 @@ export class WhatsAppWebhookService {
         if (interactive?.type === 'button_reply') {
           return {
             type: 'button_reply',
+            accountId,
             customerIdentifier,
             buttonId: this.requiredString(interactive.button_reply?.id, 'button reply'),
           };
@@ -249,6 +275,7 @@ export class WhatsAppWebhookService {
         if (interactive?.type === 'list_reply') {
           return {
             type: 'button_reply',
+            accountId,
             customerIdentifier,
             buttonId: this.requiredString(interactive.list_reply?.id, 'list reply'),
           };

@@ -38,17 +38,22 @@ export class WhatsAppCloudApiClient {
 
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
-  async sendMessage(recipient: string, message: WhatsAppOutboundMessage): Promise<void> {
+  async sendMessage(
+    phoneNumberId: string,
+    recipient: string,
+    message: WhatsAppOutboundMessage,
+  ): Promise<void> {
     const normalizedRecipient = this.normalizeRecipient(recipient);
 
     if (message.type === 'text') {
-      await this.sendText(normalizedRecipient, message.text);
+      await this.sendText(phoneNumberId, normalizedRecipient, message.text);
       return;
     }
 
     if (message.headerImageUrl) {
       try {
         await this.sendButtons(
+          phoneNumberId,
           normalizedRecipient,
           message.body,
           message.buttons,
@@ -61,25 +66,26 @@ export class WhatsAppCloudApiClient {
     }
 
     try {
-      await this.sendButtons(normalizedRecipient, message.body, message.buttons);
+      await this.sendButtons(phoneNumberId, normalizedRecipient, message.body, message.buttons);
     } catch (error) {
       if (!(error instanceof WhatsAppCloudApiError) || error.status !== 400) {
         throw error;
       }
 
       await this.sendText(
+        phoneNumberId,
         normalizedRecipient,
         `${message.body}\n\n${message.buttons.map(({ title }) => `- ${title}`).join('\n')}`,
       );
     }
   }
 
-  async downloadImage(mediaId: string): Promise<ChatbotImageInput> {
+  async downloadImage(phoneNumberId: string, mediaId: string): Promise<ChatbotImageInput> {
     if (!mediaId || mediaId.length > 255) {
       throw new BadRequestException('La imagen de WhatsApp no contiene un media ID válido.');
     }
 
-    const configuration = getWhatsAppGraphConfiguration(this.config);
+    const configuration = getWhatsAppGraphConfiguration(this.config, phoneNumberId);
     const metadataUrl = new URL(
       `${this.graphBaseUrl(configuration.version)}/${encodeURIComponent(mediaId)}`,
     );
@@ -126,12 +132,12 @@ export class WhatsAppCloudApiClient {
     };
   }
 
-  private async sendText(recipient: string, text: string): Promise<void> {
+  private async sendText(phoneNumberId: string, recipient: string, text: string): Promise<void> {
     if (!text.trim()) {
       return;
     }
 
-    await this.postMessage({
+    await this.postMessage(phoneNumberId, {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: recipient,
@@ -141,6 +147,7 @@ export class WhatsAppCloudApiClient {
   }
 
   private async sendButtons(
+    phoneNumberId: string,
     recipient: string,
     body: string,
     buttons: Array<{ id: string; title: string }>,
@@ -159,7 +166,7 @@ export class WhatsAppCloudApiClient {
       throw new BadRequestException('La imagen del mensaje interactivo no es válida.');
     }
 
-    await this.postMessage({
+    await this.postMessage(phoneNumberId, {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: recipient,
@@ -178,8 +185,8 @@ export class WhatsAppCloudApiClient {
     });
   }
 
-  private async postMessage(body: object): Promise<void> {
-    const configuration = getWhatsAppGraphConfiguration(this.config);
+  private async postMessage(phoneNumberId: string, body: object): Promise<void> {
+    const configuration = getWhatsAppGraphConfiguration(this.config, phoneNumberId);
     const url = `${this.graphBaseUrl(configuration.version)}/${configuration.phoneNumberId}/messages`;
     const response = await this.safeFetch(url, {
       method: 'POST',

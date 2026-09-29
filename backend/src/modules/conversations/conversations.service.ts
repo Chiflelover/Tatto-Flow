@@ -40,7 +40,10 @@ export class ConversationsService {
     private readonly abandonmentService: ConversationAbandonmentService,
   ) {}
 
-  async getOrCreateActive(customerId: string): Promise<ActiveConversationResult> {
+  async getOrCreateActive(
+    accountId: string,
+    customerId: string,
+  ): Promise<ActiveConversationResult> {
     const now = new Date();
 
     const abandonedCount = await this.abandonmentService.abandonInactiveForCustomer(
@@ -52,6 +55,7 @@ export class ConversationsService {
       const result = await this.prisma.$transaction(async (transaction) => {
         const activeConversation = await transaction.conversation.findFirst({
           where: {
+            accountId,
             customerId,
             status: ConversationStatus.ACTIVE,
           },
@@ -64,6 +68,7 @@ export class ConversationsService {
 
         const handedOffConversation = await transaction.conversation.findFirst({
           where: {
+            accountId,
             customerId,
             status: ConversationStatus.COMPLETED,
             currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
@@ -82,6 +87,7 @@ export class ConversationsService {
 
         const conversation = await transaction.conversation.create({
           data: {
+            accountId,
             customerId,
             currentState: ConversationState.START,
             status: ConversationStatus.ACTIVE,
@@ -110,7 +116,7 @@ export class ConversationsService {
         throw error;
       }
 
-      const concurrentConversation = await this.findActiveByCustomerId(customerId);
+      const concurrentConversation = await this.findActiveByCustomerId(accountId, customerId);
 
       if (!concurrentConversation) {
         throw error;
@@ -120,9 +126,13 @@ export class ConversationsService {
     }
   }
 
-  async findCurrentForCustomer(customerId: string): Promise<Conversation | null> {
+  async findCurrentForCustomer(
+    accountId: string,
+    customerId: string,
+  ): Promise<Conversation | null> {
     const activeConversation = await this.prisma.conversation.findFirst({
       where: {
+        accountId,
         customerId,
         status: ConversationStatus.ACTIVE,
       },
@@ -135,6 +145,7 @@ export class ConversationsService {
 
     return this.prisma.conversation.findFirst({
       where: {
+        accountId,
         customerId,
         status: ConversationStatus.COMPLETED,
         currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
@@ -175,9 +186,13 @@ export class ConversationsService {
     };
   }
 
-  private findActiveByCustomerId(customerId: string): Promise<Conversation | null> {
+  private findActiveByCustomerId(
+    accountId: string,
+    customerId: string,
+  ): Promise<Conversation | null> {
     return this.prisma.conversation.findFirst({
       where: {
+        accountId,
         customerId,
         status: ConversationStatus.ACTIVE,
       },

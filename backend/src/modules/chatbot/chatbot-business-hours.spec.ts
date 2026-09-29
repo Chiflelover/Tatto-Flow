@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
@@ -27,6 +28,7 @@ function createFixture(options: FixtureOptions = {}) {
   const now = new Date('2026-09-15T03:00:00.000Z');
   const customer: Customer = {
     id: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
+    accountId: ACCOUNT_ID,
     phoneNumber: '+51999999999',
     lastOutOfHoursNoticeKey: null,
     createdAt: now,
@@ -35,6 +37,8 @@ function createFixture(options: FixtureOptions = {}) {
   const conversation: Conversation = {
     id: 'a459f257-b03c-48f4-9091-2dc37871ef81',
     customerId: customer.id,
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     currentState: ConversationState.ASK_DETAIL,
     status: ConversationStatus.ACTIVE,
     selectedSize: TattooSize.SMALL,
@@ -103,17 +107,21 @@ describe('ChatbotService business-hour gating', () => {
       businessHoursTestPhone: 'different-test-identifier',
     });
 
-    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
-    });
+    const response = await fixture.service.processOptionSelection(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      {
+        stage: 'detail',
+        value: DetailLevel.LIGHT,
+      },
+    );
 
     expect(response).toEqual({
       state: ConversationState.ASK_DETAIL,
       messages: [{ type: 'text', text: OUT_OF_HOURS_MESSAGE }],
       options: [],
     });
-    expect(fixture.findCurrentForCustomer).toHaveBeenCalledWith(fixture.customer.id);
+    expect(fixture.findCurrentForCustomer).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.getOrCreateActive).not.toHaveBeenCalled();
     expect(fixture.applyTransition).not.toHaveBeenCalled();
   });
@@ -124,12 +132,16 @@ describe('ChatbotService business-hour gating', () => {
       authorizeCustomerPhone: true,
     });
 
-    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
-    });
+    const response = await fixture.service.processOptionSelection(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      {
+        stage: 'detail',
+        value: DetailLevel.LIGHT,
+      },
+    );
 
-    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
+    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(
       fixture.conversation.id,
       ConversationState.ASK_DETAIL,
@@ -153,12 +165,16 @@ describe('ChatbotService business-hour gating', () => {
       businessHoursTestPhone: authorized ? undefined : 'different-test-identifier',
     });
 
-    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
-    });
+    const response = await fixture.service.processOptionSelection(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      {
+        stage: 'detail',
+        value: DetailLevel.LIGHT,
+      },
+    );
 
-    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
+    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledOnce();
     expect(fixture.claimOutOfHoursNotice).not.toHaveBeenCalled();
     expect(response.state).toBe(ConversationState.ASK_BODY_PART);
@@ -168,10 +184,14 @@ describe('ChatbotService business-hour gating', () => {
     vi.setSystemTime(new Date('2026-09-15T03:00:00.000Z'));
     const fixture = createFixture();
 
-    const response = await fixture.service.processTextMessage(fixture.customer.phoneNumber, 'Hola');
+    const response = await fixture.service.processTextMessage(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      'Hola',
+    );
 
     expect(response.messages).toEqual([{ type: 'text', text: OUT_OF_HOURS_MESSAGE }]);
-    expect(fixture.findCurrentForCustomer).toHaveBeenCalledWith(fixture.customer.id);
+    expect(fixture.findCurrentForCustomer).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.getOrCreateActive).not.toHaveBeenCalled();
     expect(fixture.applyTransition).not.toHaveBeenCalled();
   });
@@ -181,8 +201,16 @@ describe('ChatbotService business-hour gating', () => {
     const fixture = createFixture();
     fixture.claimOutOfHoursNotice.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    const first = await fixture.service.processTextMessage(fixture.customer.phoneNumber, 'Hola');
-    const repeated = await fixture.service.processTextMessage(fixture.customer.phoneNumber, 'Hola');
+    const first = await fixture.service.processTextMessage(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      'Hola',
+    );
+    const repeated = await fixture.service.processTextMessage(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      'Hola',
+    );
 
     expect(first.messages).toEqual([{ type: 'text', text: OUT_OF_HOURS_MESSAGE }]);
     expect(repeated.messages).toEqual([]);
@@ -202,18 +230,22 @@ describe('ChatbotService business-hour gating', () => {
     const fixture = createFixture();
     vi.setSystemTime(new Date('2026-09-15T03:00:00.000Z'));
 
-    await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
+    await fixture.service.processOptionSelection(ACCOUNT_ID, fixture.customer.phoneNumber, {
       stage: 'detail',
       value: DetailLevel.LIGHT,
     });
 
     vi.setSystemTime(new Date('2026-09-15T11:00:00.000Z'));
-    const response = await fixture.service.processOptionSelection(fixture.customer.phoneNumber, {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
-    });
+    const response = await fixture.service.processOptionSelection(
+      ACCOUNT_ID,
+      fixture.customer.phoneNumber,
+      {
+        stage: 'detail',
+        value: DetailLevel.LIGHT,
+      },
+    );
 
-    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(fixture.customer.id);
+    expect(fixture.getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(
       fixture.conversation.id,
       ConversationState.ASK_DETAIL,
@@ -235,6 +267,7 @@ describe('ChatbotService business-hour gating', () => {
     });
 
     const response = await fixture.service.processTextMessage(
+      ACCOUNT_ID,
       fixture.customer.phoneNumber,
       '¿Sigues ahí?',
     );

@@ -26,13 +26,20 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, passwordHash: true },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        role: true,
+        accountId: true,
+        account: { select: { isActive: true } },
+      },
     });
     const passwordMatches = user
       ? await verifyPassword(password, user.passwordHash)
       : await this.performDummyPasswordCheck(password);
 
-    if (!user || !passwordMatches) {
+    if (!user || !passwordMatches || (user.accountId && !user.account?.isActive)) {
       throw new UnauthorizedException('Correo o contraseña incorrectos.');
     }
 
@@ -55,7 +62,7 @@ export class AuthService {
     return {
       sessionToken,
       expiresAt,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, role: user.role, accountId: user.accountId },
     };
   }
 
@@ -64,11 +71,23 @@ export class AuthService {
       where: { tokenHash: this.hashSessionToken(sessionToken) },
       select: {
         expiresAt: true,
-        user: { select: { id: true, email: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            accountId: true,
+            account: { select: { isActive: true } },
+          },
+        },
       },
     });
 
-    if (!session || session.expiresAt <= new Date()) {
+    if (
+      !session ||
+      session.expiresAt <= new Date() ||
+      (session.user.accountId && !session.user.account?.isActive)
+    ) {
       if (session) {
         await this.prisma.authSession.deleteMany({
           where: { tokenHash: this.hashSessionToken(sessionToken) },
@@ -78,7 +97,12 @@ export class AuthService {
       throw new UnauthorizedException('La sesión no es válida o ha expirado.');
     }
 
-    return session.user;
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      role: session.user.role,
+      accountId: session.user.accountId,
+    };
   }
 
   async logout(sessionToken: string): Promise<void> {

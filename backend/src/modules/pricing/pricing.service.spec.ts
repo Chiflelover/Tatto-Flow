@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { BadRequestException } from '@nestjs/common';
 import { initialPricingRules } from '../../../prisma/pricing-rules.seed-data.js';
 import {
@@ -33,6 +34,7 @@ function createFixture(failOnRuleId?: string) {
   const now = new Date('2026-09-14T12:00:00.000Z');
   let rules: PricingRule[] = initialPricingRules.map((rule, index) => ({
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    accountId: ACCOUNT_ID,
     size: rule.size,
     detail: rule.detail,
     minPrice: new Prisma.Decimal(rule.minPrice),
@@ -145,13 +147,13 @@ describe('PricingService', () => {
   it('returns the 9 active unique PostgreSQL rules', async () => {
     const fixture = createFixture();
 
-    const rules = await fixture.service.listActiveRules();
+    const rules = await fixture.service.listActiveRules(ACCOUNT_ID);
     const combinations = new Set(rules.map((rule) => `${rule.size}:${rule.detail}`));
 
     expect(rules).toHaveLength(9);
     expect(combinations.size).toBe(9);
     expect(fixture.findMany).toHaveBeenCalledWith({
-      where: { isActive: true },
+      where: { accountId: ACCOUNT_ID, isActive: true },
       orderBy: [{ detail: 'asc' }, { size: 'asc' }],
     });
   });
@@ -165,7 +167,7 @@ describe('PricingService', () => {
     async (size, detail, expectedMinimum, expectedMaximum) => {
       const fixture = createFixture();
 
-      const rule = await fixture.service.findActiveRule(size, detail);
+      const rule = await fixture.service.findActiveRule(ACCOUNT_ID, size, detail);
 
       expect(rule?.minPrice.toString()).toBe(expectedMinimum);
       expect(rule?.maxPrice.toString()).toBe(expectedMaximum);
@@ -175,7 +177,11 @@ describe('PricingService', () => {
   it('remains deterministic and independent from the lead scoring engine', async () => {
     const fixture = createFixture();
 
-    const rule = await fixture.service.findActiveRule(TattooSize.SMALL, DetailLevel.LIGHT);
+    const rule = await fixture.service.findActiveRule(
+      ACCOUNT_ID,
+      TattooSize.SMALL,
+      DetailLevel.LIGHT,
+    );
 
     expect(rule).toMatchObject({
       size: TattooSize.SMALL,
@@ -190,6 +196,7 @@ describe('PricingService', () => {
     const original = fixture.getRules()[0];
 
     const result = await fixture.service.updateActiveRules(
+      ACCOUNT_ID,
       [{ pricingRuleId: original.id, minPrice: 75, maxPrice: 85 }],
       USER_ID,
     );
@@ -218,6 +225,7 @@ describe('PricingService', () => {
     const original = fixture.getRules()[0];
 
     const result = await fixture.service.updateActiveRules(
+      ACCOUNT_ID,
       [
         {
           pricingRuleId: original.id,
@@ -251,6 +259,7 @@ describe('PricingService', () => {
 
       await expect(
         fixture.service.updateActiveRules(
+          ACCOUNT_ID,
           [{ pricingRuleId: rule.id, minPrice, maxPrice }],
           USER_ID,
         ),
@@ -265,6 +274,7 @@ describe('PricingService', () => {
 
     await expect(
       fixture.service.updateActiveRules(
+        ACCOUNT_ID,
         [
           { pricingRuleId: rule.id, minPrice: 75, maxPrice: 85 },
           { pricingRuleId: rule.id, minPrice: 76, maxPrice: 86 },
@@ -285,6 +295,7 @@ describe('PricingService', () => {
 
     await expect(
       fixture.service.updateActiveRules(
+        ACCOUNT_ID,
         [
           { pricingRuleId: first.id, minPrice: 75, maxPrice: 85 },
           { pricingRuleId: second.id, minPrice: 275, maxPrice: 375 },
@@ -314,10 +325,12 @@ describe('PricingService', () => {
     };
 
     await fixture.service.updateActiveRules(
+      ACCOUNT_ID,
       [{ pricingRuleId: rule.id, minPrice: 550, maxPrice: 750 }],
       USER_ID,
     );
     const currentRule = await fixture.service.findActiveRule(
+      ACCOUNT_ID,
       TattooSize.MEDIUM,
       DetailLevel.DETAILED,
     );

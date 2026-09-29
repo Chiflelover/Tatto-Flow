@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { ConflictException } from '@nestjs/common';
 import {
   DetailLevel,
@@ -33,6 +34,7 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
 
   return {
     id: LEAD_ID,
+    accountId: ACCOUNT_ID,
     customerId: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
     conversationId: 'a459f257-b03c-48f4-9091-2dc37871ef81',
     selectedSize: TattooSize.MEDIUM,
@@ -112,7 +114,7 @@ describe('DashboardService', () => {
       conversation: { findMany: conversationFindMany },
     });
 
-    const result = await service.getMetrics();
+    const result = await service.getMetrics(ACCOUNT_ID);
 
     expect(result.totals).toEqual({
       newOrders: 4,
@@ -132,10 +134,10 @@ describe('DashboardService', () => {
     const count = vi.fn().mockResolvedValue(1);
     const { service } = serviceWith({ lead: { findMany, count } });
 
-    const result = await service.listLeads(leadQuery({ filter }));
+    const result = await service.listLeads(ACCOUNT_ID, leadQuery({ filter }));
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { archivedAt: null, status },
+      where: { accountId: ACCOUNT_ID, archivedAt: null, status },
       include: {
         customer: { select: { phoneNumber: true } },
         evaluation: true,
@@ -163,10 +165,10 @@ describe('DashboardService', () => {
       pricingRuleVersion: null,
     });
     const { service } = serviceWith({
-      lead: { findUnique: vi.fn().mockResolvedValue(lead) },
+      lead: { findFirst: vi.fn().mockResolvedValue(lead) },
     });
 
-    const result = await service.getLead(LEAD_ID);
+    const result = await service.getLead(ACCOUNT_ID, LEAD_ID);
 
     expect(result.customerPhoneNumber).toBe('+51 999999999');
     expect(result.analysis).toMatchObject({
@@ -194,7 +196,7 @@ describe('DashboardService', () => {
       lead: { findMany, count: vi.fn().mockResolvedValue(2) },
     });
 
-    const result = await service.listLeads(leadQuery());
+    const result = await service.listLeads(ACCOUNT_ID, leadQuery());
 
     expect(result.leads[0]).toMatchObject({
       manualFinalPrice: '650.00',
@@ -215,8 +217,9 @@ describe('DashboardService', () => {
     const { service } = serviceWith(
       {
         lead: {
-          findUnique: vi.fn().mockResolvedValue({
+          findFirst: vi.fn().mockResolvedValue({
             id: LEAD_ID,
+            accountId: ACCOUNT_ID,
             images: [{ storagePath, expiresAt: new Date(now.getTime() + 60_000) }],
           }),
         },
@@ -225,7 +228,7 @@ describe('DashboardService', () => {
       { exists, createSignedUrl },
     );
 
-    await expect(service.getLeadReference(LEAD_ID, now)).resolves.toEqual({
+    await expect(service.getLeadReference(ACCOUNT_ID, LEAD_ID, now)).resolves.toEqual({
       available: true,
       signedUrl: 'https://temporary.example/signed',
       expiresInSeconds: 300,
@@ -253,7 +256,7 @@ describe('DashboardService', () => {
     const { service } = serviceWith(
       {
         lead: {
-          findUnique: vi.fn().mockResolvedValue({ id: LEAD_ID, images }),
+          findFirst: vi.fn().mockResolvedValue({ id: LEAD_ID, images }),
         },
       },
       {},
@@ -261,7 +264,7 @@ describe('DashboardService', () => {
     );
 
     await expect(
-      service.getLeadReference(LEAD_ID, new Date('2026-09-14T12:00:00.000Z')),
+      service.getLeadReference(ACCOUNT_ID, LEAD_ID, new Date('2026-09-14T12:00:00.000Z')),
     ).resolves.toEqual({
       available: false,
       signedUrl: null,
@@ -278,8 +281,9 @@ describe('DashboardService', () => {
     const { service } = serviceWith(
       {
         lead: {
-          findUnique: vi.fn().mockResolvedValue({
+          findFirst: vi.fn().mockResolvedValue({
             id: LEAD_ID,
+            accountId: ACCOUNT_ID,
             images: [
               {
                 storagePath:
@@ -294,7 +298,11 @@ describe('DashboardService', () => {
       { exists, createSignedUrl },
     );
 
-    const result = await service.getLeadReference(LEAD_ID, new Date('2026-09-14T12:00:00.000Z'));
+    const result = await service.getLeadReference(
+      ACCOUNT_ID,
+      LEAD_ID,
+      new Date('2026-09-14T12:00:00.000Z'),
+    );
 
     expect(result.message).toBe('Imagen eliminada por política de retención.');
     expect(createSignedUrl).not.toHaveBeenCalled();
@@ -302,18 +310,19 @@ describe('DashboardService', () => {
 
   it('marks an attended lead as COMPLETED so the customer can request a new quotation', async () => {
     const completedLead = makeLead({ status: LeadStatus.COMPLETED });
-    const findUnique = vi
+    const findFirst = vi
       .fn()
       .mockResolvedValueOnce({ status: LeadStatus.VERIFIED })
       .mockResolvedValueOnce(completedLead);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const { service } = serviceWith({ lead: { findUnique, updateMany } });
+    const { service } = serviceWith({ lead: { findFirst, updateMany } });
 
-    const result = await service.completeLead(LEAD_ID);
+    const result = await service.completeLead(ACCOUNT_ID, LEAD_ID);
 
     expect(updateMany).toHaveBeenCalledWith({
       where: {
         id: LEAD_ID,
+        accountId: ACCOUNT_ID,
         status: {
           in: [
             LeadStatus.VERIFIED,
@@ -329,14 +338,14 @@ describe('DashboardService', () => {
 
   it('keeps completing a lead idempotent', async () => {
     const completedLead = makeLead({ status: LeadStatus.COMPLETED });
-    const findUnique = vi
+    const findFirst = vi
       .fn()
       .mockResolvedValueOnce({ status: LeadStatus.COMPLETED })
       .mockResolvedValueOnce(completedLead);
     const updateMany = vi.fn();
-    const { service } = serviceWith({ lead: { findUnique, updateMany } });
+    const { service } = serviceWith({ lead: { findFirst, updateMany } });
 
-    await expect(service.completeLead(LEAD_ID)).resolves.toMatchObject({
+    await expect(service.completeLead(ACCOUNT_ID, LEAD_ID)).resolves.toMatchObject({
       status: LeadStatus.COMPLETED,
     });
     expect(updateMany).not.toHaveBeenCalled();
@@ -353,7 +362,7 @@ describe('DashboardService', () => {
         readinessStatus: ReadinessStatus.REVISAR,
       },
     });
-    const findUnique = vi
+    const findFirst = vi
       .fn()
       .mockResolvedValueOnce({
         calculatedMinPrice: null,
@@ -362,9 +371,9 @@ describe('DashboardService', () => {
       })
       .mockResolvedValueOnce(updatedLead);
     const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
-    const { service } = serviceWith({ lead: { findUnique, update } });
+    const { service } = serviceWith({ lead: { findFirst, update } });
 
-    const result = await service.saveManualFinalPrice(LEAD_ID, 650);
+    const result = await service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 650);
 
     expect(update).toHaveBeenCalledOnce();
     const updateCalls = update.mock.calls as Array<
@@ -391,7 +400,7 @@ describe('DashboardService', () => {
         readinessStatus: ReadinessStatus.REVISAR,
       },
     });
-    const findUnique = vi
+    const findFirst = vi
       .fn()
       .mockResolvedValueOnce({
         calculatedMinPrice: null,
@@ -400,9 +409,9 @@ describe('DashboardService', () => {
       })
       .mockResolvedValueOnce(updatedLead);
     const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
-    const { service } = serviceWith({ lead: { findUnique, update } });
+    const { service } = serviceWith({ lead: { findFirst, update } });
 
-    await expect(service.saveManualFinalPrice(LEAD_ID, 725.5)).resolves.toMatchObject({
+    await expect(service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 725.5)).resolves.toMatchObject({
       manualFinalPrice: '725.50',
       status: LeadStatus.REQUIRES_REVIEW,
     });
@@ -412,7 +421,7 @@ describe('DashboardService', () => {
     const update = vi.fn();
     const { service } = serviceWith({
       lead: {
-        findUnique: vi.fn().mockResolvedValue({
+        findFirst: vi.fn().mockResolvedValue({
           calculatedMinPrice: new Prisma.Decimal(500),
           calculatedMaxPrice: new Prisma.Decimal(700),
           evaluation: { readinessStatus: ReadinessStatus.REVISAR },
@@ -421,7 +430,7 @@ describe('DashboardService', () => {
       },
     });
 
-    await expect(service.saveManualFinalPrice(LEAD_ID, 650)).rejects.toBeInstanceOf(
+    await expect(service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 650)).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(update).not.toHaveBeenCalled();
@@ -431,12 +440,12 @@ describe('DashboardService', () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
     const { service } = serviceWith({
       lead: {
-        findUnique: vi.fn().mockResolvedValue({ status: LeadStatus.ANALYZING }),
+        findFirst: vi.fn().mockResolvedValue({ status: LeadStatus.ANALYZING }),
         updateMany,
       },
     });
 
-    await expect(service.completeLead(LEAD_ID)).rejects.toEqual(
+    await expect(service.completeLead(ACCOUNT_ID, LEAD_ID)).rejects.toEqual(
       new ConflictException('Este pedido todavía no puede marcarse como finalizado.'),
     );
   });
@@ -452,7 +461,7 @@ describe('DashboardService', () => {
       conversation: { findMany: conversationFindMany },
     });
 
-    const result = await service.listLeads(leadQuery());
+    const result = await service.listLeads(ACCOUNT_ID, leadQuery());
 
     expect(result.leads).toEqual([]);
     expect(findMany).toHaveBeenCalledOnce();
@@ -462,6 +471,7 @@ describe('DashboardService', () => {
   it('returns friendly pricing labels without exposing versions', async () => {
     const rule: PricingRule = {
       id: '00000000-0000-4000-8000-000000000001',
+      accountId: ACCOUNT_ID,
       size: TattooSize.SMALL,
       detail: DetailLevel.LIGHT,
       minPrice: new Prisma.Decimal(70),
@@ -473,7 +483,7 @@ describe('DashboardService', () => {
     const listActiveRules = vi.fn().mockResolvedValue([rule]);
     const { service } = serviceWith({}, { listActiveRules });
 
-    const result = await service.getPricingRules();
+    const result = await service.getPricingRules(ACCOUNT_ID);
 
     expect(result.rules[0]).toEqual({
       id: rule.id,
@@ -496,6 +506,7 @@ describe('DashboardService', () => {
     };
     const updatedRule: PricingRule = {
       id: update.pricingRuleId,
+      accountId: ACCOUNT_ID,
       size: TattooSize.SMALL,
       detail: DetailLevel.LIGHT,
       minPrice: new Prisma.Decimal(update.minPrice),
@@ -510,9 +521,9 @@ describe('DashboardService', () => {
     });
     const { service } = serviceWith({}, { updateActiveRules });
 
-    const result = await service.updatePricingRules([update], USER_ID);
+    const result = await service.updatePricingRules(ACCOUNT_ID, [update], USER_ID);
 
-    expect(updateActiveRules).toHaveBeenCalledWith([update], USER_ID);
+    expect(updateActiveRules).toHaveBeenCalledWith(ACCOUNT_ID, [update], USER_ID);
     expect(result).toMatchObject({
       updatedCount: 1,
       message: 'Precios actualizados correctamente.',

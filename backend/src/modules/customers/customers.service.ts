@@ -6,7 +6,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 export class CustomersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async findOrCreateByPhoneNumber(phoneNumber: string): Promise<Customer> {
+  async findOrCreateByPhoneNumber(accountId: string, phoneNumber: string): Promise<Customer> {
     const normalizedPhoneNumber = phoneNumber.trim();
 
     if (!normalizedPhoneNumber) {
@@ -14,9 +14,9 @@ export class CustomersService {
     }
 
     return this.prisma.customer.upsert({
-      where: { phoneNumber: normalizedPhoneNumber },
+      where: { accountId_phoneNumber: { accountId, phoneNumber: normalizedPhoneNumber } },
       update: {},
-      create: { phoneNumber: normalizedPhoneNumber },
+      create: { accountId, phoneNumber: normalizedPhoneNumber },
     });
   }
 

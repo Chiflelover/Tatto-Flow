@@ -115,7 +115,35 @@ export interface UpdatePricingRulesResult {
 }
 
 export interface TattooArtistSession {
-  user: { id: string; email: string };
+  user: { id: string; email: string; role: 'ADMIN' | 'TATTOO_ARTIST'; accountId: string | null };
+}
+
+export interface ArtistAccountView {
+  id: string;
+  name: string;
+  email: string | null;
+  isActive: boolean;
+  phoneNumber: string | null;
+  phoneNumberId: string | null;
+  contactUrl: string | null;
+  createdAt: string;
+}
+
+export interface CreateArtistAccountInput {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  phoneNumberId: string;
+  isActive: boolean;
+}
+
+export interface UpdateArtistAccountInput {
+  name?: string;
+  password?: string;
+  phoneNumber?: string;
+  phoneNumberId?: string;
+  isActive?: boolean;
 }
 
 export interface LeadListQuery {
@@ -210,6 +238,21 @@ function jsonRequest<T>(
 
 export function login(email: string, password: string): Promise<TattooArtistSession> {
   return jsonRequest('auth/login', 'POST', { email, password });
+}
+
+export function listArtistAccounts(): Promise<ArtistAccountView[]> {
+  return dashboardRequest('admin/accounts');
+}
+
+export function createArtistAccount(input: CreateArtistAccountInput): Promise<ArtistAccountView> {
+  return jsonRequest('admin/accounts', 'POST', input);
+}
+
+export function updateArtistAccount(
+  id: string,
+  input: UpdateArtistAccountInput,
+): Promise<ArtistAccountView> {
+  return jsonRequest(`admin/accounts/${encodeURIComponent(id)}`, 'PATCH', input);
 }
 
 export function logout(): Promise<{ success: boolean }> {

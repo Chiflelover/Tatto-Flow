@@ -21,20 +21,22 @@ const MAX_PRICE = 99_999_999.99;
 export class PricingService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  listActiveRules(client: PricingClient = this.prisma): Promise<PricingRule[]> {
+  listActiveRules(accountId: string, client: PricingClient = this.prisma): Promise<PricingRule[]> {
     return client.pricingRule.findMany({
-      where: { isActive: true },
+      where: { accountId, isActive: true },
       orderBy: [{ detail: 'asc' }, { size: 'asc' }],
     });
   }
 
   findActiveRule(
+    accountId: string,
     selectedSize: TattooSize,
     selectedDetail: DetailLevel,
     client: PricingClient = this.prisma,
   ): Promise<PricingRule | null> {
     return client.pricingRule.findFirst({
       where: {
+        accountId,
         size: selectedSize,
         detail: selectedDetail,
         isActive: true,
@@ -42,7 +44,11 @@ export class PricingService {
     });
   }
 
-  async updateActiveRules(updates: PricingRulePriceUpdate[], changedByUserId: string) {
+  async updateActiveRules(
+    accountId: string,
+    updates: PricingRulePriceUpdate[],
+    changedByUserId: string,
+  ) {
     this.validateUpdates(updates);
 
     return this.prisma.$transaction(
@@ -51,6 +57,7 @@ export class PricingService {
         const currentRules = await transaction.pricingRule.findMany({
           where: {
             id: { in: ruleIds },
+            accountId,
             isActive: true,
           },
         });
@@ -80,7 +87,7 @@ export class PricingService {
           }
 
           await transaction.pricingRule.update({
-            where: { id: currentRule.id },
+            where: { id: currentRule.id, accountId },
             data: {
               minPrice: newMinPrice,
               maxPrice: newMaxPrice,
@@ -101,7 +108,7 @@ export class PricingService {
         }
 
         return {
-          rules: await this.listActiveRules(transaction),
+          rules: await this.listActiveRules(accountId, transaction),
           updatedCount,
         };
       },

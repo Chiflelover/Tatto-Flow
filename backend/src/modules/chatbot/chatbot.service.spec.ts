@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
@@ -21,6 +22,7 @@ describe('ChatbotService', () => {
     const now = new Date();
     const customer: Customer = {
       id: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
+      accountId: ACCOUNT_ID,
       phoneNumber: '+51999999999',
       lastOutOfHoursNoticeKey: null,
       createdAt: now,
@@ -29,6 +31,8 @@ describe('ChatbotService', () => {
     const startedConversation: Conversation = {
       id: 'a459f257-b03c-48f4-9091-2dc37871ef81',
       customerId: customer.id,
+      accountId: ACCOUNT_ID,
+      flowVersion: 'V1',
       currentState: ConversationState.START,
       status: ConversationStatus.ACTIVE,
       selectedSize: null,
@@ -65,10 +69,10 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processStart(customer.phoneNumber);
+    const response = await service.processStart(ACCOUNT_ID, customer.phoneNumber);
 
-    expect(findOrCreateByPhoneNumber).toHaveBeenCalledWith(customer.phoneNumber);
-    expect(getOrCreateActive).toHaveBeenCalledWith(customer.id);
+    expect(findOrCreateByPhoneNumber).toHaveBeenCalledWith(ACCOUNT_ID, customer.phoneNumber);
+    expect(getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, customer.id);
     expect(applyTransition).toHaveBeenCalledWith(startedConversation.id, ConversationState.START, {
       currentState: ConversationState.ASK_SIZE,
     });
@@ -115,11 +119,11 @@ describe('ChatbotService', () => {
     );
 
     const responses = await Promise.all([
-      service.processOptionSelection(customer.phoneNumber, {
+      service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
         stage: 'detail',
         value: DetailLevel.DETAILED,
       }),
-      service.processOptionSelection(customer.phoneNumber, {
+      service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
         stage: 'detail',
         value: DetailLevel.LIGHT,
       }),
@@ -160,7 +164,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processOptionSelection(customer.phoneNumber, {
+    const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
       stage: 'detail',
       value: DetailLevel.LIGHT,
     });
@@ -202,7 +206,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processOptionSelection(customer.phoneNumber, {
+    const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
       stage: 'size',
       value: TattooSize.MEDIUM,
     });
@@ -251,7 +255,11 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processTextMessage(customer.phoneNumber, '  brazo  ');
+    const response = await service.processTextMessage(
+      ACCOUNT_ID,
+      customer.phoneNumber,
+      '  brazo  ',
+    );
 
     expect(applyTransition).toHaveBeenCalledWith(
       bodyPartConversation.id,
@@ -338,7 +346,7 @@ describe('ChatbotService', () => {
         new ConfigService(),
       );
 
-      const response = await service.processImageMessage(customer.phoneNumber, {
+      const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
         content: new Uint8Array([1]),
         mimeType: 'image/png',
       });
@@ -377,6 +385,7 @@ describe('ChatbotService', () => {
     );
 
     const response = await service.processTextMessage(
+      ACCOUNT_ID,
       customer.phoneNumber,
       '¿Qué horarios tienen?',
     );
@@ -423,7 +432,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
     );
 
-    const response = await service.processImageMessage(customer.phoneNumber, {
+    const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
       content: new Uint8Array([1]),
       mimeType: 'image/png',
     });
@@ -449,6 +458,7 @@ describe('ChatbotService', () => {
 function makeCustomer(now: Date): Customer {
   return {
     id: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
+    accountId: ACCOUNT_ID,
     phoneNumber: '+51999999999',
     lastOutOfHoursNoticeKey: null,
     createdAt: now,
@@ -470,6 +480,8 @@ function makeConversation(
 ): Conversation {
   return {
     id: 'a459f257-b03c-48f4-9091-2dc37871ef81',
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     customerId,
     currentState: ConversationState.START,
     status: ConversationStatus.ACTIVE,

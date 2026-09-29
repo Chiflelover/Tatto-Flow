@@ -14,9 +14,17 @@ describe('DashboardController security', () => {
     const controller = new DashboardController({ saveManualFinalPrice } as never);
     const leadId = '290f2044-e63c-4e49-8847-067cd62426e4';
 
-    await expect(controller.saveManualFinalPrice(leadId, { price: 650 })).resolves.toEqual({
+    await expect(
+      controller.saveManualFinalPrice(leadId, { price: 650 }, {
+        tattooArtist: { accountId: '00000000-0000-4000-8000-000000000001' },
+      } as never),
+    ).resolves.toEqual({
       manualFinalPrice: '650.00',
     });
-    expect(saveManualFinalPrice).toHaveBeenCalledWith(leadId, 650);
+    expect(saveManualFinalPrice).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000001',
+      leadId,
+      650,
+    );
   });
 });

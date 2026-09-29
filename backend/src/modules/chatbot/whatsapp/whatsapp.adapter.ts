@@ -59,9 +59,9 @@ const FALLBACK_SELECTION_BY_TEXT = new Map<string, ChatbotOptionSelection>([
 ]);
 
 export type WhatsAppInboundMessage =
-  | { type: 'button_reply'; customerIdentifier: string; buttonId: string }
-  | { type: 'text'; customerIdentifier: string; text: string }
-  | { type: 'image'; customerIdentifier: string; image: ChatbotImageInput };
+  | { type: 'button_reply'; accountId: string; customerIdentifier: string; buttonId: string }
+  | { type: 'text'; accountId: string; customerIdentifier: string; text: string }
+  | { type: 'image'; accountId: string; customerIdentifier: string; image: ChatbotImageInput };
 
 export type WhatsAppOutboundMessage =
   | { type: 'text'; text: string }
@@ -112,10 +112,18 @@ export class WhatsAppAdapter {
           return Promise.resolve(null);
         }
 
-        return this.chatbotService.processOptionSelection(message.customerIdentifier, selection);
+        return this.chatbotService.processOptionSelection(
+          message.accountId,
+          message.customerIdentifier,
+          selection,
+        );
       }
       case 'image':
-        return this.chatbotService.processImageMessage(message.customerIdentifier, message.image);
+        return this.chatbotService.processImageMessage(
+          message.accountId,
+          message.customerIdentifier,
+          message.image,
+        );
       case 'text': {
         const fallbackSelection = capabilities.interactiveButtons
           ? undefined
@@ -123,10 +131,15 @@ export class WhatsAppAdapter {
 
         return fallbackSelection
           ? this.chatbotService.processOptionSelection(
+              message.accountId,
               message.customerIdentifier,
               fallbackSelection,
             )
-          : this.chatbotService.processTextMessage(message.customerIdentifier, message.text);
+          : this.chatbotService.processTextMessage(
+              message.accountId,
+              message.customerIdentifier,
+              message.text,
+            );
       }
     }
   }

@@ -31,7 +31,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
-    "user:create": "tsx prisma/create-development-user.ts"
+    "user:create": "tsx prisma/create-development-user.ts",
+    "admin:create": "tsx prisma/create-admin.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

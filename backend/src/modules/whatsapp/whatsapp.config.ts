@@ -19,9 +19,8 @@ export function getRequiredWhatsAppValue(config: ConfigService, key: WhatsAppCon
   return value;
 }
 
-export function getWhatsAppGraphConfiguration(config: ConfigService) {
+export function getWhatsAppGraphConfiguration(config: ConfigService, phoneNumberId: string) {
   const version = getRequiredWhatsAppValue(config, 'WHATSAPP_GRAPH_API_VERSION');
-  const phoneNumberId = getRequiredWhatsAppValue(config, 'WHATSAPP_PHONE_NUMBER_ID');
 
   if (!/^v\d+\.\d+$/.test(version) || !/^\d+$/.test(phoneNumberId)) {
     throw new ServiceUnavailableException('La integración de WhatsApp no está configurada.');

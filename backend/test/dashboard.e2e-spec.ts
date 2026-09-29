@@ -7,8 +7,13 @@ import { SESSION_COOKIE_NAME } from '../src/modules/auth/auth.constants.js';
 import { AuthController } from '../src/modules/auth/auth.controller.js';
 import { AuthService } from '../src/modules/auth/auth.service.js';
 import { SessionAuthGuard } from '../src/modules/auth/session-auth.guard.js';
+import { TattooArtistGuard } from '../src/modules/auth/role.guard.js';
+import { UserRole } from '../src/generated/prisma/client.js';
 import { DashboardController } from '../src/modules/dashboard/dashboard.controller.js';
 import { DashboardService } from '../src/modules/dashboard/dashboard.service.js';
+import { AdminController } from '../src/modules/admin/admin.controller.js';
+import { AdminService } from '../src/modules/admin/admin.service.js';
+import { AdminGuard } from '../src/modules/auth/role.guard.js';
 
 describe('Dashboard private routes (e2e)', () => {
   let app: INestApplication<Server>;
@@ -19,12 +24,17 @@ describe('Dashboard private routes (e2e)', () => {
   const getMetrics = vi.fn<DashboardService['getMetrics']>();
   const getPricingRules = vi.fn<DashboardService['getPricingRules']>();
   const updatePricingRules = vi.fn<DashboardService['updatePricingRules']>();
+  const createAccount = vi.fn<AdminService['createAccount']>();
+  const updateAccount = vi.fn<AdminService['updateAccount']>();
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [AuthController, DashboardController],
+      controllers: [AuthController, DashboardController, AdminController],
       providers: [
         SessionAuthGuard,
+        TattooArtistGuard,
+        AdminGuard,
+        { provide: AdminService, useValue: { createAccount, updateAccount } },
         {
           provide: AuthService,
           useValue: { authenticateSession, login, logout, sessionCookieOptions },
@@ -66,6 +76,8 @@ describe('Dashboard private routes (e2e)', () => {
     authenticateSession.mockResolvedValue({
       id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
       email: 'tatuador@example.com',
+      role: UserRole.TATTOO_ARTIST,
+      accountId: '00000000-0000-4000-8000-000000000001',
     });
     const expiresAt = new Date('2026-09-15T12:00:00.000Z');
     login.mockResolvedValue({
@@ -74,6 +86,8 @@ describe('Dashboard private routes (e2e)', () => {
       user: {
         id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
         email: 'tatuador@example.com',
+        role: UserRole.TATTOO_ARTIST,
+        accountId: '00000000-0000-4000-8000-000000000001',
       },
     });
     sessionCookieOptions.mockReturnValue({
@@ -93,6 +107,8 @@ describe('Dashboard private routes (e2e)', () => {
       user: {
         id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
         email: 'tatuador@example.com',
+        role: UserRole.TATTOO_ARTIST,
+        accountId: '00000000-0000-4000-8000-000000000001',
       },
     });
     expect(response.body).not.toHaveProperty('passwordHash');
@@ -118,10 +134,72 @@ describe('Dashboard private routes (e2e)', () => {
     expect(getMetrics).not.toHaveBeenCalled();
   });
 
+  it('allows ADMIN account creation and editing, and bars ADMIN from the artist dashboard', async () => {
+    authenticateSession.mockResolvedValue({
+      id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
+      email: 'admin@example.com',
+      role: UserRole.ADMIN,
+      accountId: null,
+    });
+    createAccount.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000002' } as never);
+    updateAccount.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000002' } as never);
+    const cookie = `${SESSION_COOKIE_NAME}=valid-session-token`;
+    const id = '00000000-0000-4000-8000-000000000002';
+
+    await request(app.getHttpServer())
+      .post('/api/admin/accounts')
+      .set('Cookie', cookie)
+      .send({
+        name: 'Tatuador A',
+        email: 'artist-a@example.com',
+        password: 'Una-clave-segura-123',
+        phoneNumber: '+51 999 888 777',
+        phoneNumberId: '12345',
+        isActive: true,
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/api/admin/accounts/${id}`)
+      .set('Cookie', cookie)
+      .send({ name: 'Tatuador A actualizado' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/dashboard/metrics')
+      .set('Cookie', cookie)
+      .expect(403);
+    expect(createAccount).toHaveBeenCalledOnce();
+    expect(updateAccount).toHaveBeenCalledWith(id, { name: 'Tatuador A actualizado' });
+    expect(getMetrics).not.toHaveBeenCalled();
+  });
+
+  it('bars TATTOO_ARTIST from creating or editing accounts', async () => {
+    authenticateSession.mockResolvedValue({
+      id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
+      email: 'artist@example.com',
+      role: UserRole.TATTOO_ARTIST,
+      accountId: '00000000-0000-4000-8000-000000000001',
+    });
+    const cookie = `${SESSION_COOKIE_NAME}=valid-session-token`;
+    await request(app.getHttpServer())
+      .post('/api/admin/accounts')
+      .set('Cookie', cookie)
+      .send({})
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch('/api/admin/accounts/00000000-0000-4000-8000-000000000002')
+      .set('Cookie', cookie)
+      .send({ name: 'Intruso' })
+      .expect(403);
+    expect(createAccount).not.toHaveBeenCalled();
+    expect(updateAccount).not.toHaveBeenCalled();
+  });
+
   it('allows dashboard access with a valid session', async () => {
     authenticateSession.mockResolvedValue({
       id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
       email: 'tatuador@example.com',
+      role: UserRole.TATTOO_ARTIST,
+      accountId: '00000000-0000-4000-8000-000000000001',
     });
 
     await request(app.getHttpServer())
@@ -156,6 +234,8 @@ describe('Dashboard private routes (e2e)', () => {
     const tattooArtist = {
       id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
       email: 'tatuador@example.com',
+      role: UserRole.TATTOO_ARTIST,
+      accountId: '00000000-0000-4000-8000-000000000001',
     };
     const updates = [
       {
@@ -172,13 +252,19 @@ describe('Dashboard private routes (e2e)', () => {
       .send({ updates })
       .expect(200);
 
-    expect(updatePricingRules).toHaveBeenCalledWith(updates, tattooArtist.id);
+    expect(updatePricingRules).toHaveBeenCalledWith(
+      tattooArtist.accountId,
+      updates,
+      tattooArtist.id,
+    );
   });
 
   it('rejects attempts to modify protected pricing rule fields', async () => {
     authenticateSession.mockResolvedValue({
       id: 'bb8bf7d2-e17c-44da-b456-b7240d30daf2',
       email: 'tatuador@example.com',
+      role: UserRole.TATTOO_ARTIST,
+      accountId: '00000000-0000-4000-8000-000000000001',
     });
 
     await request(app.getHttpServer())

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import { initialPricingRules } from './pricing-rules.seed-data.js';
+import { LEGACY_ACCOUNT_ID } from '../src/modules/accounts/account.constants.js';
 
 const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
@@ -18,13 +19,14 @@ async function seed() {
     initialPricingRules.map((pricingRule) =>
       prisma.pricingRule.upsert({
         where: {
-          size_detail: {
+          accountId_size_detail: {
+            accountId: LEGACY_ACCOUNT_ID,
             size: pricingRule.size,
             detail: pricingRule.detail,
           },
         },
         update: {},
-        create: pricingRule,
+        create: { ...pricingRule, accountId: LEGACY_ACCOUNT_ID },
       }),
     ),
   );

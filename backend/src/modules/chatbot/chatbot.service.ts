@@ -50,8 +50,8 @@ export class ChatbotService {
     private readonly configService: ConfigService,
   ) {}
 
-  async processStart(customerIdentifier: string): Promise<ChatbotResponse> {
-    const access = await this.getConversationAccess(customerIdentifier);
+  async processStart(accountId: string, customerIdentifier: string): Promise<ChatbotResponse> {
+    const access = await this.getConversationAccess(accountId, customerIdentifier);
 
     if (access.response) {
       return access.response;
@@ -74,21 +74,27 @@ export class ChatbotService {
   }
 
   processOptionSelection(
+    accountId: string,
     customerIdentifier: string,
     selection: ChatbotOptionSelection,
   ): Promise<ChatbotResponse> {
-    return this.processInput(customerIdentifier, { type: 'option', ...selection });
+    return this.processInput(accountId, customerIdentifier, { type: 'option', ...selection });
   }
 
-  processTextMessage(customerIdentifier: string, message: string): Promise<ChatbotResponse> {
-    return this.processInput(customerIdentifier, { type: 'text', value: message });
+  processTextMessage(
+    accountId: string,
+    customerIdentifier: string,
+    message: string,
+  ): Promise<ChatbotResponse> {
+    return this.processInput(accountId, customerIdentifier, { type: 'text', value: message });
   }
 
   async processImageMessage(
+    accountId: string,
     customerIdentifier: string,
     image: ChatbotImageInput,
   ): Promise<ChatbotResponse> {
-    const access = await this.getConversationAccess(customerIdentifier);
+    const access = await this.getConversationAccess(accountId, customerIdentifier);
 
     if (access.response) {
       return access.response;
@@ -178,10 +184,11 @@ export class ChatbotService {
   }
 
   private async processInput(
+    accountId: string,
     customerIdentifier: string,
     input: ChatbotInput,
   ): Promise<ChatbotResponse> {
-    const access = await this.getConversationAccess(customerIdentifier);
+    const access = await this.getConversationAccess(accountId, customerIdentifier);
 
     if (access.response) {
       return access.response;
@@ -202,12 +209,19 @@ export class ChatbotService {
     return this.applyDecision(conversation, decision);
   }
 
-  private async getConversationAccess(customerIdentifier: string): Promise<ConversationAccess> {
+  private async getConversationAccess(
+    accountId: string,
+    customerIdentifier: string,
+  ): Promise<ConversationAccess> {
     const now = new Date();
-    const customer = await this.customersService.findOrCreateByPhoneNumber(customerIdentifier);
+    const customer = await this.customersService.findOrCreateByPhoneNumber(
+      accountId,
+      customerIdentifier,
+    );
 
     if (!this.hasBusinessHoursTestBypass(customerIdentifier) && !this.businessHours.isOpen(now)) {
       const currentConversation = await this.conversationsService.findCurrentForCustomer(
+        accountId,
         customer.id,
       );
 
@@ -229,7 +243,10 @@ export class ChatbotService {
       };
     }
 
-    const { conversation } = await this.conversationsService.getOrCreateActive(customer.id);
+    const { conversation } = await this.conversationsService.getOrCreateActive(
+      accountId,
+      customer.id,
+    );
 
     return { conversation };
   }

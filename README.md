@@ -17,6 +17,7 @@ El proyecto incluye:
 - dashboard privado para gestionar leads y reglas de precios;
 - almacenamiento privado de referencias en Supabase Storage;
 - autenticación del tatuador y sesiones persistentes;
+- administración global de cuentas de tatuador y números de Nita separados;
 - despliegue conjunto de frontend y backend mediante Vercel Services;
 - política de privacidad pública en `/privacy`.
 
@@ -40,7 +41,7 @@ Flujo principal:
 ```text
 WhatsApp Cloud API
         ↓
-Webhook firmado + idempotencia por message ID
+Webhook firmado + resolución del número receptor + idempotencia por message ID
         ↓
 WhatsAppAdapter
         ↓
@@ -66,6 +67,10 @@ El endpoint público es `/api/whatsapp/webhook`:
 - los IDs de mensajes entrantes se registran para evitar reprocesamientos;
 - el adapter convierte texto, `button_reply`, `list_reply` e imágenes a entradas del dominio sin contener lógica de estados;
 - las respuestas estructuradas del chatbot se convierten en texto o botones interactivos de WhatsApp.
+
+Cada `phone_number_id` registrado en el panel ADMIN identifica una cuenta de tatuador. Los clientes se distinguen por cuenta y teléfono; un mismo remitente puede escribir a dos números de Nita sin mezclar conversaciones. Los canales registrados usan las credenciales de la misma integración de Meta configurada en el backend.
+
+La fase 1 mantiene el flujo de preguntas y precios v0.1. Todas las conversaciones existentes y nuevas usan `flowVersion=V1`; `V2` todavía no está activo.
 
 Nita solicita, en orden:
 
@@ -171,6 +176,7 @@ Aplicación y acceso:
 - `SESSION_TTL_HOURS`
 - `TATTOO_ARTIST_EMAIL`
 - `TATTOO_ARTIST_PASSWORD`
+- `ADMIN_EMAIL` y `ADMIN_PASSWORD`: credenciales del administrador global para el comando `admin:create`.
 
 Base de datos:
 
@@ -196,6 +202,7 @@ WhatsApp:
 
 - `WHATSAPP_ACCESS_TOKEN`
 - `WHATSAPP_PHONE_NUMBER_ID`
+- `WHATSAPP_NITA_NUMBER`: número de Nita de la cuenta heredada, necesario para registrar automáticamente el canal v0.1 cuando llega su primer webhook después de migrar.
 - `WHATSAPP_BUSINESS_ACCOUNT_ID`
 - `WHATSAPP_VERIFY_TOKEN`
 - `META_APP_SECRET`
@@ -234,6 +241,14 @@ Para crear o actualizar el usuario tatuador definido en el entorno:
 npm --workspace backend run user:create
 ```
 
+Después de aplicar la migración de cuentas, crea el administrador global con `ADMIN_EMAIL` y `ADMIN_PASSWORD`:
+
+```powershell
+npm --workspace backend run admin:create
+```
+
+El panel `/admin` permite crear cuentas de tatuador, asignar su número de Nita y `phone_number_id`, cambiar contraseña o estado y copiar su URL `wa.me`. Si la cuenta heredada no tiene canal, asígnale ambos valores desde el panel antes de recibir mensajes; también puede registrarse automáticamente con `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_NITA_NUMBER` configurados. Una cuenta inactiva conserva sus datos y no procesa nuevos mensajes ni admite sesiones del tatuador.
+
 ## Tests y build
 
 Backend:
@@ -268,6 +283,7 @@ Los smoke tests reales de proveedores requieren credenciales locales y una image
 - `/dashboard/leads`: bandeja, búsqueda, filtros, sorting y paginación;
 - `/dashboard/leads/[id]`: detalle, evaluación explicable y acciones del lead;
 - `/dashboard/pricing`: matriz de precios;
+- `/admin`: administración básica de cuentas y canales de Nita;
 - `/privacy`: política de privacidad pública, sin autenticación.
 
 ## Despliegue en Vercel
@@ -287,9 +303,10 @@ Antes de desplegar:
 1. configura las variables del backend y frontend en sus Services correspondientes;
 2. usa `DATABASE_URL` para tráfico runtime y `DIRECT_URL` para migraciones;
 3. ejecuta `npm run prisma:migrate:deploy` desde un entorno autorizado;
-4. confirma que el bucket de Supabase siga privado;
-5. registra en Meta el callback HTTPS terminado en `/api/whatsapp/webhook`;
-6. verifica `GET /api/health` después del deployment.
+4. ejecuta `npm run admin:create` con credenciales seguras y configura el canal de Nita heredado;
+5. confirma que el bucket de Supabase siga privado;
+6. registra en Meta el callback HTTPS terminado en `/api/whatsapp/webhook`;
+7. verifica `GET /api/health` después del deployment.
 
 ## Estructura principal
 

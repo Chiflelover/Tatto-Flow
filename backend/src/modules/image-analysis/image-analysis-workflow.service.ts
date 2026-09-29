@@ -98,6 +98,7 @@ export class ImageAnalysisWorkflowService {
       where: { conversationId: conversation.id },
       update: {},
       create: {
+        accountId: conversation.accountId,
         customerId: conversation.customerId,
         conversationId: conversation.id,
         selectedSize: conversation.selectedSize,
@@ -250,6 +251,7 @@ export class ImageAnalysisWorkflowService {
 
       if (validation.verified && !referenceIsNotOnSkin) {
         pricingRule = await this.pricingService.findActiveRule(
+          conversation.accountId,
           selectedSize,
           selectedDetail,
           transaction,

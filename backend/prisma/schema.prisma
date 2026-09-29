@@ -8,6 +8,20 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN
+  TATTOO_ARTIST
+
+  @@map("user_role")
+}
+
+enum FlowVersion {
+  V1
+  V2
+
+  @@map("flow_version")
+}
+
 enum TattooSize {
   SMALL
   MEDIUM
@@ -79,12 +93,43 @@ model User {
   id             String               @id @default(uuid()) @db.Uuid
   email          String               @unique @db.VarChar(320)
   passwordHash   String               @map("password_hash") @db.VarChar(255)
+  role           UserRole             @default(TATTOO_ARTIST)
+  accountId      String?              @unique @map("account_id") @db.Uuid
   createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   pricingChanges PricingRuleHistory[]
   sessions       AuthSession[]
+  account        TattooArtistAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@map("users")
+}
+
+model TattooArtistAccount {
+  id            String           @id @default(uuid()) @db.Uuid
+  name          String           @db.VarChar(120)
+  isActive      Boolean          @default(true) @map("is_active")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          User?
+  channel       WhatsAppChannel?
+  customers     Customer[]
+  conversations Conversation[]
+  leads         Lead[]
+  pricingRules  PricingRule[]
+
+  @@map("tattoo_artist_accounts")
+}
+
+model WhatsAppChannel {
+  id            String              @id @default(uuid()) @db.Uuid
+  accountId     String              @unique @map("account_id") @db.Uuid
+  phoneNumber   String              @unique @map("phone_number") @db.VarChar(20)
+  phoneNumberId String              @unique @map("phone_number_id") @db.VarChar(64)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  account       TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@map("whatsapp_channels")
 }
 
 model AuthSession {
@@ -101,31 +146,38 @@ model AuthSession {
 }
 
 model Customer {
-  id                      String         @id @default(uuid()) @db.Uuid
-  phoneNumber             String         @unique @map("phone_number") @db.VarChar(20)
-  lastOutOfHoursNoticeKey String?        @map("last_out_of_hours_notice_key") @db.VarChar(10)
-  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                      String              @id @default(uuid()) @db.Uuid
+  accountId               String              @map("account_id") @db.Uuid
+  phoneNumber             String              @map("phone_number") @db.VarChar(20)
+  lastOutOfHoursNoticeKey String?             @map("last_out_of_hours_notice_key") @db.VarChar(10)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   conversations           Conversation[]
   leads                   Lead[]
+  account                 TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
+  @@unique([accountId, phoneNumber])
   @@map("customers")
 }
 
 model Conversation {
-  id             String             @id @default(uuid()) @db.Uuid
-  customerId     String             @map("customer_id") @db.Uuid
-  currentState   ConversationState  @default(START) @map("current_state")
-  status         ConversationStatus @default(ACTIVE)
-  selectedSize   TattooSize?        @map("selected_size")
-  selectedDetail DetailLevel?       @map("selected_detail")
-  bodyPart       String?            @map("body_part") @db.VarChar(10)
-  lastActivityAt DateTime           @default(now()) @map("last_activity_at") @db.Timestamptz(3)
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id             String              @id @default(uuid()) @db.Uuid
+  accountId      String              @map("account_id") @db.Uuid
+  customerId     String              @map("customer_id") @db.Uuid
+  flowVersion    FlowVersion         @default(V1) @map("flow_version")
+  currentState   ConversationState   @default(START) @map("current_state")
+  status         ConversationStatus  @default(ACTIVE)
+  selectedSize   TattooSize?         @map("selected_size")
+  selectedDetail DetailLevel?        @map("selected_detail")
+  bodyPart       String?             @map("body_part") @db.VarChar(10)
+  lastActivityAt DateTime            @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   lead           Lead?
+  account        TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
+  @@index([accountId, status, lastActivityAt])
   @@index([customerId])
   @@index([status, lastActivityAt])
   @@map("conversations")
@@ -134,30 +186,33 @@ model Conversation {
 /// Represents a quotation candidate. Incomplete candidates are preserved when
 /// their conversation is abandoned and are classified by LeadEvaluation.
 model Lead {
-  id                 String          @id @default(uuid()) @db.Uuid
-  customerId         String          @map("customer_id") @db.Uuid
-  conversationId     String?         @unique @map("conversation_id") @db.Uuid
-  selectedSize       TattooSize?     @map("selected_size")
-  selectedDetail     DetailLevel?    @map("selected_detail")
-  bodyPart           String?         @map("body_part") @db.VarChar(10)
-  status             LeadStatus      @default(ANALYZING)
-  reviewReasons      ReviewReason[]  @default([]) @map("review_reasons")
-  manualFinalPrice   Decimal?        @map("manual_final_price") @db.Decimal(10, 2)
-  calculatedMinPrice Decimal?        @map("calculated_min_price") @db.Decimal(10, 2)
-  calculatedMaxPrice Decimal?        @map("calculated_max_price") @db.Decimal(10, 2)
-  pricingRuleId      String?         @map("pricing_rule_id") @db.Uuid
-  pricingRuleVersion Int?            @map("pricing_rule_version")
-  priceSentAt        DateTime?       @map("price_sent_at") @db.Timestamptz(3)
-  archivedAt         DateTime?       @map("archived_at") @db.Timestamptz(3)
-  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer           Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  conversation       Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  pricingRule        PricingRule?    @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
+  id                 String              @id @default(uuid()) @db.Uuid
+  accountId          String              @map("account_id") @db.Uuid
+  customerId         String              @map("customer_id") @db.Uuid
+  conversationId     String?             @unique @map("conversation_id") @db.Uuid
+  selectedSize       TattooSize?         @map("selected_size")
+  selectedDetail     DetailLevel?        @map("selected_detail")
+  bodyPart           String?             @map("body_part") @db.VarChar(10)
+  status             LeadStatus          @default(ANALYZING)
+  reviewReasons      ReviewReason[]      @default([]) @map("review_reasons")
+  manualFinalPrice   Decimal?            @map("manual_final_price") @db.Decimal(10, 2)
+  calculatedMinPrice Decimal?            @map("calculated_min_price") @db.Decimal(10, 2)
+  calculatedMaxPrice Decimal?            @map("calculated_max_price") @db.Decimal(10, 2)
+  pricingRuleId      String?             @map("pricing_rule_id") @db.Uuid
+  pricingRuleVersion Int?                @map("pricing_rule_version")
+  priceSentAt        DateTime?           @map("price_sent_at") @db.Timestamptz(3)
+  archivedAt         DateTime?           @map("archived_at") @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer           Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  conversation       Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  pricingRule        PricingRule?        @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
   images             LeadImage[]
   aiAnalysis         AiAnalysis?
   evaluation         LeadEvaluation?
+  account            TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
+  @@index([accountId, status, createdAt])
   @@index([customerId])
   @@index([status, createdAt])
   @@index([pricingRuleId])
@@ -212,6 +267,7 @@ model AiAnalysis {
 
 model PricingRule {
   id        String               @id @default(uuid()) @db.Uuid
+  accountId String               @map("account_id") @db.Uuid
   size      TattooSize
   detail    DetailLevel
   minPrice  Decimal              @map("min_price") @db.Decimal(10, 2)
@@ -221,8 +277,9 @@ model PricingRule {
   updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   leads     Lead[]
   history   PricingRuleHistory[]
+  account   TattooArtistAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
-  @@unique([size, detail])
+  @@unique([accountId, size, detail])
   @@index([isActive])
   @@map("pricing_rules")
 }

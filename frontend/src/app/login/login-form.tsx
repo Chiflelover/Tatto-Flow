@@ -23,9 +23,9 @@ export function LoginForm() {
     setError(null);
 
     try {
-      await login(email, password);
+      const session = await login(email, password);
       setPassword('');
-      router.replace('/dashboard');
+      router.replace(session.user.role === 'ADMIN' ? '/admin' : '/dashboard');
       router.refresh();
     } catch (loginError) {
       setPassword('');

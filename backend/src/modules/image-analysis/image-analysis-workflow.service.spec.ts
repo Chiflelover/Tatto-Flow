@@ -1,3 +1,4 @@
+const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { Logger } from '@nestjs/common';
 import {
   ConversationState,
@@ -94,6 +95,8 @@ function createFixture(options: FixtureOptions = {}) {
   };
   let conversation: Conversation = {
     id: CONVERSATION_ID,
+    accountId: ACCOUNT_ID,
+    flowVersion: 'V1',
     customerId: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
     currentState: ConversationState.ANALYZING,
     status: ConversationStatus.ACTIVE,
@@ -115,6 +118,7 @@ function createFixture(options: FixtureOptions = {}) {
   const upsertLead = vi.fn(() => {
     if (!lead) {
       lead = {
+        accountId: ACCOUNT_ID,
         id: LEAD_ID,
         customerId: conversation.customerId,
         conversationId: conversation.id,
@@ -281,6 +285,7 @@ function createPricingRule(
 ): PricingRule {
   return {
     id: PRICING_RULE_ID,
+    accountId: ACCOUNT_ID,
     size,
     detail,
     minPrice: new Prisma.Decimal(range[0]),

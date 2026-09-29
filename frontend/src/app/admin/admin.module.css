@@ -1,0 +1,119 @@
+.page {
+  min-height: 100vh;
+  padding: 2rem;
+  background: #f7f5f0;
+  color: #25231f;
+}
+.header,
+.sectionHeader,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.header {
+  margin-bottom: 2rem;
+}
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+}
+.header h1 {
+  margin: 0.2rem 0;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
+  gap: 1.5rem;
+}
+.panel {
+  background: #fff;
+  border: 1px solid #dfd9cf;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.item {
+  padding: 1rem 0;
+  border-top: 1px solid #e8e4dd;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.item strong,
+.item small,
+.item a {
+  display: block;
+}
+.item small {
+  margin: 0.35rem 0;
+  color: #5a554e;
+}
+.item a {
+  overflow-wrap: anywhere;
+}
+.actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: center;
+}
+.form {
+  display: grid;
+  gap: 1rem;
+}
+.form label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.form input {
+  padding: 0.7rem;
+  border: 1px solid #bdb5aa;
+  border-radius: 6px;
+  font: inherit;
+}
+.form .checkbox {
+  display: flex;
+  align-items: center;
+}
+.form button,
+.actions button,
+.sectionHeader button {
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
+.primary {
+  background: #25231f;
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+}
+.error {
+  color: #9d1e1e;
+}
+.notice {
+  color: #216343;
+}
+@media (max-width: 850px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .item {
+    display: block;
+  }
+  .actions {
+    justify-content: flex-start;
+    margin-top: 0.7rem;
+  }
+}
