@@ -1,3 +1,4 @@
+import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
@@ -18,6 +19,52 @@ import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 
 describe('ChatbotService', () => {
+  it.each([false, true])(
+    'refreshes V2 activity without advancing for unexpected image or storage failure=%s',
+    async (storageFailure) => {
+      const now = new Date();
+      const customer = makeCustomer(now);
+      const conversation = makeConversation(customer.id, now, {
+        flowVersion: 'V2',
+        currentState: storageFailure
+          ? ConversationState.WAITING_IMAGE
+          : ConversationState.ASK_COLOR,
+        firstTattoo: true,
+      });
+      const storeReference = vi.fn().mockRejectedValue(new LeadImageStorageException());
+      const applyV2Transition = vi.fn().mockResolvedValue({ conversation, applied: true });
+      const applyV1Transition = vi.fn();
+      const analyzeConversationImage = vi.fn();
+      const service = new ChatbotService(
+        {
+          findOrCreateByPhoneNumber: vi.fn().mockResolvedValue(customer),
+        } as unknown as CustomersService,
+        {
+          getOrCreateActive: vi.fn().mockResolvedValue({ conversation, created: false }),
+          applyTransition: applyV1Transition,
+        } as unknown as ConversationsService,
+        new NitaStateMachine(),
+        { analyzeConversationImage } as unknown as ImageAnalysisWorkflowService,
+        openBusinessHours(),
+        new ConfigService(),
+        { storeReference, applyTransition: applyV2Transition } as unknown as NitaV2IntakeService,
+      );
+      const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
+        content: new Uint8Array([1]),
+        mimeType: 'image/png',
+      });
+      expect(response.state).toBe(conversation.currentState);
+      expect(applyV2Transition).toHaveBeenCalledWith(
+        ACCOUNT_ID,
+        conversation.id,
+        conversation.currentState,
+        {},
+      );
+      expect(applyV1Transition).not.toHaveBeenCalled();
+      expect(analyzeConversationImage).not.toHaveBeenCalled();
+      expect(storeReference).toHaveBeenCalledTimes(storageFailure ? 1 : 0);
+    },
+  );
   it('finds or creates the customer and starts an active conversation', async () => {
     const now = new Date();
     const customer: Customer = {
@@ -33,6 +80,10 @@ describe('ChatbotService', () => {
       customerId: customer.id,
       accountId: ACCOUNT_ID,
       flowVersion: 'V1',
+      firstTattoo: null,
+      sameSizeAsReference: null,
+      targetSizeCm: null,
+      colorDeclaration: null,
       currentState: ConversationState.START,
       status: ConversationStatus.ACTIVE,
       selectedSize: null,
@@ -67,6 +118,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processStart(ACCOUNT_ID, customer.phoneNumber);
@@ -116,6 +168,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const responses = await Promise.all([
@@ -162,6 +215,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
@@ -204,6 +258,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
@@ -253,6 +308,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processTextMessage(
@@ -344,6 +400,7 @@ describe('ChatbotService', () => {
         imageAnalysisWorkflow,
         openBusinessHours(),
         new ConfigService(),
+        {} as NitaV2IntakeService,
       );
 
       const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
@@ -382,6 +439,7 @@ describe('ChatbotService', () => {
       {} as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processTextMessage(
@@ -430,6 +488,7 @@ describe('ChatbotService', () => {
       } as unknown as ImageAnalysisWorkflowService,
       openBusinessHours(),
       new ConfigService(),
+      {} as NitaV2IntakeService,
     );
 
     const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
@@ -482,6 +541,10 @@ function makeConversation(
     id: 'a459f257-b03c-48f4-9091-2dc37871ef81',
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    firstTattoo: null,
+    sameSizeAsReference: null,
+    targetSizeCm: null,
+    colorDeclaration: null,
     customerId,
     currentState: ConversationState.START,
     status: ConversationStatus.ACTIVE,

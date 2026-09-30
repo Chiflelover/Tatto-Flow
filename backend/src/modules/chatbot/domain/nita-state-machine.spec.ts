@@ -187,15 +187,15 @@ describe('NitaStateMachine', () => {
     expect(decision.response.state).toBe(ConversationState.ASK_BODY_PART);
   });
 
-  it('rejects a body part longer than 10 characters', () => {
+  it('rejects a body part longer than 120 characters', () => {
     const decision = stateMachine.process(context(ConversationState.ASK_BODY_PART), {
       type: 'text',
-      value: 'antebrazo largo',
+      value: 'a'.repeat(121),
     });
 
     expect(decision.update).toEqual({});
     expect(decision.response.messages[0]?.text).toBe(
-      'La zona debe tener máximo 10 caracteres. Por favor, inténtalo nuevamente.',
+      'La zona debe tener máximo 120 caracteres. Por favor, inténtalo nuevamente.',
     );
   });
 

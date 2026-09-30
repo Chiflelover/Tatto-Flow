@@ -1,6 +1,11 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
+import {
+  ColorDeclaration,
+  ConversationState,
+  DetailLevel,
+  TattooSize,
+} from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
 import type {
   ChatbotImageInput,
@@ -16,6 +21,13 @@ export const WHATSAPP_BUTTON_IDS = {
   DETAIL_LIGHT: 'nita_detail_light',
   DETAIL_MEDIUM: 'nita_detail_medium',
   DETAIL_DETAILED: 'nita_detail_detailed',
+  FIRST_TATTOO_YES: 'nita_first_tattoo_yes',
+  FIRST_TATTOO_NO: 'nita_first_tattoo_no',
+  SAME_SIZE_YES: 'nita_same_size_yes',
+  SAME_SIZE_NO: 'nita_same_size_no',
+  COLOR_BLACK_ONLY: 'nita_color_black_only',
+  COLOR_SOME: 'nita_color_some',
+  COLOR_MOSTLY: 'nita_color_mostly',
 } as const;
 
 const LEGACY_AMBIGUOUS_MEDIUM_BUTTON_ID = 'nita_value_medium';
@@ -47,6 +59,16 @@ const SELECTION_BY_BUTTON_ID = new Map<string, ChatbotOptionSelection>([
   [WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, { stage: 'detail', value: DetailLevel.LIGHT }],
   [WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, { stage: 'detail', value: DetailLevel.MEDIUM }],
   [WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, { stage: 'detail', value: DetailLevel.DETAILED }],
+  [WHATSAPP_BUTTON_IDS.FIRST_TATTOO_YES, { stage: 'firstTattoo', value: true }],
+  [WHATSAPP_BUTTON_IDS.FIRST_TATTOO_NO, { stage: 'firstTattoo', value: false }],
+  [WHATSAPP_BUTTON_IDS.SAME_SIZE_YES, { stage: 'sameSize', value: true }],
+  [WHATSAPP_BUTTON_IDS.SAME_SIZE_NO, { stage: 'sameSize', value: false }],
+  [WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, { stage: 'color', value: ColorDeclaration.BLACK_ONLY }],
+  [
+    WHATSAPP_BUTTON_IDS.COLOR_SOME,
+    { stage: 'color', value: ColorDeclaration.BLACK_WITH_SOME_COLOR },
+  ],
+  [WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, { stage: 'color', value: ColorDeclaration.MOSTLY_COLOR }],
 ]);
 
 const FALLBACK_SELECTION_BY_TEXT = new Map<string, ChatbotOptionSelection>([
@@ -177,7 +199,10 @@ export class WhatsAppAdapter {
       ...precedingMessages,
       {
         type: 'interactive_buttons',
-        body: prompt,
+        body:
+          response.state === ConversationState.ASK_COLOR
+            ? `${prompt}\n\n${response.options.map(({ label }) => `- ${label}`).join('\n')}`
+            : prompt,
         buttons: response.options.map((option) => this.toButton(response.state, option)),
         ...(headerImageUrl ? { headerImageUrl } : {}),
       },
@@ -206,6 +231,29 @@ export class WhatsAppAdapter {
   }
 
   private toButton(state: ConversationState, option: ChatbotOption): { id: string; title: string } {
+    if (state === ConversationState.ASK_FIRST_TATTOO || state === ConversationState.ASK_SAME_SIZE) {
+      const id =
+        option.value === 'YES'
+          ? state === ConversationState.ASK_FIRST_TATTOO
+            ? WHATSAPP_BUTTON_IDS.FIRST_TATTOO_YES
+            : WHATSAPP_BUTTON_IDS.SAME_SIZE_YES
+          : option.value === 'NO'
+            ? state === ConversationState.ASK_FIRST_TATTOO
+              ? WHATSAPP_BUTTON_IDS.FIRST_TATTOO_NO
+              : WHATSAPP_BUTTON_IDS.SAME_SIZE_NO
+            : undefined;
+      if (id) return { id, title: option.label };
+    }
+    if (state === ConversationState.ASK_COLOR) {
+      switch (option.value) {
+        case ColorDeclaration.BLACK_ONLY:
+          return { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: option.label };
+        case ColorDeclaration.BLACK_WITH_SOME_COLOR:
+          return { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Negro + colores' };
+        case ColorDeclaration.MOSTLY_COLOR:
+          return { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Mayormente color' };
+      }
+    }
     const id =
       state === ConversationState.ASK_SIZE
         ? SIZE_BUTTON_ID_BY_VALUE[option.value as TattooSize]

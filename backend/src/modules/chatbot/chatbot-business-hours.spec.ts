@@ -1,3 +1,4 @@
+import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
@@ -39,6 +40,10 @@ function createFixture(options: FixtureOptions = {}) {
     customerId: customer.id,
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    firstTattoo: null,
+    sameSizeAsReference: null,
+    targetSizeCm: null,
+    colorDeclaration: null,
     currentState: ConversationState.ASK_DETAIL,
     status: ConversationStatus.ACTIVE,
     selectedSize: TattooSize.SMALL,
@@ -79,6 +84,7 @@ function createFixture(options: FixtureOptions = {}) {
     {} as ImageAnalysisWorkflowService,
     new NitaBusinessHoursService(),
     new ConfigService({ BUSINESS_HOURS_TEST_PHONE: businessHoursTestPhone }),
+    {} as NitaV2IntakeService,
   );
 
   return {

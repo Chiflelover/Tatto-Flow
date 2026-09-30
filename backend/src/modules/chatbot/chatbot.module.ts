@@ -6,10 +6,18 @@ import { ChatbotService } from './chatbot.service.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { WhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
+import { NitaV2IntakeService } from './nita-v2-intake.service.js';
+import { StorageModule } from '../storage/storage.module.js';
 
 @Module({
-  imports: [CustomersModule, ConversationsModule, ImageAnalysisModule],
-  providers: [ChatbotService, NitaBusinessHoursService, NitaStateMachine, WhatsAppAdapter],
+  imports: [CustomersModule, ConversationsModule, ImageAnalysisModule, StorageModule],
+  providers: [
+    ChatbotService,
+    NitaBusinessHoursService,
+    NitaStateMachine,
+    WhatsAppAdapter,
+    NitaV2IntakeService,
+  ],
   exports: [ChatbotService, WhatsAppAdapter],
 })
 export class ChatbotModule {}

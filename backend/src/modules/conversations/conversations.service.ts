@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
+  FlowVersion,
   LeadStatus,
   Prisma,
   type Conversation,
@@ -43,6 +44,7 @@ export class ConversationsService {
   async getOrCreateActive(
     accountId: string,
     customerId: string,
+    flowVersion: FlowVersion = FlowVersion.V1,
   ): Promise<ActiveConversationResult> {
     const now = new Date();
 
@@ -66,20 +68,31 @@ export class ConversationsService {
           return { conversation: activeConversation, created: false };
         }
 
-        const handedOffConversation = await transaction.conversation.findFirst({
-          where: {
-            accountId,
-            customerId,
-            status: ConversationStatus.COMPLETED,
-            currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
-            lead: {
-              is: {
-                status: { not: LeadStatus.COMPLETED },
-              },
-            },
-          },
-          orderBy: { updatedAt: 'desc' },
+        const previousConversation = await transaction.conversation.findFirst({
+          where: { accountId, customerId },
+          orderBy: { createdAt: 'desc' },
+          select: { flowVersion: true, status: true },
         });
+        const restartAbandonedV2 =
+          previousConversation?.status === ConversationStatus.ABANDONED &&
+          previousConversation.flowVersion === FlowVersion.V2;
+
+        const handedOffConversation = restartAbandonedV2
+          ? null
+          : await transaction.conversation.findFirst({
+              where: {
+                accountId,
+                customerId,
+                status: ConversationStatus.COMPLETED,
+                currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+                lead: {
+                  is: {
+                    status: { not: LeadStatus.COMPLETED },
+                  },
+                },
+              },
+              orderBy: { updatedAt: 'desc' },
+            });
 
         if (handedOffConversation) {
           return { conversation: handedOffConversation, created: false };
@@ -89,6 +102,7 @@ export class ConversationsService {
           data: {
             accountId,
             customerId,
+            flowVersion: restartAbandonedV2 ? FlowVersion.V2 : flowVersion,
             currentState: ConversationState.START,
             status: ConversationStatus.ACTIVE,
             lastActivityAt: now,

@@ -1,8 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ConversationState,
   ConversationStatus,
+  FlowVersion,
   LeadStatus,
   type Conversation,
 } from '../../generated/prisma/client.js';
@@ -19,6 +20,7 @@ import type {
 } from './domain/chatbot.types.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
+import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 
 const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
   `Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/${minimum} y S/${maximum}.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.`;
@@ -48,6 +50,8 @@ export class ChatbotService {
     private readonly businessHours: NitaBusinessHoursService,
     @Inject(ConfigService)
     private readonly configService: ConfigService,
+    @Inject(NitaV2IntakeService)
+    private readonly v2Intake: NitaV2IntakeService,
   ) {}
 
   async processStart(accountId: string, customerIdentifier: string): Promise<ChatbotResponse> {
@@ -70,7 +74,7 @@ export class ChatbotService {
       });
     }
 
-    return this.applyDecision(conversation, this.stateMachine.begin());
+    return this.applyDecision(conversation, this.stateMachine.begin(conversation.flowVersion));
   }
 
   processOptionSelection(
@@ -107,6 +111,28 @@ export class ChatbotService {
     }
 
     const decision = this.stateMachine.process(conversation, { type: 'image', image });
+    if (conversation.flowVersion === FlowVersion.V2) {
+      if (decision.update.currentState !== ConversationState.ASK_SAME_SIZE)
+        return decision.ignored ? decision.response : this.applyDecision(conversation, decision);
+      try {
+        const result = await this.v2Intake.storeReference(accountId, conversation.id, image);
+        return result.applied
+          ? decision.response
+          : this.silentResponse(result.conversation.currentState);
+      } catch (error) {
+        if (error instanceof LeadImageStorageException || error instanceof BadRequestException) {
+          return this.applyDecision(conversation, {
+            update: {},
+            response: {
+              state: ConversationState.WAITING_IMAGE,
+              messages: [{ type: 'text', text: error.message }],
+              options: [],
+            },
+          });
+        }
+        throw error;
+      }
+    }
     const transition = await this.conversationsService.applyTransition(
       conversation.id,
       conversation.currentState,
@@ -243,10 +269,12 @@ export class ChatbotService {
       };
     }
 
-    const { conversation } = await this.conversationsService.getOrCreateActive(
-      accountId,
-      customer.id,
-    );
+    const defaultVersion =
+      this.configService.get<FlowVersion>('NITA_DEFAULT_FLOW_VERSION') ?? FlowVersion.V1;
+    const { conversation } =
+      defaultVersion === FlowVersion.V1
+        ? await this.conversationsService.getOrCreateActive(accountId, customer.id)
+        : await this.conversationsService.getOrCreateActive(accountId, customer.id, defaultVersion);
 
     return { conversation };
   }
@@ -261,11 +289,19 @@ export class ChatbotService {
     conversation: Conversation,
     decision: ChatbotDecision,
   ): Promise<ChatbotResponse> {
-    const result = await this.conversationsService.applyTransition(
-      conversation.id,
-      conversation.currentState,
-      decision.update,
-    );
+    const result =
+      conversation.flowVersion === FlowVersion.V2
+        ? await this.v2Intake.applyTransition(
+            conversation.accountId,
+            conversation.id,
+            conversation.currentState,
+            decision.update,
+          )
+        : await this.conversationsService.applyTransition(
+            conversation.id,
+            conversation.currentState,
+            decision.update,
+          );
 
     if (!result.applied) {
       if (this.isHandedOff(result.conversation)) {

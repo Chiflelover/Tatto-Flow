@@ -1,5 +1,5 @@
 import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { LeadImage } from '../../generated/prisma/client.js';
+import type { LeadImage, Prisma } from '../../generated/prisma/client.js';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { TattooImageInput } from '../image-analysis/domain/image-analysis.types.js';
@@ -26,9 +26,13 @@ export class LeadImageService {
     private readonly storage: StorageService,
   ) {}
 
-  async ensureStored(leadId: string, image: TattooImageInput): Promise<LeadImage> {
+  async ensureStored(
+    leadId: string,
+    image: TattooImageInput,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<LeadImage> {
     const validatedImage = validateLeadImageFile(image);
-    const existingImage = await this.prisma.leadImage.findFirst({
+    const existingImage = await client.leadImage.findFirst({
       where: {
         leadId,
         deletedAt: null,
@@ -57,7 +61,7 @@ export class LeadImageService {
     const createdAt = new Date();
 
     try {
-      const leadImage = await this.prisma.leadImage.create({
+      const leadImage = await client.leadImage.create({
         data: {
           leadId,
           storagePath,

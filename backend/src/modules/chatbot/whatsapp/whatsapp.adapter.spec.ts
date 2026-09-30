@@ -50,8 +50,64 @@ describe('WhatsAppAdapter', () => {
     processImageMessage.mockResolvedValue(response(ConversationState.HANDOFF_TO_TATTOO_ARTIST));
   });
 
+  it.each([
+    [WHATSAPP_BUTTON_IDS.FIRST_TATTOO_YES, { stage: 'firstTattoo', value: true }],
+    [WHATSAPP_BUTTON_IDS.FIRST_TATTOO_NO, { stage: 'firstTattoo', value: false }],
+    [WHATSAPP_BUTTON_IDS.SAME_SIZE_YES, { stage: 'sameSize', value: true }],
+    [WHATSAPP_BUTTON_IDS.SAME_SIZE_NO, { stage: 'sameSize', value: false }],
+    [WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, { stage: 'color', value: 'BLACK_ONLY' }],
+    [WHATSAPP_BUTTON_IDS.COLOR_SOME, { stage: 'color', value: 'BLACK_WITH_SOME_COLOR' }],
+    [WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, { stage: 'color', value: 'MOSTLY_COLOR' }],
+  ])('maps stable V2 button %s to its own stage', async (buttonId, selection) => {
+    await adapter.handleIncoming({
+      type: 'button_reply',
+      accountId: ACCOUNT_ID,
+      customerIdentifier: '51911111111',
+      buttonId: String(buttonId),
+    });
+    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '51911111111', selection);
+  });
+
+  it('renders full color choices with WhatsApp-compatible button titles', async () => {
+    processTextMessage.mockResolvedValue(
+      response(
+        ConversationState.ASK_COLOR,
+        ['¿Tu tatuaje llevará color?'],
+        [
+          { value: 'BLACK_ONLY', label: 'Solo negro' },
+          { value: 'BLACK_WITH_SOME_COLOR', label: 'Negro con algunos colores' },
+          { value: 'MOSTLY_COLOR', label: 'Principalmente a color' },
+        ],
+      ),
+    );
+    const outbound = await adapter.handleIncoming({
+      type: 'text',
+      accountId: ACCOUNT_ID,
+      customerIdentifier: '51911111111',
+      text: 'sí',
+    });
+    expect(outbound[0]).toMatchObject({
+      type: 'interactive_buttons',
+      body: expect.stringContaining('Negro con algunos colores') as unknown,
+      buttons: [
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Solo negro' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Negro + colores' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Mayormente color' },
+      ],
+    });
+    const fallback = await adapter.handleIncoming(
+      { type: 'text', accountId: ACCOUNT_ID, customerIdentifier: '51911111111', text: 'sí' },
+      { interactiveButtons: false },
+    );
+    expect(fallback[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Principalmente a color') as unknown,
+    });
+    expect(processTextMessage).toHaveBeenLastCalledWith(ACCOUNT_ID, '51911111111', 'sí');
+  });
+
   it('uses distinct stage-namespaced IDs for every new interactive button', () => {
-    expect(WHATSAPP_BUTTON_IDS).toEqual({
+    expect(WHATSAPP_BUTTON_IDS).toMatchObject({
       SIZE_SMALL: 'nita_size_small',
       SIZE_MEDIUM: 'nita_size_medium',
       SIZE_LARGE: 'nita_size_large',

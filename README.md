@@ -269,6 +269,28 @@ Regla de producto para el flujo futuro: **Black & Grey = BLACK_ONLY**. Todavía 
 
 ## Tests y build
 
+### Nita V2 — intake (Fase 4A)
+
+`NITA_DEFAULT_FLOW_VERSION=V1` mantiene el flujo actual. En un entorno de desarrollo
+aislado se puede configurar `V2` para nuevas conversaciones. El valor persistido en
+las conversaciones existentes nunca se cambia por esta configuración. También se
+puede iniciar V2 explícitamente mediante el servicio interno de conversaciones en tests.
+
+V2 recopila primer tatuaje, referencia privada, mismo tamaño o dimensión principal
+en cm, color y ubicación. Termina en `READY_FOR_ANALYSIS`, sin ejecutar IA, pricing,
+revisión ni intención de reserva. Las respuestas temporales viven en `Conversation`;
+el candidato se crea al guardar la imagen y recibe los datos consolidados al completar
+el intake. `bodyPart` se reutiliza para ubicación (máximo 120 caracteres).
+
+La prueba E2E con BD requiere la migración aplicada y una `.env` local de desarrollo.
+Usa cuentas aisladas, Storage en memoria y WhatsApp simulado; elimina sus filas al terminar:
+
+```powershell
+$env:RUN_NITA_V2_DB_TESTS = "1"
+npm --workspace backend run test:e2e
+Remove-Item Env:RUN_NITA_V2_DB_TESTS
+```
+
 Backend:
 
 ```powershell

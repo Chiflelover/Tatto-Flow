@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
+import {
+  ConversationState,
+  DetailLevel,
+  FlowVersion,
+  TattooSize,
+} from '../../../generated/prisma/client.js';
+import { NitaV2StateMachine } from './nita-v2-state-machine.js';
 import type {
   ChatbotDecision,
   ChatbotInput,
@@ -36,7 +42,10 @@ const VALID_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']
 
 @Injectable()
 export class NitaStateMachine {
-  begin(): ChatbotDecision {
+  private readonly v2 = new NitaV2StateMachine();
+
+  begin(flowVersion: FlowVersion = FlowVersion.V1): ChatbotDecision {
+    if (flowVersion === FlowVersion.V2) return this.v2.begin();
     return {
       update: { currentState: ConversationState.ASK_SIZE },
       response: this.createResponse(
@@ -48,6 +57,10 @@ export class NitaStateMachine {
   }
 
   process(context: ConversationContext, input: ChatbotInput): ChatbotDecision {
+    if (context.flowVersion === FlowVersion.V2) return this.v2.process(context, input);
+    if (input.type === 'option' && input.stage !== 'size' && input.stage !== 'detail') {
+      return this.ignored(context.currentState);
+    }
     if (context.currentState === ConversationState.START) {
       return this.begin();
     }
@@ -73,10 +86,13 @@ export class NitaStateMachine {
           ConversationState.HANDOFF_TO_TATTOO_ARTIST,
           'Un tatuador continuará personalmente esta conversación.',
         );
+      default:
+        return this.ignored(context.currentState);
     }
   }
 
   prompt(context: ConversationContext): ChatbotResponse {
+    if (context.flowVersion === FlowVersion.V2) return this.v2.prompt(context);
     switch (context.currentState) {
       case ConversationState.START:
         return this.begin().response;
@@ -98,6 +114,8 @@ export class NitaStateMachine {
         return this.createResponse(ConversationState.HANDOFF_TO_TATTOO_ARTIST, [
           'Un tatuador continuará personalmente esta conversación.',
         ]);
+      default:
+        return this.createResponse(context.currentState, []);
     }
   }
 
@@ -178,10 +196,10 @@ export class NitaStateMachine {
       );
     }
 
-    if (bodyPart.length > 10) {
+    if (bodyPart.length > 120) {
       return this.unchanged(
         ConversationState.ASK_BODY_PART,
-        'La zona debe tener máximo 10 caracteres. Por favor, inténtalo nuevamente.',
+        'La zona debe tener máximo 120 caracteres. Por favor, inténtalo nuevamente.',
       );
     }
 

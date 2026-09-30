@@ -2,6 +2,7 @@ const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
+  FlowVersion,
   LeadStatus,
   type Conversation,
 } from '../../generated/prisma/client.js';
@@ -21,6 +22,7 @@ interface DeleteManyArguments {
 interface CreateArguments {
   data: {
     customerId: string;
+    flowVersion: FlowVersion;
     currentState: ConversationState;
     status: ConversationStatus;
     lastActivityAt: Date;
@@ -29,11 +31,13 @@ interface CreateArguments {
 
 interface FindFirstArguments {
   where: {
+    accountId: string;
     customerId: string;
-    status: ConversationStatus;
+    status?: ConversationStatus;
     currentState?: ConversationState;
     lead?: { is: { status: { not: LeadStatus } } };
   };
+  orderBy: { createdAt?: 'desc'; updatedAt?: 'desc' };
 }
 
 interface TransactionMock {
@@ -54,6 +58,10 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     id: ABANDONED_CONVERSATION_ID,
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    firstTattoo: null,
+    sameSizeAsReference: null,
+    targetSizeCm: null,
+    colorDeclaration: null,
     customerId: CUSTOMER_ID,
     currentState: ConversationState.ASK_BODY_PART,
     status: ConversationStatus.ABANDONED,
@@ -97,21 +105,28 @@ function createFixture() {
   );
   const findFirst = vi.fn((arguments_: FindFirstArguments) =>
     Promise.resolve(
-      conversations.find(
-        ({ id, customerId, status, currentState }) =>
-          customerId === arguments_.where.customerId &&
-          status === arguments_.where.status &&
-          (!arguments_.where.currentState || currentState === arguments_.where.currentState) &&
-          (!arguments_.where.lead ||
-            (leadStatusByConversation.has(id) &&
-              leadStatusByConversation.get(id) !== arguments_.where.lead.is.status.not)),
-      ) ?? null,
+      conversations
+        .filter(
+          ({ id, accountId, customerId, status, currentState }) =>
+            accountId === arguments_.where.accountId &&
+            customerId === arguments_.where.customerId &&
+            (!arguments_.where.status || status === arguments_.where.status) &&
+            (!arguments_.where.currentState || currentState === arguments_.where.currentState) &&
+            (!arguments_.where.lead ||
+              (leadStatusByConversation.has(id) &&
+                leadStatusByConversation.get(id) !== arguments_.where.lead.is.status.not)),
+        )
+        .sort((a, b) => {
+          const field = arguments_.orderBy.updatedAt ? 'updatedAt' : 'createdAt';
+          return b[field].getTime() - a[field].getTime();
+        })[0] ?? null,
     ),
   );
   const create = vi.fn<(arguments_: CreateArguments) => Promise<Conversation>>(({ data }) => {
     const conversation = makeConversation({
       id: 'new-conversation',
       customerId: data.customerId,
+      flowVersion: data.flowVersion,
       currentState: data.currentState,
       status: data.status,
       selectedSize: null,
@@ -177,6 +192,117 @@ function createFixture() {
 }
 
 describe('ConversationsService abandoned conversation cleanup', () => {
+  it('creates V2 when requested explicitly and defaults to V1 without prior V2', async () => {
+    const f = createFixture();
+    const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID, FlowVersion.V2);
+    expect(result.conversation.flowVersion).toBe('V2');
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ flowVersion: 'V2' }) as unknown }),
+    );
+    const defaultFixture = createFixture();
+    expect(
+      (await defaultFixture.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID)).conversation
+        .flowVersion,
+    ).toBe('V1');
+  });
+  it('never changes an active V1 conversation when requesting V2 for new conversations', async () => {
+    const f = createFixture();
+    f.conversations[0] = makeConversation({
+      status: ConversationStatus.ACTIVE,
+      lastActivityAt: new Date(),
+    });
+    expect(
+      (await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID, FlowVersion.V2)).conversation
+        .flowVersion,
+    ).toBe('V1');
+    expect(f.create).not.toHaveBeenCalled();
+  });
+  it.each([ConversationStatus.ABANDONED, ConversationStatus.ACTIVE])(
+    'restarts an expired V2 from %s with empty answers even when the default is V1',
+    async (status) => {
+      const f = createFixture();
+      const old = makeConversation({
+        flowVersion: FlowVersion.V2,
+        status,
+        currentState: ConversationState.ASK_BODY_PART,
+        firstTattoo: false,
+        sameSizeAsReference: false,
+        targetSizeCm: 12.5,
+        colorDeclaration: 'BLACK_WITH_SOME_COLOR',
+        bodyPart: 'Antebrazo izquierdo',
+        selectedSize: null,
+        selectedDetail: null,
+      });
+      f.conversations.splice(0, f.conversations.length, old);
+
+      const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
+
+      expect(result.created).toBe(true);
+      expect(result.conversation.id).not.toBe(old.id);
+      expect(result.conversation).toMatchObject({
+        flowVersion: FlowVersion.V2,
+        status: ConversationStatus.ACTIVE,
+        currentState: ConversationState.START,
+        firstTattoo: null,
+        sameSizeAsReference: null,
+        targetSizeCm: null,
+        colorDeclaration: null,
+        bodyPart: null,
+        selectedSize: null,
+        selectedDetail: null,
+      });
+      expect(old).toMatchObject({
+        status: ConversationStatus.ABANDONED,
+        firstTattoo: false,
+        sameSizeAsReference: false,
+        targetSizeCm: 12.5,
+        colorDeclaration: 'BLACK_WITH_SOME_COLOR',
+        bodyPart: 'Antebrazo izquierdo',
+      });
+      expect(await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID)).toEqual({
+        conversation: result.conversation,
+        created: false,
+      });
+      expect(f.conversations).toHaveLength(2);
+      expect(f.create).toHaveBeenCalledOnce();
+      expect(f.deleteMany).not.toHaveBeenCalled();
+      expect(f.deleteLead).not.toHaveBeenCalled();
+    },
+  );
+  it('does not resume an older handoff when the latest conversation is abandoned V2', async () => {
+    const f = createFixture();
+    const oldHandoff = makeConversation({
+      id: 'older-handoff',
+      status: ConversationStatus.COMPLETED,
+      currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+      createdAt: new Date('2026-09-13T12:00:00.000Z'),
+    });
+    f.leadStatusByConversation.set(oldHandoff.id, LeadStatus.VERIFIED);
+    f.conversations[0] = makeConversation({ flowVersion: FlowVersion.V2 });
+    f.conversations.push(oldHandoff);
+
+    const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
+
+    expect(result.created).toBe(true);
+    expect(result.conversation.flowVersion).toBe(FlowVersion.V2);
+    expect(result.conversation.currentState).toBe(ConversationState.START);
+    expect(f.conversations).toContainEqual(oldHandoff);
+  });
+  it('uses the default for newer V1 history rather than an older abandoned V2', async () => {
+    const f = createFixture();
+    f.conversations[0] = makeConversation({ flowVersion: FlowVersion.V2 });
+    f.conversations.push(
+      makeConversation({
+        id: 'newer-v1',
+        createdAt: new Date('2026-09-15T12:00:00.000Z'),
+      }),
+    );
+
+    const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID);
+
+    expect(result.created).toBe(true);
+    expect(result.conversation.flowVersion).toBe(FlowVersion.V1);
+  });
   it('continues the same incomplete conversation when inactivity is under two hours', async () => {
     const fixture = createFixture();
     const active = makeConversation({

@@ -1,6 +1,7 @@
 import type {
   Conversation,
   ConversationState,
+  ColorDeclaration,
   DetailLevel,
   LeadStatus,
   ReviewReason,
@@ -39,7 +40,11 @@ export interface ChatbotResponse {
 export type ChatbotImageInput = TattooImageInput;
 
 export type ChatbotOptionSelection =
-  { stage: 'size'; value: TattooSize } | { stage: 'detail'; value: DetailLevel };
+  | { stage: 'size'; value: TattooSize }
+  | { stage: 'detail'; value: DetailLevel }
+  | { stage: 'firstTattoo'; value: boolean }
+  | { stage: 'sameSize'; value: boolean }
+  | { stage: 'color'; value: ColorDeclaration };
 
 export type ChatbotInput =
   | ({ type: 'option' } & ChatbotOptionSelection)
@@ -49,13 +54,23 @@ export type ChatbotInput =
 export type ConversationContext = Pick<
   Conversation,
   'currentState' | 'selectedSize' | 'selectedDetail' | 'bodyPart'
->;
+> &
+  Partial<
+    Pick<
+      Conversation,
+      'flowVersion' | 'firstTattoo' | 'sameSizeAsReference' | 'targetSizeCm' | 'colorDeclaration'
+    >
+  >;
 
 export interface ChatbotConversationUpdate {
   currentState?: ConversationState;
   selectedSize?: TattooSize;
   selectedDetail?: DetailLevel;
   bodyPart?: string;
+  firstTattoo?: boolean;
+  sameSizeAsReference?: boolean;
+  targetSizeCm?: number | null;
+  colorDeclaration?: ColorDeclaration;
 }
 
 export interface ChatbotDecision {

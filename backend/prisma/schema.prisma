@@ -85,8 +85,21 @@ enum ConversationState {
   ANALYZING
   VALIDATING
   HANDOFF_TO_TATTOO_ARTIST
+  ASK_FIRST_TATTOO
+  ASK_SAME_SIZE
+  ASK_DESIRED_SIZE_CM
+  ASK_COLOR
+  READY_FOR_ANALYSIS
 
   @@map("conversation_state")
+}
+
+enum ColorDeclaration {
+  BLACK_ONLY
+  BLACK_WITH_SOME_COLOR
+  MOSTLY_COLOR
+
+  @@map("color_declaration")
 }
 
 enum LeadStatus {
@@ -270,21 +283,26 @@ model Customer {
 }
 
 model Conversation {
-  id             String              @id @default(uuid()) @db.Uuid
-  accountId      String              @map("account_id") @db.Uuid
-  customerId     String              @map("customer_id") @db.Uuid
-  flowVersion    FlowVersion         @default(V1) @map("flow_version")
-  currentState   ConversationState   @default(START) @map("current_state")
-  status         ConversationStatus  @default(ACTIVE)
-  selectedSize   TattooSize?         @map("selected_size")
-  selectedDetail DetailLevel?        @map("selected_detail")
-  bodyPart       String?             @map("body_part") @db.VarChar(10)
-  lastActivityAt DateTime            @default(now()) @map("last_activity_at") @db.Timestamptz(3)
-  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  lead           Lead?
-  account        TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  id                  String              @id @default(uuid()) @db.Uuid
+  accountId           String              @map("account_id") @db.Uuid
+  customerId          String              @map("customer_id") @db.Uuid
+  flowVersion         FlowVersion         @default(V1) @map("flow_version")
+  currentState        ConversationState   @default(START) @map("current_state")
+  status              ConversationStatus  @default(ACTIVE)
+  selectedSize        TattooSize?         @map("selected_size")
+  selectedDetail      DetailLevel?        @map("selected_detail")
+  /// Placement in V2; reuse the existing field rather than duplicate it.
+  bodyPart            String?             @map("body_part") @db.VarChar(120)
+  firstTattoo         Boolean?            @map("first_tattoo")
+  sameSizeAsReference Boolean?            @map("same_size_as_reference")
+  targetSizeCm        Float?              @map("target_size_cm") @db.DoublePrecision
+  colorDeclaration    ColorDeclaration?   @map("color_declaration")
+  lastActivityAt      DateTime            @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lead                Lead?
+  account             TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@index([accountId, status, lastActivityAt])
   @@index([customerId])
@@ -293,33 +311,38 @@ model Conversation {
 }
 
 /// Represents a quotation candidate. Incomplete candidates are preserved when
-/// their conversation is abandoned and are classified by LeadEvaluation.
+/// their conversation is abandoned. Only V1 candidates use LeadEvaluation so far.
 model Lead {
-  id                 String              @id @default(uuid()) @db.Uuid
-  accountId          String              @map("account_id") @db.Uuid
-  customerId         String              @map("customer_id") @db.Uuid
-  conversationId     String?             @unique @map("conversation_id") @db.Uuid
-  selectedSize       TattooSize?         @map("selected_size")
-  selectedDetail     DetailLevel?        @map("selected_detail")
-  bodyPart           String?             @map("body_part") @db.VarChar(10)
-  status             LeadStatus          @default(ANALYZING)
-  reviewReasons      ReviewReason[]      @default([]) @map("review_reasons")
-  manualFinalPrice   Decimal?            @map("manual_final_price") @db.Decimal(10, 2)
-  calculatedMinPrice Decimal?            @map("calculated_min_price") @db.Decimal(10, 2)
-  calculatedMaxPrice Decimal?            @map("calculated_max_price") @db.Decimal(10, 2)
-  pricingRuleId      String?             @map("pricing_rule_id") @db.Uuid
-  pricingRuleVersion Int?                @map("pricing_rule_version")
-  priceSentAt        DateTime?           @map("price_sent_at") @db.Timestamptz(3)
-  archivedAt         DateTime?           @map("archived_at") @db.Timestamptz(3)
-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer           Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  conversation       Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  pricingRule        PricingRule?        @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
-  images             LeadImage[]
-  aiAnalysis         AiAnalysis?
-  evaluation         LeadEvaluation?
-  account            TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  id                  String              @id @default(uuid()) @db.Uuid
+  accountId           String              @map("account_id") @db.Uuid
+  customerId          String              @map("customer_id") @db.Uuid
+  conversationId      String?             @unique @map("conversation_id") @db.Uuid
+  selectedSize        TattooSize?         @map("selected_size")
+  selectedDetail      DetailLevel?        @map("selected_detail")
+  /// Consolidated placement from the conversation intake.
+  bodyPart            String?             @map("body_part") @db.VarChar(120)
+  firstTattoo         Boolean?            @map("first_tattoo")
+  sameSizeAsReference Boolean?            @map("same_size_as_reference")
+  targetSizeCm        Float?              @map("target_size_cm") @db.DoublePrecision
+  colorDeclaration    ColorDeclaration?   @map("color_declaration")
+  status              LeadStatus          @default(ANALYZING)
+  reviewReasons       ReviewReason[]      @default([]) @map("review_reasons")
+  manualFinalPrice    Decimal?            @map("manual_final_price") @db.Decimal(10, 2)
+  calculatedMinPrice  Decimal?            @map("calculated_min_price") @db.Decimal(10, 2)
+  calculatedMaxPrice  Decimal?            @map("calculated_max_price") @db.Decimal(10, 2)
+  pricingRuleId       String?             @map("pricing_rule_id") @db.Uuid
+  pricingRuleVersion  Int?                @map("pricing_rule_version")
+  priceSentAt         DateTime?           @map("price_sent_at") @db.Timestamptz(3)
+  archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  conversation        Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  pricingRule         PricingRule?        @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
+  images              LeadImage[]
+  aiAnalysis          AiAnalysis?
+  evaluation          LeadEvaluation?
+  account             TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@index([accountId, status, createdAt])
   @@index([customerId])

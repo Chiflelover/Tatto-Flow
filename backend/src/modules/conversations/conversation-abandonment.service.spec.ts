@@ -27,6 +27,10 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     id: crypto.randomUUID(),
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    firstTattoo: null,
+    sameSizeAsReference: null,
+    targetSizeCm: null,
+    colorDeclaration: null,
     customerId: CUSTOMER_A,
     currentState: ConversationState.ASK_SIZE,
     status: ConversationStatus.ACTIVE,
@@ -129,6 +133,27 @@ function createFixture(initialConversations: Conversation[]) {
 }
 
 describe('ConversationAbandonmentService', () => {
+  it('preserves partial V2 intake and never evaluates it with V1 scoring', async () => {
+    const fixture = createFixture([
+      makeConversation({
+        flowVersion: 'V2',
+        currentState: ConversationState.ASK_COLOR,
+        firstTattoo: false,
+        sameSizeAsReference: false,
+        targetSizeCm: 8,
+      }),
+    ]);
+    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(1);
+    expect([...fixture.leads.values()][0]).toMatchObject({
+      firstTattoo: false,
+      sameSizeAsReference: false,
+      targetSizeCm: 8,
+      colorDeclaration: null,
+      bodyPart: null,
+    });
+    expect(fixture.upsertEvaluation).not.toHaveBeenCalled();
+    expect(fixture.conversations[0]?.status).toBe('ABANDONED');
+  });
   it('keeps an active incomplete conversation under two hours unchanged', async () => {
     const conversation = makeConversation({
       lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS - 1),
