@@ -46,6 +46,7 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     targetSizeCm: null,
     colorDeclaration: null,
     v2Preparation: null,
+    bookingIntent: null,
     status: LeadStatus.VERIFIED,
     reviewReasons: [],
     manualFinalPrice: null,
@@ -166,22 +167,38 @@ describe('DashboardService', () => {
 
     const result = await service.listLeads(ACCOUNT_ID, leadQuery({ filter }));
 
-    expect(findMany).toHaveBeenCalledWith({
-      where: { accountId: ACCOUNT_ID, archivedAt: null, status },
-      include: {
-        customer: { select: { phoneNumber: true } },
-        evaluation: true,
-        aiAnalysis: {
-          select: { analysisVersion: true, sizeConfidence: true, detailConfidence: true },
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          accountId: ACCOUNT_ID,
+          archivedAt: null,
+          status: {
+            in:
+              filter === 'verified'
+                ? ['VERIFIED', 'AUTO_QUOTED', 'READY_TO_COORDINATE']
+                : ['REQUIRES_REVIEW', 'SPECIAL_REVIEW'],
+          },
         },
-      },
-      orderBy: [
-        { evaluation: { readinessStatus: 'asc' } },
-        { evaluation: { readinessScore: 'desc' } },
-      ],
-      skip: 0,
-      take: 20,
-    });
+        include: expect.objectContaining({
+          customer: { select: { phoneNumber: true } },
+          evaluation: true,
+          aiAnalysis: {
+            select: {
+              analysisVersion: true,
+              sizeConfidence: true,
+              detailConfidence: true,
+              style: true,
+            },
+          },
+        }) as unknown,
+        orderBy: [
+          { evaluation: { readinessStatus: 'asc' } },
+          { evaluation: { readinessScore: 'desc' } },
+        ],
+        skip: 0,
+        take: 20,
+      }),
+    );
     expect(result.leads[0]?.statusLabel).toBe(expectedLabel);
   });
 
@@ -342,6 +359,9 @@ describe('DashboardService', () => {
             LeadStatus.VERIFIED,
             LeadStatus.REQUIRES_REVIEW,
             LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
+            LeadStatus.AUTO_QUOTED,
+            LeadStatus.SPECIAL_REVIEW,
+            LeadStatus.READY_TO_COORDINATE,
           ],
         },
       },

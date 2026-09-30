@@ -11,6 +11,7 @@ import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.rep
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 import type { WhatsAppChannel } from '../../generated/prisma/client.js';
+import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
 
 interface MetaMessage {
   id?: unknown;
@@ -63,6 +64,8 @@ export class WhatsAppWebhookService {
     private readonly cloudApi: WhatsAppCloudApiClient,
     @Inject(WhatsAppChannelService)
     private readonly channels: WhatsAppChannelService,
+    @Inject(WhatsAppV2DeliveryService)
+    private readonly v2Delivery: WhatsAppV2DeliveryService,
   ) {}
 
   verifyChallenge(mode: unknown, verifyToken: unknown, challenge: unknown): string {
@@ -190,6 +193,11 @@ export class WhatsAppWebhookService {
 
     if (!(await this.messages.claim(messageId))) {
       await this.adapter.resumePendingV2Analysis(channel.accountId, customerIdentifier);
+      await this.v2Delivery.deliverForCustomer(
+        channel.accountId,
+        channel.phoneNumberId,
+        customerIdentifier,
+      );
       this.logger.info('whatsapp.message.duplicate_ignored', { whatsappMessageId: messageId });
       return;
     }
@@ -223,6 +231,11 @@ export class WhatsAppWebhookService {
           responseType: response.type,
         });
       }
+      await this.v2Delivery.deliverForCustomer(
+        channel.accountId,
+        channel.phoneNumberId,
+        customerIdentifier,
+      );
     } catch (error) {
       if (!chatbotProcessed) {
         await this.messages.release(messageId);

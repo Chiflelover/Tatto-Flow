@@ -11,6 +11,8 @@ import { PrismaModule } from '../src/infrastructure/prisma/prisma.module.js';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service.js';
 import { NitaBusinessHoursService } from '../src/modules/chatbot/nita-business-hours.service.js';
 import { NitaV2AnalysisService } from '../src/modules/chatbot/nita-v2-analysis.service.js';
+import { NitaV2CompletionService } from '../src/modules/chatbot/nita-v2-completion.service.js';
+import { WhatsAppV2DeliveryService } from '../src/modules/whatsapp/whatsapp-v2-delivery.service.js';
 import { ImageAnalysisService } from '../src/modules/image-analysis/image-analysis.service.js';
 import { ImageAnalysisV2Service } from '../src/modules/image-analysis/image-analysis-v2.service.js';
 import { StorageService } from '../src/modules/storage/storage.service.js';
@@ -74,6 +76,15 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .useValue({ isOpen: () => true })
         .overrideProvider(ImageAnalysisService)
         .useValue({ providerName: 'controlled-test', analyzeTattooImageV2: analyze })
+        // Phase 4B coverage; completion/delivery is exercised by the Phase 5 suite.
+        .overrideProvider(NitaV2CompletionService)
+        .useValue({
+          prepare: (accountId: string, id: string) =>
+            prisma.conversation.findFirstOrThrow({ where: { id, accountId } }),
+          resumePendingForCustomer: vi.fn().mockResolvedValue(undefined),
+        })
+        .overrideProvider(WhatsAppV2DeliveryService)
+        .useValue({ deliverForCustomer: vi.fn().mockResolvedValue(undefined) })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
       app.setGlobalPrefix('api');

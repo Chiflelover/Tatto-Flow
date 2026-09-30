@@ -93,6 +93,8 @@ enum ConversationState {
   READY_FOR_PRICING
   HUMAN_REVIEW
   SPECIAL_REVIEW
+  PRICE_READY
+  ASK_ADVANCE_INTENT
 
   @@map("conversation_state")
 }
@@ -111,8 +113,18 @@ enum LeadStatus {
   REQUIRES_REVIEW
   HANDOFF_TO_TATTOO_ARTIST
   COMPLETED
+  AUTO_QUOTED
+  SPECIAL_REVIEW
+  READY_TO_COORDINATE
 
   @@map("lead_status")
+}
+
+enum BookingIntent {
+  DIRECT_BOOKING
+  ARTIST_CONTACT
+
+  @@map("booking_intent")
 }
 
 enum ReadinessStatus {
@@ -166,6 +178,7 @@ model TattooArtistAccount {
   artistStyles      ArtistStyle[]
   modelVersions     PricingModelVersion[]
   adjustmentPercent Decimal               @default(0) @map("adjustment_percent") @db.Decimal(7, 2)
+  quotes            Quote[]
 
   @@map("tattoo_artist_accounts")
 }
@@ -227,8 +240,10 @@ model PricingModelVersion {
   sourceVersion     PricingModelVersion?  @relation("ModelSource", fields: [sourceVersionId], references: [id], onDelete: Restrict)
   derivedVersions   PricingModelVersion[] @relation("ModelSource")
   answers           CalibrationAnswer[]
+  quotes            Quote[]
 
   @@unique([accountId, styleId, version])
+  @@unique([id, accountId])
   @@index([accountId, styleId, status])
   @@map("pricing_model_versions")
 }
@@ -332,6 +347,7 @@ model Lead {
   colorDeclaration    ColorDeclaration?   @map("color_declaration")
   /// Backend-derived preparation and decision. Decimal measurements are serialized as strings.
   v2Preparation       Json?               @map("v2_preparation") @db.JsonB
+  bookingIntent       BookingIntent?      @map("booking_intent")
   status              LeadStatus          @default(ANALYZING)
   reviewReasons       ReviewReason[]      @default([]) @map("review_reasons")
   manualFinalPrice    Decimal?            @map("manual_final_price") @db.Decimal(10, 2)
@@ -350,13 +366,61 @@ model Lead {
   aiAnalysis          AiAnalysis?
   evaluation          LeadEvaluation?
   account             TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quote               Quote?
+  deliveries          WhatsAppDelivery[]
 
+  @@unique([id, accountId])
   @@index([accountId, status, createdAt])
   @@index([customerId])
   @@index([status, createdAt])
   @@index([pricingRuleId])
   @@index([archivedAt])
   @@map("leads")
+}
+
+/// Immutable V2 price and the complete inputs/model snapshot that produced it.
+model Quote {
+  id                       String              @id @default(uuid()) @db.Uuid
+  leadId                   String              @unique @map("lead_id") @db.Uuid
+  accountId                String              @map("account_id") @db.Uuid
+  pricingModelVersionId    String              @map("pricing_model_version_id") @db.Uuid
+  amount                   Decimal             @db.Decimal(12, 2)
+  currency                 String              @default("PEN") @db.VarChar(3)
+  targetAreaCm2            Decimal             @map("target_area_cm2") @db.Decimal(65, 30)
+  targetColorCoverage      Decimal             @map("target_color_coverage") @db.Decimal(24, 20)
+  detectedStyle            String              @map("detected_style") @db.VarChar(64)
+  generalAdjustmentPercent Decimal             @map("general_adjustment_percent") @db.Decimal(7, 2)
+  algorithmVersion         String              @map("algorithm_version") @db.VarChar(64)
+  snapshot                 Json                @db.JsonB
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  lead                     Lead                @relation(fields: [leadId, accountId], references: [id, accountId], onDelete: Cascade)
+  account                  TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  pricingModelVersion      PricingModelVersion @relation(fields: [pricingModelVersionId, accountId], references: [id, accountId], onDelete: Restrict)
+
+  @@unique([leadId, accountId])
+  @@index([accountId, createdAt])
+  @@map("quotes")
+}
+
+/// Durable delivery of V2 result, advance question and handoff confirmation.
+model WhatsAppDelivery {
+  id            String    @id @default(uuid()) @db.Uuid
+  leadId        String    @map("lead_id") @db.Uuid
+  accountId     String    @map("account_id") @db.Uuid
+  kind          String    @db.VarChar(32)
+  payload       Json      @db.JsonB
+  claimId       String?   @map("claim_id") @db.Uuid
+  leaseUntil    DateTime? @map("lease_until") @db.Timestamptz(3)
+  attemptCount  Int       @default(0) @map("attempt_count")
+  lastAttemptAt DateTime? @map("last_attempt_at") @db.Timestamptz(3)
+  lastErrorCode String?   @map("last_error_code") @db.VarChar(64)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lead          Lead      @relation(fields: [leadId, accountId], references: [id, accountId], onDelete: Cascade)
+
+  @@unique([leadId, kind])
+  @@index([accountId, sentAt])
+  @@map("whatsapp_deliveries")
 }
 
 model LeadEvaluation {

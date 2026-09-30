@@ -1,7 +1,25 @@
 const DASHBOARD_API_BASE = '/api';
 
 export type LeadStatus =
-  'ANALYZING' | 'VERIFIED' | 'REQUIRES_REVIEW' | 'HANDOFF_TO_TATTOO_ARTIST' | 'COMPLETED';
+  | 'ANALYZING'
+  | 'VERIFIED'
+  | 'REQUIRES_REVIEW'
+  | 'HANDOFF_TO_TATTOO_ARTIST'
+  | 'COMPLETED'
+  | 'AUTO_QUOTED'
+  | 'SPECIAL_REVIEW'
+  | 'READY_TO_COORDINATE';
+
+export type BookingIntent = 'DIRECT_BOOKING' | 'ARTIST_CONTACT';
+export interface V2LeadPreparation {
+  style: string | null;
+  targetAreaCm2: string | null;
+  targetColorCoverage: number | null;
+  bookingIntent: BookingIntent | null;
+  decision: 'READY_FOR_PRICING' | 'HUMAN_REVIEW' | 'SPECIAL_REVIEW' | null;
+  reviewReasons: string[];
+  specialReviewTypes: string[];
+}
 
 export type ReadinessStatus = 'LISTO' | 'REVISAR' | 'INCOMPLETO';
 export type TattooSize = 'SMALL' | 'MEDIUM' | 'LARGE';
@@ -39,6 +57,15 @@ export interface LeadSummary {
   archivedAt: string | null;
   manualFinalPrice: string | null;
   price: PriceRange | null;
+  quote: {
+    id: string;
+    amount: string;
+    currency: string;
+    pricingModelVersionId: string;
+    algorithmVersion: string;
+    createdAt: string;
+  } | null;
+  v2: V2LeadPreparation | null;
   deletable: boolean;
   readiness: {
     status: ReadinessStatus;
@@ -53,6 +80,15 @@ export interface LeadSummary {
 }
 
 export interface LeadDetail extends LeadSummary {
+  visionV2: {
+    style: string | null;
+    overallConfidence: number | null;
+    referenceMainDimensionCm: number | null;
+    referenceAreaCm2: number | null;
+    scaleReferenceType: 'NONE' | 'BODY_CONTEXT' | 'EXPLICIT_REFERENCE' | null;
+    scaleConfidence: number | null;
+    colorCoverage: number | null;
+  } | null;
   analysis: {
     detectedSize: TattooSize;
     detectedSizeLabel: string;

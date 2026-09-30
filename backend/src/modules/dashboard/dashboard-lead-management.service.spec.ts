@@ -151,7 +151,13 @@ describe('DashboardService lead management', () => {
     const where = {
       accountId: ACCOUNT_ID,
       archivedAt: null,
-      evaluation: { is: { readinessStatus: ReadinessStatus.REVISAR } },
+      OR: [
+        { evaluation: { is: { readinessStatus: ReadinessStatus.REVISAR } } },
+        {
+          conversation: { flowVersion: 'V2' },
+          status: { in: ['REQUIRES_REVIEW', 'SPECIAL_REVIEW'] },
+        },
+      ],
       selectedSize: TattooSize.MEDIUM,
       selectedDetail: DetailLevel.DETAILED,
       customer: { is: { phoneNumber: { contains: '+5199' } } },

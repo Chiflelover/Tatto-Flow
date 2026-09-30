@@ -1,3 +1,4 @@
+import { NitaV2CompletionService } from './nita-v2-completion.service.js';
 import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
@@ -52,6 +53,7 @@ describe('ChatbotService', () => {
         new ConfigService(),
         { storeReference, applyTransition: applyV2Transition } as unknown as NitaV2IntakeService,
         {} as NitaV2AnalysisService,
+        {} as NitaV2CompletionService,
       );
       const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
         content: new Uint8Array([1]),
@@ -126,6 +128,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processStart(ACCOUNT_ID, customer.phoneNumber);
@@ -177,6 +180,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const responses = await Promise.all([
@@ -225,6 +229,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
@@ -269,6 +274,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processOptionSelection(ACCOUNT_ID, customer.phoneNumber, {
@@ -320,6 +326,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processTextMessage(
@@ -413,6 +420,7 @@ describe('ChatbotService', () => {
         new ConfigService(),
         {} as NitaV2IntakeService,
         {} as NitaV2AnalysisService,
+        {} as NitaV2CompletionService,
       );
 
       const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {
@@ -453,6 +461,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processTextMessage(
@@ -503,6 +512,7 @@ describe('ChatbotService', () => {
       new ConfigService(),
       {} as NitaV2IntakeService,
       {} as NitaV2AnalysisService,
+      {} as NitaV2CompletionService,
     );
 
     const response = await service.processImageMessage(ACCOUNT_ID, customer.phoneNumber, {

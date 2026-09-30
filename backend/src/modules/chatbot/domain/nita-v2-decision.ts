@@ -18,7 +18,10 @@ export type V2ReviewReason =
   | 'STYLE_NOT_ENABLED'
   | 'MISSING_COLOR_COVERAGE'
   | 'INVALID_COLOR_COVERAGE'
-  | 'INCONSISTENT_COLOR_OBSERVATIONS';
+  | 'INCONSISTENT_COLOR_OBSERVATIONS'
+  | 'INVALID_PREPARATION'
+  | 'PRICING_MODEL_NOT_AVAILABLE'
+  | 'MODEL_NOT_APPLICABLE';
 
 export interface V2Preparation {
   version: 1;
@@ -36,6 +39,32 @@ export interface V2Preparation {
 export interface V2StyleAvailability {
   exists: boolean;
   enabled: boolean;
+}
+
+export function v2PreparationFromJson(value: Prisma.JsonValue | null): V2Preparation | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (
+    value.version !== 1 ||
+    typeof value.decision !== 'string' ||
+    !['READY_FOR_PRICING', 'HUMAN_REVIEW', 'SPECIAL_REVIEW'].includes(value.decision) ||
+    !Array.isArray(value.reviewReasons) ||
+    !value.reviewReasons.every((item) => typeof item === 'string') ||
+    !Array.isArray(value.specialReviewTypes) ||
+    !value.specialReviewTypes.every(
+      (item) => item === 'SPECIAL_REVIEW_COLOR_MODIFICATION' || item === 'EXTENSIVE_BODY_COVERAGE',
+    ) ||
+    typeof value.clientReferenceMatch !== 'string' ||
+    !['CONSISTENT', 'MODIFIED', 'UNKNOWN'].includes(value.clientReferenceMatch) ||
+    !['analysisId', 'targetMainDimensionCm', 'scaleFactor', 'targetAreaCm2'].every(
+      (key) => value[key] === null || typeof value[key] === 'string',
+    ) ||
+    !(
+      value.targetColorCoverage === null ||
+      (typeof value.targetColorCoverage === 'number' && Number.isFinite(value.targetColorCoverage))
+    )
+  )
+    return null;
+  return value as unknown as V2Preparation;
 }
 
 // Numerical precision is a technical choice, independent of confidence or commercial thresholds.

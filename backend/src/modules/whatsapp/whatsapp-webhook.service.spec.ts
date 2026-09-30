@@ -6,6 +6,7 @@ import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.rep
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
+import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
 
 const BUSINESS_ACCOUNT_ID = '1111111111';
 const PHONE_NUMBER_ID = '2222222222';
@@ -64,6 +65,9 @@ function createFixture() {
     { handleIncoming, resumePendingV2Analysis } as unknown as WhatsAppAdapter,
     { sendMessage, downloadImage } as unknown as WhatsAppCloudApiClient,
     { resolve } as unknown as WhatsAppChannelService,
+    {
+      deliverForCustomer: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WhatsAppV2DeliveryService,
   );
 
   return {

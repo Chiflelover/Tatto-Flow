@@ -32,6 +32,23 @@ class WhatsAppCloudApiError extends Error {
   }
 }
 
+export class WhatsAppSendNotAcceptedError extends ServiceUnavailableException {
+  constructor() {
+    super('No se inició el envío a WhatsApp Cloud API.');
+  }
+}
+
+export function isConfirmedWhatsAppSendFailure(error: unknown): boolean {
+  return (
+    error instanceof WhatsAppSendNotAcceptedError ||
+    error instanceof BadRequestException ||
+    (error instanceof WhatsAppCloudApiError &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.status !== 408)
+  );
+}
+
 @Injectable()
 export class WhatsAppCloudApiClient {
   private readonly logger = new SafeStructuredLogger(WhatsAppCloudApiClient.name);
@@ -42,11 +59,12 @@ export class WhatsAppCloudApiClient {
     phoneNumberId: string,
     recipient: string,
     message: WhatsAppOutboundMessage,
+    signal?: AbortSignal,
   ): Promise<void> {
     const normalizedRecipient = this.normalizeRecipient(recipient);
 
     if (message.type === 'text') {
-      await this.sendText(phoneNumberId, normalizedRecipient, message.text);
+      await this.sendText(phoneNumberId, normalizedRecipient, message.text, signal);
       return;
     }
 
@@ -58,15 +76,25 @@ export class WhatsAppCloudApiClient {
           message.body,
           message.buttons,
           message.headerImageUrl,
+          signal,
         );
         return;
-      } catch {
+      } catch (error) {
+        // Never fall back after a transport failure: the first message may be accepted.
+        if (!(error instanceof WhatsAppCloudApiError) || error.status !== 400) throw error;
         this.logger.warn('whatsapp.visual_guide.unavailable');
       }
     }
 
     try {
-      await this.sendButtons(phoneNumberId, normalizedRecipient, message.body, message.buttons);
+      await this.sendButtons(
+        phoneNumberId,
+        normalizedRecipient,
+        message.body,
+        message.buttons,
+        undefined,
+        signal,
+      );
     } catch (error) {
       if (!(error instanceof WhatsAppCloudApiError) || error.status !== 400) {
         throw error;
@@ -76,6 +104,7 @@ export class WhatsAppCloudApiClient {
         phoneNumberId,
         normalizedRecipient,
         `${message.body}\n\n${message.buttons.map(({ title }) => `- ${title}`).join('\n')}`,
+        signal,
       );
     }
   }
@@ -132,18 +161,27 @@ export class WhatsAppCloudApiClient {
     };
   }
 
-  private async sendText(phoneNumberId: string, recipient: string, text: string): Promise<void> {
+  private async sendText(
+    phoneNumberId: string,
+    recipient: string,
+    text: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (!text.trim()) {
       return;
     }
 
-    await this.postMessage(phoneNumberId, {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: recipient,
-      type: 'text',
-      text: { preview_url: false, body: text },
-    });
+    await this.postMessage(
+      phoneNumberId,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { preview_url: false, body: text },
+      },
+      signal,
+    );
   }
 
   private async sendButtons(
@@ -152,6 +190,7 @@ export class WhatsAppCloudApiClient {
     body: string,
     buttons: Array<{ id: string; title: string }>,
     headerImageUrl?: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (
       !body.trim() ||
@@ -166,27 +205,40 @@ export class WhatsAppCloudApiClient {
       throw new BadRequestException('La imagen del mensaje interactivo no es válida.');
     }
 
-    await this.postMessage(phoneNumberId, {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: recipient,
-      type: 'interactive',
-      interactive: {
-        type: 'button',
-        ...(headerImageUrl ? { header: { type: 'image', image: { link: headerImageUrl } } } : {}),
-        body: { text: body },
-        action: {
-          buttons: buttons.map(({ id, title }) => ({
-            type: 'reply',
-            reply: { id, title },
-          })),
+    await this.postMessage(
+      phoneNumberId,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          ...(headerImageUrl ? { header: { type: 'image', image: { link: headerImageUrl } } } : {}),
+          body: { text: body },
+          action: {
+            buttons: buttons.map(({ id, title }) => ({
+              type: 'reply',
+              reply: { id, title },
+            })),
+          },
         },
       },
-    });
+      signal,
+    );
   }
 
-  private async postMessage(phoneNumberId: string, body: object): Promise<void> {
-    const configuration = getWhatsAppGraphConfiguration(this.config, phoneNumberId);
+  private async postMessage(
+    phoneNumberId: string,
+    body: object,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let configuration: ReturnType<typeof getWhatsAppGraphConfiguration>;
+    try {
+      configuration = getWhatsAppGraphConfiguration(this.config, phoneNumberId);
+    } catch {
+      throw new WhatsAppSendNotAcceptedError();
+    }
     const url = `${this.graphBaseUrl(configuration.version)}/${configuration.phoneNumberId}/messages`;
     const response = await this.safeFetch(url, {
       method: 'POST',
@@ -195,6 +247,7 @@ export class WhatsAppCloudApiClient {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {

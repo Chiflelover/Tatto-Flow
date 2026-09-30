@@ -23,6 +23,8 @@ import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
 import { V2_ANALYSIS_STATES, V2_DECISION_STATES } from './domain/nita-v2-decision.js';
+import { NitaV2CompletionService } from './nita-v2-completion.service.js';
+import { v2BookingSelection } from './domain/nita-v2-messages.js';
 
 const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
   `Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/${minimum} y S/${maximum}.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.`;
@@ -56,6 +58,8 @@ export class ChatbotService {
     private readonly v2Intake: NitaV2IntakeService,
     @Inject(NitaV2AnalysisService)
     private readonly v2Analysis: NitaV2AnalysisService,
+    @Inject(NitaV2CompletionService)
+    private readonly v2Completion: NitaV2CompletionService,
   ) {}
 
   async processStart(accountId: string, customerIdentifier: string): Promise<ChatbotResponse> {
@@ -92,8 +96,9 @@ export class ChatbotService {
     return this.processInput(accountId, customerIdentifier, { type: 'option', ...selection });
   }
 
-  resumePendingV2Analysis(accountId: string, customerIdentifier: string): Promise<void> {
-    return this.v2Analysis.resumePendingForCustomer(accountId, customerIdentifier);
+  async resumePendingV2Analysis(accountId: string, customerIdentifier: string): Promise<void> {
+    await this.v2Analysis.resumePendingForCustomer(accountId, customerIdentifier);
+    await this.v2Completion.resumePendingForCustomer(accountId, customerIdentifier);
   }
 
   processTextMessage(
@@ -236,6 +241,31 @@ export class ChatbotService {
 
     const { conversation } = access;
 
+    if (
+      conversation.flowVersion === FlowVersion.V2 &&
+      conversation.currentState === ConversationState.ASK_ADVANCE_INTENT
+    ) {
+      const intent = v2BookingSelection(input);
+      if (intent) {
+        const handedOff = await this.v2Completion.recordIntent(
+          accountId,
+          conversation.id,
+          conversation.customerId,
+          intent,
+        );
+        return this.silentResponse(handedOff.currentState);
+      }
+      return input.type === 'text'
+        ? {
+            state: conversation.currentState,
+            messages: [
+              { type: 'text', text: 'Selecciona “Separar cita” o “Contactarme” para continuar.' },
+            ],
+            options: [],
+          }
+        : this.silentResponse(conversation.currentState);
+    }
+
     if (this.isV2ProcessingOrDecided(conversation))
       return this.silentResponse(conversation.currentState);
 
@@ -288,16 +318,22 @@ export class ChatbotService {
 
     const defaultVersion =
       this.configService.get<FlowVersion>('NITA_DEFAULT_FLOW_VERSION') ?? FlowVersion.V1;
-    const { conversation } =
+    const access =
       defaultVersion === FlowVersion.V1
         ? await this.conversationsService.getOrCreateActive(accountId, customer.id)
         : await this.conversationsService.getOrCreateActive(accountId, customer.id, defaultVersion);
+    let conversation = access.conversation;
 
     if (
       conversation.flowVersion === FlowVersion.V2 &&
       V2_ANALYSIS_STATES.some((state) => state === conversation.currentState)
     )
-      return { conversation: await this.v2Analysis.process(accountId, conversation.id) };
+      conversation = await this.v2Analysis.process(accountId, conversation.id);
+    if (
+      conversation.flowVersion === FlowVersion.V2 &&
+      [...V2_DECISION_STATES, 'PRICE_READY'].some((state) => state === conversation.currentState)
+    )
+      conversation = await this.v2Completion.prepare(accountId, conversation.id);
     return { conversation };
   }
 
@@ -338,7 +374,8 @@ export class ChatbotService {
       result.conversation.currentState === ConversationState.READY_FOR_ANALYSIS
     ) {
       const prepared = await this.v2Analysis.process(conversation.accountId, conversation.id);
-      return { ...decision.response, state: prepared.currentState };
+      const completed = await this.v2Completion.prepare(conversation.accountId, prepared.id);
+      return { ...decision.response, state: completed.currentState };
     }
     return decision.response;
   }
@@ -346,7 +383,7 @@ export class ChatbotService {
   private isV2ProcessingOrDecided(conversation: Conversation): boolean {
     return (
       conversation.flowVersion === FlowVersion.V2 &&
-      [...V2_ANALYSIS_STATES, ...V2_DECISION_STATES].some(
+      [...V2_ANALYSIS_STATES, ...V2_DECISION_STATES, 'PRICE_READY', 'ASK_ADVANCE_INTENT'].some(
         (state) => state === conversation.currentState,
       )
     );

@@ -6,6 +6,7 @@ import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.rep
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
+import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
 
 @Module({
   imports: [ChatbotModule],
@@ -16,6 +17,7 @@ import { WhatsAppChannelService } from './whatsapp-channel.service.js';
     WhatsAppSignatureService,
     WhatsAppWebhookService,
     WhatsAppChannelService,
+    WhatsAppV2DeliveryService,
   ],
 })
 export class WhatsAppModule {}

@@ -17,15 +17,21 @@ export interface ModelParameters {
 }
 
 const decimal = (value: string | number) => new Prisma.Decimal(value);
+type DecimalInput = string | number | Prisma.Decimal;
 
-function interpolate(points: { x: number; y: string }[], x: number): Prisma.Decimal | null {
-  if (!Number.isFinite(x) || x < points[0].x || x > points[points.length - 1].x) return null;
-  const exact = points.find((point) => point.x === x);
+function interpolate(
+  points: { x: number; y: string }[],
+  value: DecimalInput,
+): Prisma.Decimal | null {
+  const x = new Prisma.Decimal(value);
+  if (!points.length || !x.isFinite() || x.lt(points[0].x) || x.gt(points[points.length - 1].x))
+    return null;
+  const exact = points.find((point) => x.eq(point.x));
   if (exact) return decimal(exact.y);
-  const upper = points.findIndex((point) => point.x > x);
+  const upper = points.findIndex((point) => x.lt(point.x));
   const left = points[upper - 1];
   const right = points[upper];
-  const portion = decimal(x).minus(left.x).div(decimal(right.x).minus(left.x));
+  const portion = x.minus(left.x).div(decimal(right.x).minus(left.x));
   return decimal(left.y).plus(decimal(right.y).minus(left.y).mul(portion));
 }
 
@@ -84,8 +90,8 @@ export function buildModel(points: ModelPoint[]): ModelParameters {
 
 export function interpolatePrice(
   model: ModelParameters,
-  areaCm2: number,
-  colorCoverage: number,
+  areaCm2: DecimalInput,
+  colorCoverage: DecimalInput,
   adjustmentPercent: string | number,
 ): { applicable: true; pricePen: string } | { applicable: false; reason: 'MODEL_NOT_APPLICABLE' } {
   if (model.algorithmVersion !== ALGORITHM_VERSION)

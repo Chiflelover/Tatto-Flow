@@ -1,3 +1,4 @@
+import { NitaV2CompletionService } from './nita-v2-completion.service.js';
 import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
@@ -89,6 +90,7 @@ function createFixture(options: FixtureOptions = {}) {
     new ConfigService({ BUSINESS_HOURS_TEST_PHONE: businessHoursTestPhone }),
     {} as NitaV2IntakeService,
     {} as NitaV2AnalysisService,
+    {} as NitaV2CompletionService,
   );
 
   return {

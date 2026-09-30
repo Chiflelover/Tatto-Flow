@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  BookingIntent,
   ConversationState,
   ColorDeclaration,
   DetailLevel,
@@ -44,7 +45,8 @@ export type ChatbotOptionSelection =
   | { stage: 'detail'; value: DetailLevel }
   | { stage: 'firstTattoo'; value: boolean }
   | { stage: 'sameSize'; value: boolean }
-  | { stage: 'color'; value: ColorDeclaration };
+  | { stage: 'color'; value: ColorDeclaration }
+  | { stage: 'bookingIntent'; value: BookingIntent };
 
 export type ChatbotInput =
   | ({ type: 'option' } & ChatbotOptionSelection)

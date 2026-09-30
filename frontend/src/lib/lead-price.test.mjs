@@ -25,3 +25,17 @@ test('keeps showing an automatic range when no manual price exists', () => {
 test('shows a dash when the lead has no price', () => {
   assert.equal(leadPriceLabel({ manualFinalPrice: null, price: null }), '—');
 });
+
+test('shows one approximate amount from a V2 quote without creating a range', () => {
+  assert.equal(
+    leadPriceLabel({ manualFinalPrice: null, price: null, quote: { amount: '850.00' } }),
+    'S/850.00 aprox.',
+  );
+});
+
+test('keeps historical manual prices when a quote is also present', () => {
+  assert.equal(
+    leadPriceLabel({ manualFinalPrice: '650.00', price: null, quote: { amount: '850.00' } }),
+    'S/650.00',
+  );
+});

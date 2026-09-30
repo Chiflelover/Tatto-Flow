@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
 import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
+import { StatusBadge } from '@/components/dashboard/lead-card';
+import { bookingIntentLabel, v2ReviewLabel } from '@/lib/v2-lead';
 import {
   completeLead,
   dashboardErrorMessage,
@@ -277,13 +279,38 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
         <div className={styles.detailReadiness}>
           <div>
             <span>Estado</span>
-            <ReadinessBadge status={lead.evaluation?.status ?? null} />
+            {lead.v2 ? (
+              <StatusBadge status={lead.status} label={lead.statusLabel} />
+            ) : (
+              <ReadinessBadge status={lead.evaluation?.status ?? null} />
+            )}
           </div>
           <div>
             <span>Confianza</span>
-            <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+            {lead.v2 ? (
+              <strong>
+                {lead.visionV2?.overallConfidence != null
+                  ? `${Math.round(lead.visionV2.overallConfidence * 100)}%`
+                  : 'Pendiente'}
+              </strong>
+            ) : (
+              <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+            )}
           </div>
         </div>
+
+        {lead.v2 && (lead.v2.reviewReasons.length > 0 || lead.v2.specialReviewTypes.length > 0) && (
+          <div className={styles.detailBlockers}>
+            <strong>
+              {lead.v2.decision === 'SPECIAL_REVIEW' ? 'Revisión especial' : 'Revisión ordinaria'}
+            </strong>
+            <ul>
+              {[...lead.v2.specialReviewTypes, ...lead.v2.reviewReasons].map((code) => (
+                <li key={code}>{v2ReviewLabel(code)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {lead.evaluation && lead.evaluation.blockers.length > 0 && (
           <div className={styles.detailBlockers}>
@@ -306,14 +333,47 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               <h2>Datos del cliente</h2>
             </div>
             <dl className={styles.dataList}>
-              <div>
-                <dt>Tamaño</dt>
-                <dd>{lead.selectedSizeLabel ?? 'Pendiente'}</dd>
-              </div>
-              <div>
-                <dt>Nivel de detalle</dt>
-                <dd>{lead.selectedDetailLabel ?? 'Pendiente'}</dd>
-              </div>
+              {lead.v2 ? (
+                <>
+                  <div>
+                    <dt>Estilo</dt>
+                    <dd>{lead.v2.style ?? 'Pendiente'}</dd>
+                  </div>
+                  <div>
+                    <dt>Área objetivo</dt>
+                    <dd>{lead.v2.targetAreaCm2 ? `${lead.v2.targetAreaCm2} cm²` : 'Pendiente'}</dd>
+                  </div>
+                  <div>
+                    <dt>Color objetivo</dt>
+                    <dd>
+                      {lead.v2.targetColorCoverage !== null
+                        ? `${Math.round(lead.v2.targetColorCoverage * 100)}%`
+                        : 'Pendiente'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Intención del cliente</dt>
+                    <dd>{bookingIntentLabel(lead.v2.bookingIntent)}</dd>
+                  </div>
+                  {lead.v2.bookingIntent === 'DIRECT_BOOKING' && (
+                    <div>
+                      <dt>Coordinación</dt>
+                      <dd>Listo para coordinar. Aún no hay una cita reservada.</dd>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <dt>Tamaño</dt>
+                    <dd>{lead.selectedSizeLabel ?? 'Pendiente'}</dd>
+                  </div>
+                  <div>
+                    <dt>Nivel de detalle</dt>
+                    <dd>{lead.selectedDetailLabel ?? 'Pendiente'}</dd>
+                  </div>
+                </>
+              )}
               <div>
                 <dt>Zona corporal</dt>
                 <dd>{lead.bodyPart ?? 'Pendiente'}</dd>
@@ -325,7 +385,40 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             <div className={styles.panelHeader}>
               <h2>Análisis de la referencia</h2>
             </div>
-            {lead.analysis ? (
+            {lead.visionV2 ? (
+              <dl className={styles.analysisFacts}>
+                <div>
+                  <dt>Estilo observado</dt>
+                  <dd>{lead.visionV2.style ?? 'Sin identificar'}</dd>
+                </div>
+                <div>
+                  <dt>Dimensión de referencia</dt>
+                  <dd>
+                    {lead.visionV2.referenceMainDimensionCm !== null
+                      ? `${lead.visionV2.referenceMainDimensionCm} cm`
+                      : 'Sin estimación'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Área de referencia</dt>
+                  <dd>
+                    {lead.visionV2.referenceAreaCm2 !== null
+                      ? `${lead.visionV2.referenceAreaCm2} cm²`
+                      : 'Sin estimación'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Escala</dt>
+                  <dd>
+                    {lead.visionV2.scaleReferenceType === 'EXPLICIT_REFERENCE'
+                      ? 'Referencia física'
+                      : lead.visionV2.scaleReferenceType === 'BODY_CONTEXT'
+                        ? 'Estimación anatómica'
+                        : 'Sin escala'}
+                  </dd>
+                </div>
+              </dl>
+            ) : lead.analysis ? (
               <dl className={styles.analysisFacts}>
                 <div>
                   <dt>Tamaño detectado</dt>
@@ -374,67 +467,69 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             )}
           </section>
 
-          <section className={`${styles.panel} ${styles.evaluationPanel}`}>
-            <button
-              className={styles.evaluationToggle}
-              type="button"
-              aria-expanded={evaluationExpanded}
-              aria-controls="lead-evaluation-details"
-              onClick={() => setEvaluationExpanded((current) => !current)}
-            >
-              <span>Cómo se calculó la evaluación</span>
-              <strong>{evaluationExpanded ? 'Ocultar' : 'Mostrar'}</strong>
-            </button>
+          {!lead.v2 && (
+            <section className={`${styles.panel} ${styles.evaluationPanel}`}>
+              <button
+                className={styles.evaluationToggle}
+                type="button"
+                aria-expanded={evaluationExpanded}
+                aria-controls="lead-evaluation-details"
+                onClick={() => setEvaluationExpanded((current) => !current)}
+              >
+                <span>Cómo se calculó la evaluación</span>
+                <strong>{evaluationExpanded ? 'Ocultar' : 'Mostrar'}</strong>
+              </button>
 
-            <div
-              id="lead-evaluation-details"
-              className={styles.evaluationContent}
-              hidden={!evaluationExpanded}
-            >
-              {lead.evaluation ? (
-                <>
-                  {lead.evaluation.contributions.length > 0 && (
-                    <div className={styles.evaluationGroup}>
-                      <h3>Contribuciones y penalizaciones</h3>
-                      <ul className={styles.contributionList}>
-                        {lead.evaluation.contributions.map((contribution) => (
-                          <li key={contribution.ruleId}>
-                            <strong
-                              className={
-                                contribution.points >= 0
-                                  ? styles.positivePoints
-                                  : styles.negativePoints
-                              }
-                            >
-                              {contribution.points > 0 ? '+' : ''}
-                              {contribution.points}
-                            </strong>
-                            <span>{contribution.reason}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+              <div
+                id="lead-evaluation-details"
+                className={styles.evaluationContent}
+                hidden={!evaluationExpanded}
+              >
+                {lead.evaluation ? (
+                  <>
+                    {lead.evaluation.contributions.length > 0 && (
+                      <div className={styles.evaluationGroup}>
+                        <h3>Contribuciones y penalizaciones</h3>
+                        <ul className={styles.contributionList}>
+                          {lead.evaluation.contributions.map((contribution) => (
+                            <li key={contribution.ruleId}>
+                              <strong
+                                className={
+                                  contribution.points >= 0
+                                    ? styles.positivePoints
+                                    : styles.negativePoints
+                                }
+                              >
+                                {contribution.points > 0 ? '+' : ''}
+                                {contribution.points}
+                              </strong>
+                              <span>{contribution.reason}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                  {gateExplanations.length > 0 && (
-                    <div className={styles.evaluationGroup}>
-                      <h3>Motivos que influyeron en el estado</h3>
-                      <ul className={styles.evaluationBlockerList}>
-                        {gateExplanations.map((explanation) => (
-                          <li key={explanation}>{explanation}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className={styles.unevaluatedDetail}>
-                  <ReadinessBadge status={null} />
-                  <p>Este lead histórico todavía no tiene una evaluación de preparación.</p>
-                </div>
-              )}
-            </div>
-          </section>
+                    {gateExplanations.length > 0 && (
+                      <div className={styles.evaluationGroup}>
+                        <h3>Motivos que influyeron en el estado</h3>
+                        <ul className={styles.evaluationBlockerList}>
+                          {gateExplanations.map((explanation) => (
+                            <li key={explanation}>{explanation}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className={styles.unevaluatedDetail}>
+                    <ReadinessBadge status={null} />
+                    <p>Este lead histórico todavía no tiene una evaluación de preparación.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
         </div>
 
         <aside className={styles.detailSide}>
@@ -446,6 +541,11 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               <div className={styles.finalPriceDisplay}>
                 <span>Precio final</span>
                 <p className={styles.priceDisplay}>S/{lead.manualFinalPrice}</p>
+              </div>
+            ) : lead.quote ? (
+              <div className={styles.finalPriceDisplay}>
+                <span>Precio aproximado</span>
+                <p className={styles.priceDisplay}>S/{lead.quote.amount}</p>
               </div>
             ) : (
               <p className={styles.priceDisplay}>

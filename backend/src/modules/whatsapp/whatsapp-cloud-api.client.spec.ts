@@ -2,7 +2,10 @@ import { BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAX_CHAT_IMAGE_SIZE_BYTES } from '../chatbot/chatbot.constants.js';
 import { WHATSAPP_BUTTON_IDS } from '../chatbot/whatsapp/whatsapp.adapter.js';
-import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
+import {
+  isConfirmedWhatsAppSendFailure,
+  WhatsAppCloudApiClient,
+} from './whatsapp-cloud-api.client.js';
 
 const TEST_CONFIGURATION = {
   WHATSAPP_ACCESS_TOKEN: 'test-access-token',
@@ -141,6 +144,46 @@ describe('WhatsAppCloudApiClient', () => {
       { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' } },
       { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' } },
     ]);
+  });
+
+  it('identifies a configuration failure before any request as confirmed not sent', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new WhatsAppCloudApiClient(new ConfigService({}));
+    const error = await client
+      .sendMessage('1234567890', '51999999999', { type: 'text', text: 'Precio' })
+      .catch((value: unknown) => value);
+    expect(isConfirmedWhatsAppSendFailure(error)).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 429, 408, 500])(
+    'classifies HTTP %s without assuming server timeouts failed',
+    async (status) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status })),
+      );
+      const error = await createClient()
+        .sendMessage('1234567890', '51999999999', { type: 'text', text: 'Precio' })
+        .catch((value: unknown) => value);
+      expect(isConfirmedWhatsAppSendFailure(error)).toBe(status === 400 || status === 429);
+    },
+  );
+
+  it('does not retry an interactive message without its image after an ambiguous transport failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('Connection lost'));
+    vi.stubGlobal('fetch', fetchMock);
+    const error = await createClient()
+      .sendMessage('1234567890', '51999999999', {
+        type: 'interactive_buttons',
+        body: 'Pregunta',
+        headerImageUrl: SIZE_GUIDE_URL,
+        buttons: [{ id: 'option', title: 'Elegir' }],
+      })
+      .catch((value: unknown) => value);
+    expect(isConfirmedWhatsAppSendFailure(error)).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('retries the same size buttons without the image when its delivery fails', async () => {

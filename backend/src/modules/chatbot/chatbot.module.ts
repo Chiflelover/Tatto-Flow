@@ -9,9 +9,17 @@ import { WhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
 import { StorageModule } from '../storage/storage.module.js';
+import { PricingModule } from '../pricing/pricing.module.js';
+import { NitaV2CompletionService } from './nita-v2-completion.service.js';
 
 @Module({
-  imports: [CustomersModule, ConversationsModule, ImageAnalysisModule, StorageModule],
+  imports: [
+    CustomersModule,
+    ConversationsModule,
+    ImageAnalysisModule,
+    StorageModule,
+    PricingModule,
+  ],
   providers: [
     ChatbotService,
     NitaBusinessHoursService,
@@ -19,6 +27,7 @@ import { StorageModule } from '../storage/storage.module.js';
     WhatsAppAdapter,
     NitaV2IntakeService,
     NitaV2AnalysisService,
+    NitaV2CompletionService,
   ],
   exports: [ChatbotService, WhatsAppAdapter],
 })

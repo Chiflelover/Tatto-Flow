@@ -19,6 +19,8 @@ import {
   EmptyState,
 } from '@/components/dashboard/feedback-state';
 import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
+import { StatusBadge } from '@/components/dashboard/lead-card';
+import { bookingIntentLabel } from '@/lib/v2-lead';
 import {
   archiveLead,
   dashboardErrorMessage,
@@ -517,7 +519,7 @@ function LeadsWorkspace() {
                         : 'none'
                     }
                   >
-                    {sortableHeading('size', 'Tamaño')}
+                    {sortableHeading('size', 'Tamaño / área')}
                   </th>
                   <th
                     aria-sort={
@@ -528,7 +530,7 @@ function LeadsWorkspace() {
                         : 'none'
                     }
                   >
-                    {sortableHeading('detail', 'Detalle')}
+                    {sortableHeading('detail', 'Detalle / estilo')}
                   </th>
                   <th
                     aria-sort={
@@ -579,13 +581,43 @@ function LeadsWorkspace() {
                   >
                     <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
                     <td className={styles.priceCell}>{leadPriceLabel(lead)}</td>
-                    <td>{lead.selectedSizeLabel ?? '—'}</td>
-                    <td>{lead.selectedDetailLabel ?? '—'}</td>
                     <td>
-                      <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+                      {lead.v2
+                        ? lead.v2.targetAreaCm2
+                          ? `${lead.v2.targetAreaCm2} cm²`
+                          : '—'
+                        : (lead.selectedSizeLabel ?? '—')}
                     </td>
                     <td>
-                      <ReadinessBadge status={lead.readiness?.status ?? null} />
+                      {lead.v2 ? (
+                        <>
+                          {lead.v2.style ?? '—'}
+                          <small>
+                            {lead.v2.targetColorCoverage === null
+                              ? 'Color pendiente'
+                              : `${Math.round(lead.v2.targetColorCoverage * 100)}% color`}
+                          </small>
+                        </>
+                      ) : (
+                        (lead.selectedDetailLabel ?? '—')
+                      )}
+                    </td>
+                    <td>
+                      {lead.v2 ? (
+                        '—'
+                      ) : (
+                        <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+                      )}
+                    </td>
+                    <td>
+                      {lead.v2 ? (
+                        <>
+                          <StatusBadge status={lead.status} label={lead.statusLabel} />
+                          <small>{bookingIntentLabel(lead.v2.bookingIntent)}</small>
+                        </>
+                      ) : (
+                        <ReadinessBadge status={lead.readiness?.status ?? null} />
+                      )}
                     </td>
                     <td className={styles.dateCell}>{dateLabel(lead.createdAt)}</td>
                     <td>{renderActions(lead)}</td>
@@ -608,22 +640,50 @@ function LeadsWorkspace() {
               >
                 <div className={styles.mobileLeadTopline}>
                   <strong>{lead.customerPhoneNumber}</strong>
-                  <ReadinessBadge status={lead.readiness?.status ?? null} />
+                  {lead.v2 ? (
+                    <StatusBadge status={lead.status} label={lead.statusLabel} />
+                  ) : (
+                    <ReadinessBadge status={lead.readiness?.status ?? null} />
+                  )}
                 </div>
-                <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+                {!lead.v2 && (
+                  <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
+                )}
                 <dl>
                   <div>
-                    <dt>Tamaño</dt>
-                    <dd>{lead.selectedSizeLabel ?? '—'}</dd>
+                    <dt>{lead.v2 ? 'Área objetivo' : 'Tamaño'}</dt>
+                    <dd>
+                      {lead.v2
+                        ? lead.v2.targetAreaCm2
+                          ? `${lead.v2.targetAreaCm2} cm²`
+                          : '—'
+                        : (lead.selectedSizeLabel ?? '—')}
+                    </dd>
                   </div>
                   <div>
-                    <dt>Detalle</dt>
-                    <dd>{lead.selectedDetailLabel ?? '—'}</dd>
+                    <dt>{lead.v2 ? 'Estilo' : 'Detalle'}</dt>
+                    <dd>{lead.v2 ? (lead.v2.style ?? '—') : (lead.selectedDetailLabel ?? '—')}</dd>
                   </div>
                   <div>
                     <dt>Precio</dt>
                     <dd>{leadPriceLabel(lead)}</dd>
                   </div>
+                  {lead.v2 && (
+                    <>
+                      <div>
+                        <dt>Color objetivo</dt>
+                        <dd>
+                          {lead.v2.targetColorCoverage === null
+                            ? 'Pendiente'
+                            : `${Math.round(lead.v2.targetColorCoverage * 100)}%`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Intención</dt>
+                        <dd>{bookingIntentLabel(lead.v2.bookingIntent)}</dd>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <dt>Fecha</dt>
                     <dd>{dateLabel(lead.createdAt)}</dd>

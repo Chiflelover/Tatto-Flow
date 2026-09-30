@@ -136,6 +136,7 @@ function createFixture(options: FixtureOptions = {}) {
         targetSizeCm: null,
         colorDeclaration: null,
         v2Preparation: null,
+        bookingIntent: null,
         status: LeadStatus.ANALYZING,
         reviewReasons: [],
         manualFinalPrice: null,

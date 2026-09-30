@@ -29,6 +29,9 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
   [LeadStatus.REQUIRES_REVIEW]: 'Requiere revisión',
   [LeadStatus.HANDOFF_TO_TATTOO_ARTIST]: 'En atención',
   [LeadStatus.COMPLETED]: 'Finalizado',
+  [LeadStatus.AUTO_QUOTED]: 'Cotización automática lista',
+  [LeadStatus.SPECIAL_REVIEW]: 'Revisión especial',
+  [LeadStatus.READY_TO_COORDINATE]: 'Listo para coordinar',
 };
 
 const REVIEW_MESSAGES: Record<ReviewReason, string> = {

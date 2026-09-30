@@ -33,8 +33,23 @@ import type {
   LeadSortField,
   SortOrder,
 } from './dto/dashboard.dto.js';
+import { v2PreparationFromJson } from '../chatbot/domain/nita-v2-decision.js';
 
 const SUMMARY_INCLUDE = {
+  conversation: { select: { flowVersion: true } },
+  quote: {
+    select: {
+      id: true,
+      amount: true,
+      currency: true,
+      detectedStyle: true,
+      targetAreaCm2: true,
+      targetColorCoverage: true,
+      pricingModelVersionId: true,
+      algorithmVersion: true,
+      createdAt: true,
+    },
+  },
   customer: { select: { phoneNumber: true } },
   evaluation: true,
   aiAnalysis: {
@@ -42,11 +57,14 @@ const SUMMARY_INCLUDE = {
       analysisVersion: true,
       sizeConfidence: true,
       detailConfidence: true,
+      style: true,
     },
   },
 } satisfies Prisma.LeadInclude;
 
 const DETAIL_INCLUDE = {
+  conversation: { select: { flowVersion: true } },
+  quote: SUMMARY_INCLUDE.quote,
   customer: { select: { phoneNumber: true } },
   aiAnalysis: true,
   evaluation: true,
@@ -60,6 +78,7 @@ interface LeadDeletionCandidate {
   calculatedMinPrice: Prisma.Decimal | null;
   calculatedMaxPrice: Prisma.Decimal | null;
   evaluation: { readinessStatus: ReadinessStatus } | null;
+  quote?: { id: string } | null;
 }
 
 const RETAINED_IMAGE_MESSAGE = 'Imagen no disponible.';
@@ -68,6 +87,9 @@ const COMPLETABLE_LEAD_STATUSES = [
   LeadStatus.VERIFIED,
   LeadStatus.REQUIRES_REVIEW,
   LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
+  LeadStatus.AUTO_QUOTED,
+  LeadStatus.SPECIAL_REVIEW,
+  LeadStatus.READY_TO_COORDINATE,
 ];
 
 @Injectable()
@@ -88,15 +110,32 @@ export class DashboardService {
           accountId,
           archivedAt: null,
           status: {
-            in: [LeadStatus.ANALYZING, LeadStatus.VERIFIED, LeadStatus.REQUIRES_REVIEW],
+            in: [
+              LeadStatus.ANALYZING,
+              LeadStatus.VERIFIED,
+              LeadStatus.REQUIRES_REVIEW,
+              LeadStatus.AUTO_QUOTED,
+              LeadStatus.SPECIAL_REVIEW,
+              LeadStatus.READY_TO_COORDINATE,
+            ],
           },
         },
       }),
       this.prisma.lead.count({
-        where: { accountId, archivedAt: null, status: LeadStatus.VERIFIED },
+        where: {
+          accountId,
+          archivedAt: null,
+          status: {
+            in: [LeadStatus.VERIFIED, LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
+          },
+        },
       }),
       this.prisma.lead.count({
-        where: { accountId, archivedAt: null, status: LeadStatus.REQUIRES_REVIEW },
+        where: {
+          accountId,
+          archivedAt: null,
+          status: { in: [LeadStatus.REQUIRES_REVIEW, LeadStatus.SPECIAL_REVIEW] },
+        },
       }),
       this.prisma.lead.count({
         where: { accountId, archivedAt: null, status: LeadStatus.COMPLETED },
@@ -199,11 +238,33 @@ export class DashboardService {
   async completeLead(accountId: string, leadId: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: leadId, accountId },
-      select: { status: true },
+      select: { status: true, conversation: { select: { id: true, flowVersion: true } } },
     });
 
     if (!lead) {
       throw new NotFoundException('No encontramos ese pedido.');
+    }
+
+    if (lead.conversation?.flowVersion === 'V2') {
+      const conversationId = lead.conversation.id;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
+        const updated = await tx.lead.updateMany({
+          where: {
+            id: leadId,
+            accountId,
+            status: { in: [...COMPLETABLE_LEAD_STATUSES, 'COMPLETED'] },
+          },
+          data: { status: 'COMPLETED' },
+        });
+        if (!updated.count)
+          throw new ConflictException('Este pedido todavía no puede marcarse como finalizado.');
+        await tx.conversation.updateMany({
+          where: { id: conversationId, accountId, flowVersion: 'V2', status: 'ACTIVE' },
+          data: { currentState: 'HANDOFF_TO_TATTOO_ARTIST', status: 'COMPLETED' },
+        });
+      });
+      return this.getLead(accountId, leadId);
     }
 
     if (lead.status === LeadStatus.COMPLETED) {
@@ -291,6 +352,7 @@ export class DashboardService {
         calculatedMaxPrice: true,
         evaluation: { select: { readinessStatus: true } },
         images: { select: { storagePath: true } },
+        quote: { select: { id: true } },
       },
     });
 
@@ -361,18 +423,39 @@ export class DashboardService {
   }
 
   private filterWhere(accountId: string, query: LeadListQueryDto): Prisma.LeadWhereInput {
-    const statusByFilter: Partial<Record<LeadFilter, LeadStatus>> = {
-      verified: LeadStatus.VERIFIED,
-      'requires-review': LeadStatus.REQUIRES_REVIEW,
-      completed: LeadStatus.COMPLETED,
+    const statusByFilter: Partial<Record<LeadFilter, LeadStatus[]>> = {
+      verified: [LeadStatus.VERIFIED, LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
+      'requires-review': [LeadStatus.REQUIRES_REVIEW, LeadStatus.SPECIAL_REVIEW],
+      completed: [LeadStatus.COMPLETED],
     };
     const operationalStatus = statusByFilter[query.filter];
 
     return {
       accountId,
       archivedAt: query.archived ? { not: null } : null,
-      ...(operationalStatus ? { status: operationalStatus } : {}),
-      ...(query.status ? { evaluation: { is: { readinessStatus: query.status } } } : {}),
+      ...(operationalStatus ? { status: { in: operationalStatus } } : {}),
+      ...(query.status
+        ? {
+            OR: [
+              { evaluation: { is: { readinessStatus: query.status } } },
+              {
+                conversation: { flowVersion: 'V2' },
+                status: {
+                  in:
+                    query.status === 'LISTO'
+                      ? [
+                          LeadStatus.AUTO_QUOTED,
+                          LeadStatus.READY_TO_COORDINATE,
+                          LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
+                        ]
+                      : query.status === 'REVISAR'
+                        ? [LeadStatus.REQUIRES_REVIEW, LeadStatus.SPECIAL_REVIEW]
+                        : [LeadStatus.ANALYZING],
+                },
+              },
+            ],
+          }
+        : {}),
       ...(query.size ? { selectedSize: query.size } : {}),
       ...(query.detail ? { selectedDetail: query.detail } : {}),
       ...(query.search ? { customer: { is: { phoneNumber: { contains: query.search } } } } : {}),
@@ -403,6 +486,11 @@ export class DashboardService {
   }
 
   private toSummary(lead: SummaryLead) {
+    const preparation = v2PreparationFromJson(lead.v2Preparation);
+    const v2 =
+      lead.conversation?.flowVersion === 'V2' ||
+      !!preparation ||
+      lead.aiAnalysis?.analysisVersion === 'V2';
     return {
       id: lead.id,
       customerPhoneNumber: lead.customer.phoneNumber,
@@ -417,6 +505,31 @@ export class DashboardService {
       archivedAt: lead.archivedAt?.toISOString() ?? null,
       manualFinalPrice: this.manualFinalPrice(lead.manualFinalPrice),
       price: this.priceRange(lead.calculatedMinPrice, lead.calculatedMaxPrice),
+      quote: lead.quote
+        ? {
+            id: lead.quote.id,
+            amount: lead.quote.amount.toFixed(2),
+            currency: lead.quote.currency,
+            pricingModelVersionId: lead.quote.pricingModelVersionId,
+            algorithmVersion: lead.quote.algorithmVersion,
+            createdAt: lead.quote.createdAt.toISOString(),
+          }
+        : null,
+      v2: v2
+        ? {
+            style: lead.quote?.detectedStyle ?? lead.aiAnalysis?.style ?? null,
+            targetAreaCm2:
+              lead.quote?.targetAreaCm2.toString() ?? preparation?.targetAreaCm2 ?? null,
+            targetColorCoverage:
+              lead.quote?.targetColorCoverage.toNumber() ??
+              preparation?.targetColorCoverage ??
+              null,
+            bookingIntent: lead.bookingIntent ?? null,
+            decision: preparation?.decision ?? null,
+            reviewReasons: preparation?.reviewReasons ?? [],
+            specialReviewTypes: preparation?.specialReviewTypes ?? [],
+          }
+        : null,
       deletable: this.isLeadDeletable(lead),
       readiness: lead.evaluation
         ? {
@@ -442,6 +555,18 @@ export class DashboardService {
     const analysis = lead.aiAnalysis ? toImageAnalysisResult(lead.aiAnalysis) : null;
     return {
       ...this.toSummary(lead),
+      visionV2:
+        lead.aiAnalysis?.analysisVersion === 'V2'
+          ? {
+              style: lead.aiAnalysis.style,
+              overallConfidence: lead.aiAnalysis.overallConfidence,
+              referenceMainDimensionCm: lead.aiAnalysis.referenceMainDimensionCm,
+              referenceAreaCm2: lead.aiAnalysis.referenceAreaCm2,
+              scaleReferenceType: lead.aiAnalysis.scaleReferenceType,
+              scaleConfidence: lead.aiAnalysis.scaleConfidence,
+              colorCoverage: lead.aiAnalysis.colorCoverage,
+            }
+          : null,
       analysis: analysis
         ? {
             detectedSize: analysis.detectedSize,
@@ -480,6 +605,7 @@ export class DashboardService {
   }
 
   private isLeadDeletable(lead: LeadDeletionCandidate): boolean {
+    if (lead.quote) return false;
     if (lead.status === LeadStatus.COMPLETED) {
       return true;
     }

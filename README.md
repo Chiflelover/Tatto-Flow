@@ -294,8 +294,9 @@ Remove-Item Env:RUN_NITA_V2_DB_TESTS
 
 Al completar el intake, V2 procesa `READY_FOR_ANALYSIS → ANALYZING` y termina internamente
 en `READY_FOR_PRICING`, `HUMAN_REVIEW` o `SPECIAL_REVIEW`. Reutiliza AI Vision V2 y su fallback.
-No calcula precios, selecciona modelos, genera cotizaciones V2, ejecuta scoring V2 ni envía
-mensajes finales de precio, revisión o reserva. El acuse de recepción del intake se conserva.
+Esta etapa de preparación no calcula precios ni selecciona modelos, genera cotizaciones V2
+o ejecuta scoring V2. La Fase 5 continúa con el resultado y su comunicación.
+El acuse de recepción del intake se conserva.
 
 `AiAnalysis` mantiene las observaciones y metadata originales. `Lead.v2Preparation` guarda
 una estructura versionada con decisión, diagnósticos, las dos señales especiales, comparación
@@ -327,6 +328,45 @@ análisis/reintentos del proveedor.
 La suite `nita-v2-database` comprueba el intake con preparación sustituida por un stub.
 `nita-v2-preparation` comprueba el pipeline completo por webhook con la BD de desarrollo,
 cuentas y estilo aislados, IA/Storage/WhatsApp simulados, y limpieza posterior.
+
+### Nita V2 — cotización y avance (Fase 5)
+
+`READY_FOR_PRICING` selecciona el modelo ACTIVE de la misma cuenta y estilo habilitado.
+El servicio de pricing reutiliza `AREA_COLOR_SEPARABLE_V1`; acepta las medidas Decimal
+preparadas y no extrapola área ni color. Sin modelo aplicable, el caso pasa a revisión ordinaria
+con diagnóstico `PRICING_MODEL_NOT_AVAILABLE` o `MODEL_NOT_APPLICABLE`.
+
+`Quote` conserva un único importe en PEN por lead, modelo/version/algoritmo, entradas,
+ajuste general y snapshot de curvas y casos. La base de datos bloquea actualizaciones
+de Quote. Los cambios de calibración o ajuste afectan nuevos casos; los reintentos reutilizan
+la Quote existente. Los rangos y precios manuales históricos de V1 siguen separados.
+
+La cotización queda en `PRICE_READY` mientras se entrega un precio aproximado único
+y la pregunta de avance. Tras registrar el envío de la pregunta, pasa a `ASK_ADVANCE_INTENT`.
+La elección expresa se persiste como `DIRECT_BOOKING` (`READY_TO_COORDINATE`) o
+`ARTIST_CONTACT`; ambos terminan en `HANDOFF_TO_TATTOO_ARTIST`. Coordinar no equivale
+a una cita reservada. Las revisiones reciben un mensaje humano, pasan a handoff y conservan
+`bookingIntent = null`, sin preguntar por una cita ni mostrar precio.
+
+`WhatsAppDelivery` conserva el mensaje final, sus intentos, claim temporal, error y `sentAt`.
+Resultado, pregunta y confirmación tienen claves únicas por lead; lo ya registrado como enviado
+no se repite. Un fallo confirmado antes del envío o un rechazo explícito permite reintentar
+el webhook sin recalcular la Quote. Los envíos V2
+utilizan un límite HTTP de 30 s y un claim de 60 s, con procesamiento fuera de las transacciones.
+No se agrega un job de envío automático. El dashboard muestra Quote, estado V2, estilo,
+área/color objetivo, revisión e intención, sin calcular scoring V2.
+
+La suite `nita-v2-completion` comprueba pricing, histórico inmutable, aislamiento,
+concurrencia, fallos de entrega y ambas intenciones con BD de desarrollo y proveedores
+simulados. Antes de activar V2 sigue pendiente la deuda sobre AI Vision y el webhook.
+El registro distingue pendiente (sin `sentAt`, error ni claim), enviado (`sentAt`), fallo
+confirmado (`DELIVERY_FAILED`) y resultado desconocido (`DELIVERY_UNKNOWN`). Un timeout,
+error de transporte/servidor, fallo al persistir después de la aceptación o claim vencido
+queda desconocido y bloquea el reenvío automático y los mensajes siguientes. Un claim vigente
+sigue en proceso. Si falla incluso la persistencia del diagnóstico, el claim conservado impide
+un nuevo envío y queda desconocido al vencer. No se agrega resolución automática o manual
+de resultados desconocidos en esta fase; requieren comprobación operativa antes de continuar.
+No se ofrece una garantía absoluta de entrega exactamente una vez.
 
 Backend:
 

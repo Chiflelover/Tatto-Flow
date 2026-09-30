@@ -9,6 +9,9 @@ const STATUS_CLASS: Record<LeadStatus, string> = {
   REQUIRES_REVIEW: styles.statusReview,
   HANDOFF_TO_TATTOO_ARTIST: styles.statusAttention,
   COMPLETED: styles.statusCompleted,
+  AUTO_QUOTED: styles.statusVerified,
+  SPECIAL_REVIEW: styles.statusReview,
+  READY_TO_COORDINATE: styles.statusAttention,
 };
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('es-PE', {
@@ -32,9 +35,18 @@ export function LeadCard({ lead }: { lead: LeadSummary }) {
           <StatusBadge status={lead.status} label={lead.statusLabel} />
         </div>
         <p className={styles.leadDescription}>
-          {lead.selectedSizeLabel ?? 'Tamaño pendiente'} ·{' '}
-          {lead.selectedDetailLabel ?? 'Detalle pendiente'} · {lead.bodyPart ?? 'Zona pendiente'}
+          {lead.v2
+            ? `${lead.v2.style ?? 'Estilo pendiente'} · ${lead.v2.targetAreaCm2 ?? 'Área pendiente'}${lead.v2.targetAreaCm2 ? ' cm²' : ''}`
+            : `${lead.selectedSizeLabel ?? 'Tamaño pendiente'} · ${lead.selectedDetailLabel ?? 'Detalle pendiente'}`}{' '}
+          · {lead.bodyPart ?? 'Zona pendiente'}
         </p>
+        {lead.v2?.bookingIntent && (
+          <p className={styles.leadDescription}>
+            {lead.v2.bookingIntent === 'DIRECT_BOOKING'
+              ? 'Solicita coordinar una cita'
+              : 'Solicita contacto del tatuador'}
+          </p>
+        )}
         <div className={styles.leadBottomline}>
           <span>{DATE_FORMATTER.format(new Date(lead.createdAt))}</span>
           <strong>{price === '—' ? 'Precio pendiente' : price}</strong>

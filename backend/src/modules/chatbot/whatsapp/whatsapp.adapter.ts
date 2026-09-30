@@ -7,6 +7,7 @@ import {
   TattooSize,
 } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
+import { V2_BOOKING_BUTTON_IDS } from '../domain/nita-v2-messages.js';
 import type {
   ChatbotImageInput,
   ChatbotOption,
@@ -53,6 +54,8 @@ const DETAIL_BUTTON_ID_BY_VALUE: Readonly<Record<DetailLevel, string>> = {
 };
 
 const SELECTION_BY_BUTTON_ID = new Map<string, ChatbotOptionSelection>([
+  [V2_BOOKING_BUTTON_IDS.DIRECT_BOOKING, { stage: 'bookingIntent', value: 'DIRECT_BOOKING' }],
+  [V2_BOOKING_BUTTON_IDS.ARTIST_CONTACT, { stage: 'bookingIntent', value: 'ARTIST_CONTACT' }],
   [WHATSAPP_BUTTON_IDS.SIZE_SMALL, { stage: 'size', value: TattooSize.SMALL }],
   [WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, { stage: 'size', value: TattooSize.MEDIUM }],
   [WHATSAPP_BUTTON_IDS.SIZE_LARGE, { stage: 'size', value: TattooSize.LARGE }],

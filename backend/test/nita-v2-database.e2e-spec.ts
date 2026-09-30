@@ -13,6 +13,8 @@ import { ChatbotService } from '../src/modules/chatbot/chatbot.service.js';
 import { NitaBusinessHoursService } from '../src/modules/chatbot/nita-business-hours.service.js';
 import { NitaV2IntakeService } from '../src/modules/chatbot/nita-v2-intake.service.js';
 import { NitaV2AnalysisService } from '../src/modules/chatbot/nita-v2-analysis.service.js';
+import { NitaV2CompletionService } from '../src/modules/chatbot/nita-v2-completion.service.js';
+import { WhatsAppV2DeliveryService } from '../src/modules/whatsapp/whatsapp-v2-delivery.service.js';
 import { WHATSAPP_BUTTON_IDS as Buttons } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
 import { ConversationAbandonmentService } from '../src/modules/conversations/conversation-abandonment.service.js';
 import { ImageAnalysisWorkflowService } from '../src/modules/image-analysis/image-analysis-workflow.service.js';
@@ -80,6 +82,14 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           process: (accountId: string, id: string) =>
             prisma.conversation.findFirstOrThrow({ where: { id, accountId } }),
         })
+        .overrideProvider(NitaV2CompletionService)
+        .useValue({
+          prepare: (accountId: string, id: string) =>
+            prisma.conversation.findFirstOrThrow({ where: { id, accountId } }),
+          resumePendingForCustomer: vi.fn().mockResolvedValue(undefined),
+        })
+        .overrideProvider(WhatsAppV2DeliveryService)
+        .useValue({ deliverForCustomer: vi.fn().mockResolvedValue(undefined) })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
       app.setGlobalPrefix('api');
