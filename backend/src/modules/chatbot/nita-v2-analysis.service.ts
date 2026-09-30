@@ -26,6 +26,13 @@ import {
 export const V2_ANALYSIS_TIMEOUT_MS = 90_000;
 export const V2_ANALYSIS_LEASE_MS = 120_000;
 
+export class V2AnalysisRetryableError extends ServiceUnavailableException {
+  constructor() {
+    super('El análisis temporalmente no disponible quedó pendiente.');
+  }
+}
+class AnalysisDeadlineError extends Error {}
+
 const ownedConversation = (accountId: string, id: string) => ({
   where: { id, accountId },
   include: {
@@ -66,7 +73,11 @@ export class NitaV2AnalysisService {
       throw new ServiceUnavailableException('El análisis sigue en proceso. Reintenta más tarde.');
   }
 
-  async process(accountId: string, conversationId: string): Promise<Conversation> {
+  async process(
+    accountId: string,
+    conversationId: string,
+    options: { retryTransientFailures?: boolean } = {},
+  ): Promise<Conversation> {
     const claim = await this.claim(accountId, conversationId);
     if (!claim.attemptId) return claim.conversation;
     const attemptId = claim.attemptId;
@@ -95,6 +106,12 @@ export class NitaV2AnalysisService {
               failure = 'INVALID_ANALYSIS';
             }
           } catch (error) {
+            if (
+              options.retryTransientFailures &&
+              ((error instanceof AIProviderError && error.retryable) ||
+                error instanceof AnalysisDeadlineError)
+            )
+              throw new V2AnalysisRetryableError();
             failure =
               error instanceof AIProviderError && error.category === 'INVALID_RESPONSE'
                 ? 'INVALID_ANALYSIS'
@@ -108,7 +125,7 @@ export class NitaV2AnalysisService {
       }
       return await this.finalize(accountId, conversationId, attemptId, result, failure);
     } catch (error) {
-      // A DB failure releases ownership so a webhook retry can resume immediately.
+      // A failure releases ownership so a durable job retry can resume immediately.
       // If the DB is unavailable, the persistent lease still expires for a later retry.
       try {
         await this.prisma.conversation.updateMany({
@@ -254,7 +271,10 @@ export class NitaV2AnalysisService {
       return await Promise.race([
         work,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Analysis deadline exceeded')), milliseconds);
+          timer = setTimeout(
+            () => reject(new AnalysisDeadlineError('Analysis deadline exceeded')),
+            milliseconds,
+          );
           timer.unref();
         }),
       ]);

@@ -7,6 +7,8 @@ import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
+import { WhatsAppJobRepository } from './whatsapp-job.repository.js';
+import { WhatsAppJobDispatcher } from './whatsapp-job-dispatcher.service.js';
 
 const BUSINESS_ACCOUNT_ID = '1111111111';
 const PHONE_NUMBER_ID = '2222222222';
@@ -55,6 +57,8 @@ function createFixture() {
         id === PHONE_NUMBER_ID ? { accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID } : null,
       ),
     );
+  const enqueueIfV2 = vi.fn().mockResolvedValue({ queued: false });
+  const wake = vi.fn();
   const service = new WhatsAppWebhookService(
     new ConfigService({
       WHATSAPP_BUSINESS_ACCOUNT_ID: BUSINESS_ACCOUNT_ID,
@@ -68,6 +72,8 @@ function createFixture() {
     {
       deliverForCustomer: vi.fn().mockResolvedValue(undefined),
     } as unknown as WhatsAppV2DeliveryService,
+    { enqueueIfV2 } as unknown as WhatsAppJobRepository,
+    { wake } as unknown as WhatsAppJobDispatcher,
   );
 
   return {
@@ -80,6 +86,8 @@ function createFixture() {
     sendMessage,
     downloadImage,
     resolve,
+    enqueueIfV2,
+    wake,
   };
 }
 
@@ -88,6 +96,27 @@ function observeServiceLogs(service: WhatsAppWebhookService) {
 }
 
 describe('WhatsAppWebhookService', () => {
+  it('ACKs a persisted V2 image event without download, conversation processing or send', async () => {
+    const f = createFixture();
+    f.enqueueIfV2.mockResolvedValue({ queued: true, customerId: 'customer-id' });
+    await expect(
+      f.service.handleWebhook(
+        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'image', image: { id: 'media-id' } }),
+        'signature',
+      ),
+    ).resolves.toEqual({ received: true });
+    expect(f.enqueueIfV2).toHaveBeenCalledWith(
+      MESSAGE_ID,
+      expect.objectContaining({ accountId: ACCOUNT_ID }),
+      CUSTOMER,
+      { type: 'image', mediaId: 'media-id' },
+    );
+    expect(f.wake).toHaveBeenCalledWith(ACCOUNT_ID, 'customer-id');
+    expect(f.downloadImage).not.toHaveBeenCalled();
+    expect(f.handleIncoming).not.toHaveBeenCalled();
+    expect(f.sendMessage).not.toHaveBeenCalled();
+    expect(f.claim).not.toHaveBeenCalled();
+  });
   it('resumes only pending V2 work on duplicate delivery without replaying the message', async () => {
     const f = createFixture();
     f.claim.mockResolvedValue(false);

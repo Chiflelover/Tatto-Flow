@@ -12,6 +12,8 @@ import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 import type { WhatsAppChannel } from '../../generated/prisma/client.js';
 import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
+import { WhatsAppJobRepository, type WhatsAppJobInput } from './whatsapp-job.repository.js';
+import { WhatsAppJobDispatcher } from './whatsapp-job-dispatcher.service.js';
 
 interface MetaMessage {
   id?: unknown;
@@ -66,6 +68,8 @@ export class WhatsAppWebhookService {
     private readonly channels: WhatsAppChannelService,
     @Inject(WhatsAppV2DeliveryService)
     private readonly v2Delivery: WhatsAppV2DeliveryService,
+    @Inject(WhatsAppJobRepository) private readonly jobs: WhatsAppJobRepository,
+    @Inject(WhatsAppJobDispatcher) private readonly dispatcher: WhatsAppJobDispatcher,
   ) {}
 
   verifyChallenge(mode: unknown, verifyToken: unknown, challenge: unknown): string {
@@ -191,6 +195,18 @@ export class WhatsAppWebhookService {
       throw new BadRequestException('El remitente de WhatsApp no es válido.');
     }
 
+    const input = this.jobInput(message);
+    if (!input) return;
+    const queued = await this.jobs.enqueueIfV2(messageId, channel, customerIdentifier, input);
+    if (queued.queued && queued.customerId) {
+      this.logger.info('whatsapp.message.queued', {
+        whatsappMessageId: messageId,
+        accountId: channel.accountId,
+      });
+      this.dispatcher.wake(channel.accountId, queued.customerId);
+      return;
+    }
+
     if (!(await this.messages.claim(messageId))) {
       await this.adapter.resumePendingV2Analysis(channel.accountId, customerIdentifier);
       await this.v2Delivery.deliverForCustomer(
@@ -300,6 +316,26 @@ export class WhatsAppWebhookService {
       default:
         return null;
     }
+  }
+
+  private jobInput(message: MetaMessage): WhatsAppJobInput | null {
+    if (message.type === 'text')
+      return { type: 'text', text: this.requiredString(message.text?.body, 'texto', 1000) };
+    if (message.type === 'image')
+      return { type: 'image', mediaId: this.requiredString(message.image?.id, 'media ID') };
+    if (message.type === 'interactive') {
+      if (message.interactive?.type === 'button_reply')
+        return {
+          type: 'button_reply',
+          buttonId: this.requiredString(message.interactive.button_reply?.id, 'button reply'),
+        };
+      if (message.interactive?.type === 'list_reply')
+        return {
+          type: 'button_reply',
+          buttonId: this.requiredString(message.interactive.list_reply?.id, 'list reply'),
+        };
+    }
+    return null;
   }
 
   private parsePayload(rawBody: Buffer): Record<string, unknown> {

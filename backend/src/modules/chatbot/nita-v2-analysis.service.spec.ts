@@ -8,9 +8,14 @@ import {
   visionResult,
 } from '../../../test/fixtures/vision-v2.js';
 import { ImageAnalysisV2Service } from '../image-analysis/image-analysis-v2.service.js';
+import { AIProviderError } from '../image-analysis/ai-provider.error.js';
 import type { ImageAnalysisService } from '../image-analysis/image-analysis.service.js';
 import { InMemoryStorageService } from '../storage/in-memory-storage.service.js';
-import { NitaV2AnalysisService, V2_ANALYSIS_TIMEOUT_MS } from './nita-v2-analysis.service.js';
+import {
+  NitaV2AnalysisService,
+  V2_ANALYSIS_TIMEOUT_MS,
+  V2AnalysisRetryableError,
+} from './nita-v2-analysis.service.js';
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -321,6 +326,49 @@ describe('Nita V2 analysis ownership and persistence', () => {
     late.resolve(visionResult());
     await Promise.resolve();
     expect(f.current().stored).toBeNull();
+    expect(f.upsertAnalysis).not.toHaveBeenCalled();
+  });
+  it('keeps transient provider failures retryable for durable processing', async () => {
+    const f = await fixture();
+    f.analyzeTattooImageV2.mockRejectedValueOnce(
+      new AIProviderError({
+        provider: 'gemini',
+        category: 'TIMEOUT',
+        retryable: true,
+        fallbackEligible: false,
+      }),
+    );
+    await expect(
+      f.service.process(f.accountId, f.conversationId, { retryTransientFailures: true }),
+    ).rejects.toBeInstanceOf(V2AnalysisRetryableError);
+    expect(f.current()).toMatchObject({
+      stored: null,
+      preparation: null,
+      conversation: {
+        currentState: 'ANALYZING',
+        v2AnalysisClaimId: null,
+        v2AnalysisLeaseUntil: null,
+      },
+    });
+    await f.service.process(f.accountId, f.conversationId, { retryTransientFailures: true });
+    expect(f.current().conversation.currentState).toBe('READY_FOR_PRICING');
+    expect(f.upsertAnalysis).toHaveBeenCalledOnce();
+  });
+  it('releases a timed out durable analysis and never persists the late response', async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    const late = deferred<ReturnType<typeof visionResult>>();
+    f.analyzeTattooImageV2.mockReturnValueOnce(late.promise);
+    const rejected = expect(
+      f.service.process(f.accountId, f.conversationId, { retryTransientFailures: true }),
+    ).rejects.toBeInstanceOf(V2AnalysisRetryableError);
+    await vi.advanceTimersByTimeAsync(V2_ANALYSIS_TIMEOUT_MS + 1);
+    await rejected;
+    late.resolve(visionResult());
+    await Promise.resolve();
+    expect(f.current().stored).toBeNull();
+    expect(f.current().preparation).toBeNull();
+    expect(f.current().conversation.v2AnalysisClaimId).toBeNull();
     expect(f.upsertAnalysis).not.toHaveBeenCalled();
   });
   it('reviews missing Storage without calling the provider', async () => {

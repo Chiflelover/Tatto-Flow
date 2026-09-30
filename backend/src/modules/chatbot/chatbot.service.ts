@@ -6,6 +6,7 @@ import {
   FlowVersion,
   LeadStatus,
   type Conversation,
+  type Prisma,
 } from '../../generated/prisma/client.js';
 import { ConversationsService } from '../conversations/conversations.service.js';
 import { CustomersService } from '../customers/customers.service.js';
@@ -17,6 +18,7 @@ import type {
   ChatbotInput,
   ChatbotOptionSelection,
   ChatbotResponse,
+  DurableV2Input,
 } from './domain/chatbot.types.js';
 import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
@@ -92,8 +94,14 @@ export class ChatbotService {
     accountId: string,
     customerIdentifier: string,
     selection: ChatbotOptionSelection,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
-    return this.processInput(accountId, customerIdentifier, { type: 'option', ...selection });
+    return this.processInput(
+      accountId,
+      customerIdentifier,
+      { type: 'option', ...selection },
+      durable,
+    );
   }
 
   async resumePendingV2Analysis(accountId: string, customerIdentifier: string): Promise<void> {
@@ -105,16 +113,23 @@ export class ChatbotService {
     accountId: string,
     customerIdentifier: string,
     message: string,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
-    return this.processInput(accountId, customerIdentifier, { type: 'text', value: message });
+    return this.processInput(
+      accountId,
+      customerIdentifier,
+      { type: 'text', value: message },
+      durable,
+    );
   }
 
   async processImageMessage(
     accountId: string,
     customerIdentifier: string,
     image: ChatbotImageInput,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
-    const access = await this.getConversationAccess(accountId, customerIdentifier);
+    const access = await this.getConversationAccess(accountId, customerIdentifier, durable);
 
     if (access.response) {
       return access.response;
@@ -132,13 +147,21 @@ export class ChatbotService {
     const decision = this.stateMachine.process(conversation, { type: 'image', image });
     if (conversation.flowVersion === FlowVersion.V2) {
       if (decision.update.currentState !== ConversationState.ASK_SAME_SIZE)
-        return decision.ignored ? decision.response : this.applyDecision(conversation, decision);
+        return decision.ignored
+          ? decision.response
+          : this.applyDecision(conversation, decision, durable);
       try {
-        const result = await this.v2Intake.storeReference(accountId, conversation.id, image);
+        const result = await this.v2Intake.storeReference(
+          accountId,
+          conversation.id,
+          image,
+          durable ? (tx, updated) => durable.checkpoint(tx, updated, decision.response) : undefined,
+        );
         return result.applied
           ? decision.response
           : this.silentResponse(result.conversation.currentState);
       } catch (error) {
+        if (durable) throw error;
         if (error instanceof LeadImageStorageException || error instanceof BadRequestException) {
           return this.applyDecision(conversation, {
             update: {},
@@ -232,8 +255,9 @@ export class ChatbotService {
     accountId: string,
     customerIdentifier: string,
     input: ChatbotInput,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
-    const access = await this.getConversationAccess(accountId, customerIdentifier);
+    const access = await this.getConversationAccess(accountId, customerIdentifier, durable);
 
     if (access.response) {
       return access.response;
@@ -252,6 +276,10 @@ export class ChatbotService {
           conversation.id,
           conversation.customerId,
           intent,
+          durable
+            ? (tx, updated) =>
+                durable.checkpoint(tx, updated, this.silentResponse(updated.currentState))
+            : undefined,
         );
         return this.silentResponse(handedOff.currentState);
       }
@@ -279,12 +307,13 @@ export class ChatbotService {
       return decision.response;
     }
 
-    return this.applyDecision(conversation, decision);
+    return this.applyDecision(conversation, decision, durable);
   }
 
   private async getConversationAccess(
     accountId: string,
     customerIdentifier: string,
+    durable?: DurableV2Input,
   ): Promise<ConversationAccess> {
     const now = new Date();
     const customer = await this.customersService.findOrCreateByPhoneNumber(
@@ -316,8 +345,9 @@ export class ChatbotService {
       };
     }
 
-    const defaultVersion =
-      this.configService.get<FlowVersion>('NITA_DEFAULT_FLOW_VERSION') ?? FlowVersion.V1;
+    const defaultVersion = durable
+      ? FlowVersion.V2
+      : (this.configService.get<FlowVersion>('NITA_DEFAULT_FLOW_VERSION') ?? FlowVersion.V1);
     const access =
       defaultVersion === FlowVersion.V1
         ? await this.conversationsService.getOrCreateActive(accountId, customer.id)
@@ -325,11 +355,13 @@ export class ChatbotService {
     let conversation = access.conversation;
 
     if (
+      !durable &&
       conversation.flowVersion === FlowVersion.V2 &&
       V2_ANALYSIS_STATES.some((state) => state === conversation.currentState)
     )
       conversation = await this.v2Analysis.process(accountId, conversation.id);
     if (
+      !durable &&
       conversation.flowVersion === FlowVersion.V2 &&
       [...V2_DECISION_STATES, 'PRICE_READY'].some((state) => state === conversation.currentState)
     )
@@ -346,6 +378,7 @@ export class ChatbotService {
   private async applyDecision(
     conversation: Conversation,
     decision: ChatbotDecision,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
     const result =
       conversation.flowVersion === FlowVersion.V2
@@ -354,6 +387,12 @@ export class ChatbotService {
             conversation.id,
             conversation.currentState,
             decision.update,
+            ...(durable
+              ? [
+                  (tx: Prisma.TransactionClient, updated: Conversation) =>
+                    durable.checkpoint(tx, updated, decision.response),
+                ]
+              : []),
           )
         : await this.conversationsService.applyTransition(
             conversation.id,
@@ -370,6 +409,7 @@ export class ChatbotService {
     }
 
     if (
+      !durable &&
       result.conversation.flowVersion === FlowVersion.V2 &&
       result.conversation.currentState === ConversationState.READY_FOR_ANALYSIS
     ) {

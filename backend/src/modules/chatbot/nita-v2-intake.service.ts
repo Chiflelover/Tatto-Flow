@@ -28,6 +28,7 @@ export class NitaV2IntakeService {
     accountId: string,
     conversationId: string,
     image: ChatbotImageInput,
+    checkpoint?: (tx: Prisma.TransactionClient, conversation: Conversation) => Promise<void>,
   ): Promise<ConversationTransitionResult> {
     let uploadedPath: string | undefined;
     try {
@@ -60,6 +61,7 @@ export class NitaV2IntakeService {
             where: { id: conversationId },
             data: { currentState: ConversationState.ASK_SAME_SIZE, lastActivityAt: new Date() },
           });
+          if (checkpoint) await checkpoint(transaction, updated);
           return { applied: true, conversation: updated };
         },
         { timeout: 30_000 },
@@ -82,6 +84,7 @@ export class NitaV2IntakeService {
     conversationId: string,
     expectedState: ConversationState,
     update: ChatbotConversationUpdate,
+    checkpoint?: (tx: Prisma.TransactionClient, conversation: Conversation) => Promise<void>,
   ): Promise<ConversationTransitionResult> {
     return this.prisma.$transaction(async (transaction) => {
       const conversation = await this.lockConversation(transaction, accountId, conversationId);
@@ -112,6 +115,7 @@ export class NitaV2IntakeService {
         }
         await transaction.lead.update({ where: { id: lead.id }, data: v2IntakeSnapshot(updated) });
       }
+      if (checkpoint) await checkpoint(transaction, updated);
       return { applied: true, conversation: updated };
     });
   }

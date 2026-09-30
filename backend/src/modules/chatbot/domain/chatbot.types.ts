@@ -7,6 +7,7 @@ import type {
   LeadStatus,
   ReviewReason,
   TattooSize,
+  Prisma,
 } from '../../../generated/prisma/client.js';
 import type {
   ImageAnalysisResult,
@@ -36,6 +37,14 @@ export interface ChatbotResponse {
       pricingRule: QuotationPricingSnapshot | null;
     };
   };
+}
+
+export interface DurableV2Input {
+  checkpoint(
+    tx: Prisma.TransactionClient,
+    conversation: Conversation,
+    response: ChatbotResponse,
+  ): Promise<void>;
 }
 
 export type ChatbotImageInput = TattooImageInput;

@@ -7,10 +7,14 @@ import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
+import { WhatsAppJobRepository } from './whatsapp-job.repository.js';
+import { WhatsAppJobProcessor } from './whatsapp-job-processor.service.js';
+import { WhatsAppJobDispatcher } from './whatsapp-job-dispatcher.service.js';
+import { WhatsAppJobsController } from './whatsapp-jobs.controller.js';
 
 @Module({
   imports: [ChatbotModule],
-  controllers: [WhatsAppController],
+  controllers: [WhatsAppController, WhatsAppJobsController],
   providers: [
     WhatsAppCloudApiClient,
     WhatsAppInboundMessageRepository,
@@ -18,6 +22,9 @@ import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
     WhatsAppWebhookService,
     WhatsAppChannelService,
     WhatsAppV2DeliveryService,
+    WhatsAppJobRepository,
+    WhatsAppJobProcessor,
+    WhatsAppJobDispatcher,
   ],
 })
 export class WhatsAppModule {}

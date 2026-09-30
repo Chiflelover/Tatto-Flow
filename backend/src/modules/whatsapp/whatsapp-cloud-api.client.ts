@@ -109,7 +109,11 @@ export class WhatsAppCloudApiClient {
     }
   }
 
-  async downloadImage(phoneNumberId: string, mediaId: string): Promise<ChatbotImageInput> {
+  async downloadImage(
+    phoneNumberId: string,
+    mediaId: string,
+    signal?: AbortSignal,
+  ): Promise<ChatbotImageInput> {
     if (!mediaId || mediaId.length > 255) {
       throw new BadRequestException('La imagen de WhatsApp no contiene un media ID válido.');
     }
@@ -121,6 +125,7 @@ export class WhatsAppCloudApiClient {
     metadataUrl.searchParams.set('phone_number_id', configuration.phoneNumberId);
     const metadata = await this.requestJson<MetaMediaMetadata>(metadataUrl, {
       headers: this.authorizationHeaders(configuration.accessToken),
+      ...(signal ? { signal } : {}),
     });
 
     const mediaUrl = this.parseMediaDownloadUrl(metadata.url);
@@ -135,6 +140,7 @@ export class WhatsAppCloudApiClient {
     const response = await this.safeFetch(mediaUrl, {
       headers: this.authorizationHeaders(configuration.accessToken),
       redirect: 'error',
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {

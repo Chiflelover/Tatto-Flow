@@ -31,6 +31,7 @@ import {
   WhatsAppSendNotAcceptedError,
 } from '../src/modules/whatsapp/whatsapp-cloud-api.client.js';
 import { WhatsAppModule } from '../src/modules/whatsapp/whatsapp.module.js';
+import { WhatsAppJobRepository } from '../src/modules/whatsapp/whatsapp-job.repository.js';
 import { VISION_IMAGE, visionResult } from './fixtures/vision-v2.js';
 
 describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
@@ -125,6 +126,9 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           CalibrationModule,
         ],
       })
+        // Earlier phase suites isolate their synchronous services; durable ingress is tested separately.
+        .overrideProvider(WhatsAppJobRepository)
+        .useValue({ enqueueIfV2: vi.fn().mockResolvedValue({ queued: false }) })
         .overrideProvider(WhatsAppCloudApiClient)
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)

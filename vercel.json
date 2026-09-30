@@ -9,7 +9,10 @@
       "root": "backend/",
       "framework": "nestjs",
       "buildCommand": "npm run build",
-      "outputDirectory": "dist"
+      "outputDirectory": "dist",
+      "functions": {
+        "src/main.ts": { "maxDuration": 300 }
+      }
     }
   },
   "rewrites": [

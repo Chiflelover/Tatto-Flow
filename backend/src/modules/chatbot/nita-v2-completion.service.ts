@@ -121,6 +121,7 @@ export class NitaV2CompletionService {
     conversationId: string,
     customerId: string,
     intent: BookingIntent,
+    checkpoint?: (tx: Prisma.TransactionClient, conversation: Conversation) => Promise<void>,
   ): Promise<Conversation> {
     return this.prisma.$transaction(async (tx) => {
       await this.lock(tx, accountId, conversationId);
@@ -153,7 +154,7 @@ export class NitaV2CompletionService {
         type: 'text',
         text: 'Gracias. El tatuador se pondrá en contacto contigo para coordinar los siguientes pasos.',
       });
-      return tx.conversation.update({
+      const updated = await tx.conversation.update({
         where: { id: conversationId, accountId },
         data: {
           currentState: 'HANDOFF_TO_TATTOO_ARTIST',
@@ -161,6 +162,8 @@ export class NitaV2CompletionService {
           lastActivityAt: new Date(),
         },
       });
+      if (checkpoint) await checkpoint(tx, updated);
+      return updated;
     });
   }
 

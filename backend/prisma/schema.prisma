@@ -179,6 +179,7 @@ model TattooArtistAccount {
   modelVersions     PricingModelVersion[]
   adjustmentPercent Decimal               @default(0) @map("adjustment_percent") @db.Decimal(7, 2)
   quotes            Quote[]
+  whatsappJobs      WhatsAppJob[]
 
   @@map("tattoo_artist_accounts")
 }
@@ -268,7 +269,9 @@ model WhatsAppChannel {
   createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   account       TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  jobs          WhatsAppJob[]
 
+  @@unique([id, accountId])
   @@map("whatsapp_channels")
 }
 
@@ -295,8 +298,10 @@ model Customer {
   conversations           Conversation[]
   leads                   Lead[]
   account                 TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  whatsappJobs            WhatsAppJob[]
 
   @@unique([accountId, phoneNumber])
+  @@unique([id, accountId])
   @@map("customers")
 }
 
@@ -402,23 +407,27 @@ model Quote {
   @@map("quotes")
 }
 
-/// Durable delivery of V2 result, advance question and handoff confirmation.
+/// Durable V2 intake responses, result, advance question and handoff confirmation.
 model WhatsAppDelivery {
-  id            String    @id @default(uuid()) @db.Uuid
-  leadId        String    @map("lead_id") @db.Uuid
-  accountId     String    @map("account_id") @db.Uuid
-  kind          String    @db.VarChar(32)
-  payload       Json      @db.JsonB
-  claimId       String?   @map("claim_id") @db.Uuid
-  leaseUntil    DateTime? @map("lease_until") @db.Timestamptz(3)
-  attemptCount  Int       @default(0) @map("attempt_count")
-  lastAttemptAt DateTime? @map("last_attempt_at") @db.Timestamptz(3)
-  lastErrorCode String?   @map("last_error_code") @db.VarChar(64)
-  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  lead          Lead      @relation(fields: [leadId, accountId], references: [id, accountId], onDelete: Cascade)
+  id            String       @id @default(uuid()) @db.Uuid
+  leadId        String?      @map("lead_id") @db.Uuid
+  jobId         String?      @map("job_id") @db.Uuid
+  sequence      Int          @default(0)
+  accountId     String       @map("account_id") @db.Uuid
+  kind          String       @db.VarChar(32)
+  payload       Json         @db.JsonB
+  claimId       String?      @map("claim_id") @db.Uuid
+  leaseUntil    DateTime?    @map("lease_until") @db.Timestamptz(3)
+  attemptCount  Int          @default(0) @map("attempt_count")
+  lastAttemptAt DateTime?    @map("last_attempt_at") @db.Timestamptz(3)
+  lastErrorCode String?      @map("last_error_code") @db.VarChar(64)
+  sentAt        DateTime?    @map("sent_at") @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  lead          Lead?        @relation(fields: [leadId, accountId], references: [id, accountId], onDelete: Cascade)
+  job           WhatsAppJob? @relation(fields: [jobId, accountId], references: [id, accountId], onDelete: Cascade)
 
   @@unique([leadId, kind])
+  @@unique([jobId, sequence])
   @@index([accountId, sentAt])
   @@map("whatsapp_deliveries")
 }
@@ -523,9 +532,58 @@ model PricingRuleHistory {
 }
 
 model WhatsAppInboundMessage {
-  messageId  String   @id @map("message_id") @db.VarChar(255)
-  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  messageId  String       @id @map("message_id") @db.VarChar(255)
+  receivedAt DateTime     @default(now()) @map("received_at") @db.Timestamptz(3)
+  job        WhatsAppJob?
 
   @@index([receivedAt])
   @@map("whatsapp_inbound_messages")
+}
+
+enum WhatsAppJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYABLE
+  UNKNOWN
+
+  @@map("whatsapp_job_status")
+}
+
+/// Minimal inbound input plus atomic intake receipt. Context IDs remain historical references.
+model WhatsAppJob {
+  id               String                 @id @default(uuid()) @db.Uuid
+  inboundMessageId String                 @unique @map("inbound_message_id") @db.VarChar(255)
+  accountId        String                 @map("account_id") @db.Uuid
+  channelId        String                 @map("channel_id") @db.Uuid
+  customerId       String                 @map("customer_id") @db.Uuid
+  phoneNumberId    String                 @map("phone_number_id") @db.VarChar(64)
+  flowVersion      FlowVersion            @default(V2) @map("flow_version")
+  conversationId   String?                @map("conversation_id") @db.Uuid
+  leadId           String?                @map("lead_id") @db.Uuid
+  imageId          String?                @map("image_id") @db.Uuid
+  input            Json?                  @db.JsonB
+  response         Json?                  @db.JsonB
+  inputProcessedAt DateTime?              @map("input_processed_at") @db.Timestamptz(3)
+  status           WhatsAppJobStatus      @default(PENDING)
+  claimId          String?                @map("claim_id") @db.Uuid
+  leaseUntil       DateTime?              @map("lease_until") @db.Timestamptz(3)
+  attemptCount     Int                    @default(0) @map("attempt_count")
+  availableAt      DateTime               @default(now()) @map("available_at") @db.Timestamptz(3)
+  startedAt        DateTime?              @map("started_at") @db.Timestamptz(3)
+  completedAt      DateTime?              @map("completed_at") @db.Timestamptz(3)
+  lastErrorCode    String?                @map("last_error_code") @db.VarChar(64)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  account          TattooArtistAccount    @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  channel          WhatsAppChannel        @relation(fields: [channelId, accountId], references: [id, accountId], onDelete: Restrict)
+  customer         Customer               @relation(fields: [customerId, accountId], references: [id, accountId], onDelete: Cascade)
+  inbound          WhatsAppInboundMessage @relation(fields: [inboundMessageId], references: [messageId], onDelete: Cascade)
+  deliveries       WhatsAppDelivery[]
+
+  @@unique([id, accountId])
+  @@index([status, availableAt])
+  @@index([accountId, customerId, createdAt])
+  @@map("whatsapp_jobs")
 }

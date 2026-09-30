@@ -315,15 +315,14 @@ La otra señal especial es cobertura corporal extensa; ambas pueden guardarse ju
 
 El procesamiento usa un claim persistido de 120 s con ID de intento, transacciones breves
 y un límite técnico de 90 s para AI (compatible con los reintentos/fallback existentes).
-Un reintento puede recuperar un claim vencido y reutiliza el análisis ya guardado. Si un webhook
-duplicado encuentra un análisis pendiente, retoma únicamente ese trabajo sin repetir intake;
-si otro worker mantiene el claim, responde 503 para que el envío siga siendo reintentable.
+Un reintento puede recuperar un claim vencido y reutiliza el análisis ya guardado.
+Desde Fase 6A, el webhook persiste un trabajo V2; su worker retoma el análisis sin repetir
+intake. Un claim vigente impide que otro worker lo ejecute simultáneamente.
 Los fallos definitivos de análisis terminan en HUMAN_REVIEW. Los resultados tardíos de un
 intento sustituido no alteran la decisión ni el histórico. No se añade un cron en esta fase.
 
-**Deuda técnica previa a activar V2:** Desacoplar o validar la ejecución de AI Vision respecto
-del webhook de WhatsApp para evitar mantener la respuesta HTTP abierta durante
-análisis/reintentos del proveedor.
+El desacoplamiento del webhook se implementa en Fase 6A. Su ejecución después del ACK
+todavía debe comprobarse en el despliegue real antes de activar V2.
 
 La suite `nita-v2-database` comprueba el intake con preparación sustituida por un stub.
 `nita-v2-preparation` comprueba el pipeline completo por webhook con la BD de desarrollo,
@@ -351,14 +350,14 @@ a una cita reservada. Las revisiones reciben un mensaje humano, pasan a handoff 
 `WhatsAppDelivery` conserva el mensaje final, sus intentos, claim temporal, error y `sentAt`.
 Resultado, pregunta y confirmación tienen claves únicas por lead; lo ya registrado como enviado
 no se repite. Un fallo confirmado antes del envío o un rechazo explícito permite reintentar
-el webhook sin recalcular la Quote. Los envíos V2
+el trabajo sin recalcular la Quote. Los envíos V2
 utilizan un límite HTTP de 30 s y un claim de 60 s, con procesamiento fuera de las transacciones.
-No se agrega un job de envío automático. El dashboard muestra Quote, estado V2, estilo,
+Desde Fase 6A, el job V2 orquesta estos envíos. El dashboard muestra Quote, estado V2, estilo,
 área/color objetivo, revisión e intención, sin calcular scoring V2.
 
 La suite `nita-v2-completion` comprueba pricing, histórico inmutable, aislamiento,
 concurrencia, fallos de entrega y ambas intenciones con BD de desarrollo y proveedores
-simulados. Antes de activar V2 sigue pendiente la deuda sobre AI Vision y el webhook.
+simulados. La suite de trabajos de Fase 6A verifica el ingreso durable por webhook.
 El registro distingue pendiente (sin `sentAt`, error ni claim), enviado (`sentAt`), fallo
 confirmado (`DELIVERY_FAILED`) y resultado desconocido (`DELIVERY_UNKNOWN`). Un timeout,
 error de transporte/servidor, fallo al persistir después de la aceptación o claim vencido
@@ -367,6 +366,71 @@ sigue en proceso. Si falla incluso la persistencia del diagnóstico, el claim co
 un nuevo envío y queda desconocido al vencer. No se agrega resolución automática o manual
 de resultados desconocidos en esta fase; requieren comprobación operativa antes de continuar.
 No se ofrece una garantía absoluta de entrega exactamente una vez.
+
+### Nita V2 — trabajo durable fuera del webhook (Fase 6A)
+
+El webhook V2 valida firma, cuenta/canal y mensaje. En una transacción registra el ID
+inbound y un `WhatsAppJob` único; responde sin descargar imágenes, ejecutar Vision,
+calcular Quote ni enviar respuestas. V1 conserva su procesamiento anterior y
+`NITA_DEFAULT_FLOW_VERSION=V1` sigue siendo el valor predeterminado.
+
+`waitUntil` de `@vercel/functions` inicia el procesador después del trabajo mínimo
+del webhook, sin esperar su resultado para responder. Se configura un máximo de
+300 s para la función backend. El job permanece en PostgreSQL si la invocación termina.
+No se añade otra infraestructura ni un cron de retención o eliminación de imágenes.
+
+Los estados son `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `RETRYABLE` y `UNKNOWN`.
+Se guardan cuenta, canal, cliente, inbound, versión de flujo y, cuando están disponibles,
+conversación/lead/imagen. Estos tres últimos IDs son referencias históricas escalares
+para conservar las operaciones actuales de borrado del dashboard; el worker valida
+su pertenencia a la cuenta y cliente. El input mínimo (texto, ID de botón o media ID)
+se elimina al confirmar su aplicación. No se persiste el payload completo de Meta.
+
+El worker usa `FOR UPDATE SKIP LOCKED`, un claim con ID de intento y lease de 300 s.
+Ordena trabajos por cliente/cuenta y bloquea posteriores mientras el anterior está
+pendiente, procesando, retryable o desconocido. El checkpoint guarda transición,
+recibo del input y respuestas de intake en la misma transacción. Un retry continúa
+desde ese recibo y usa los servicios existentes de análisis, preparación, pricing,
+Quote y delivery. El job conserva V2 aunque cambie el valor predeterminado.
+El abandono crea un intake nuevo y conserva la conversación e imagen anteriores.
+
+Las respuestas de intake se guardan en `WhatsAppDelivery` por job/secuencia;
+resultado, intención y handoff conservan sus claves por lead. SENT se omite,
+un fallo confirmado permite retry y UNKNOWN bloquea nuevos envíos y pasos posteriores.
+Si se pierde la confirmación de una transacción pero `sentAt` sí quedó guardado, el job
+queda retryable y la recuperación omite ese mensaje y continúa únicamente lo pendiente.
+Los fallos transitorios de Vision dejan el job retryable; un análisis válido y una Quote
+persistidos se reutilizan. El backoff técnico empieza en 5 s y llega a 300 s.
+Una cuenta desactivada deja el job en FAILED (`ACCOUNT_INACTIVE`) y conserva su histórico.
+
+El dispatcher drena inputs rápidos durante un presupuesto de 30 s; cada job iniciado
+puede terminar usando el resto de la invocación. Para recuperar pendientes, retryables
+cuyo backoff venció o workers con lease vencido, usar GET o POST
+`/api/whatsapp/jobs/process`. Cada llamada procesa como máximo un job elegible.
+La ruta exige `Authorization: Bearer <CRON_SECRET>`, un secreto privado de al menos
+32 caracteres, y devuelve `Cache-Control: no-store`. Sin configurar el secreto devuelve
+503 y con autorización inválida devuelve 401. No expone mensajes, imágenes ni secretos.
+
+Configurar `CRON_SECRET` fuera de Git en desarrollo/despliegue. Ejemplo de recuperación
+con la variable ya presente en la sesión de PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:3001/api/whatsapp/jobs/process" -Headers @{ Authorization = "Bearer $env:CRON_SECRET" }
+```
+
+**Deuda antes de producción:**
+
+> `WhatsAppJob` es persistente, pero la recuperación automática periódica todavía no está configurada. `waitUntil` es el camino principal y `/api/whatsapp/jobs/process` permite recuperación segura.
+
+Después de una interrupción, un webhook posterior puede despertar el procesador o se
+llama a esta ruta. UNKNOWN no se reintenta
+ni se resuelve automáticamente. Los logs incluyen job, cuenta, conversación, estado,
+intento, timestamps y códigos de error resumidos, sin contenido del cliente.
+
+La suite `whatsapp-jobs` prueba el ACK independiente del pipeline, duplicados, claims,
+recuperación, retries, Quote inmutable, delivery, aislamiento, abandono y V1 con la BD
+de desarrollo y proveedores simulados. Las suites de fases anteriores aíslan sus
+servicios síncronos; esta suite prueba la ruta durable de producción.
 
 Backend:
 

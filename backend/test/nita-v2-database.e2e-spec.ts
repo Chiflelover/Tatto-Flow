@@ -23,6 +23,7 @@ import { ImageManagementService } from '../src/modules/image-management/image-ma
 import { StorageService } from '../src/modules/storage/storage.service.js';
 import { WhatsAppCloudApiClient } from '../src/modules/whatsapp/whatsapp-cloud-api.client.js';
 import { WhatsAppModule } from '../src/modules/whatsapp/whatsapp.module.js';
+import { WhatsAppJobRepository } from '../src/modules/whatsapp/whatsapp-job.repository.js';
 import { VISION_IMAGE } from './fixtures/vision-v2.js';
 
 // Explicit opt-in for the configured development DB. All test rows are isolated and removed.
@@ -71,6 +72,9 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           WhatsAppModule,
         ],
       })
+        // Earlier phase suites isolate their synchronous services; durable ingress is tested separately.
+        .overrideProvider(WhatsAppJobRepository)
+        .useValue({ enqueueIfV2: vi.fn().mockResolvedValue({ queued: false }) })
         .overrideProvider(WhatsAppCloudApiClient)
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)

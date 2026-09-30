@@ -29,6 +29,6 @@ import { NitaV2CompletionService } from './nita-v2-completion.service.js';
     NitaV2AnalysisService,
     NitaV2CompletionService,
   ],
-  exports: [ChatbotService, WhatsAppAdapter],
+  exports: [ChatbotService, WhatsAppAdapter, NitaV2AnalysisService, NitaV2CompletionService],
 })
 export class ChatbotModule {}

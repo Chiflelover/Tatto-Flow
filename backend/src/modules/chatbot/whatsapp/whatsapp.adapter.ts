@@ -13,6 +13,7 @@ import type {
   ChatbotOption,
   ChatbotOptionSelection,
   ChatbotResponse,
+  DurableV2Input,
 } from '../domain/chatbot.types.js';
 
 export const WHATSAPP_BUTTON_IDS = {
@@ -115,8 +116,9 @@ export class WhatsAppAdapter {
   async handleIncoming(
     message: WhatsAppInboundMessage,
     capabilities: WhatsAppCapabilities = { interactiveButtons: true },
+    durable?: DurableV2Input,
   ): Promise<WhatsAppOutboundMessage[]> {
-    const response = await this.toChatbotResponse(message, capabilities);
+    const response = await this.toChatbotResponse(message, capabilities, durable);
 
     if (!response) {
       return [];
@@ -128,6 +130,7 @@ export class WhatsAppAdapter {
   private toChatbotResponse(
     message: WhatsAppInboundMessage,
     capabilities: WhatsAppCapabilities,
+    durable?: DurableV2Input,
   ): Promise<ChatbotResponse | null> {
     switch (message.type) {
       case 'button_reply': {
@@ -145,6 +148,7 @@ export class WhatsAppAdapter {
           message.accountId,
           message.customerIdentifier,
           selection,
+          ...(durable ? [durable] : []),
         );
       }
       case 'image':
@@ -152,6 +156,7 @@ export class WhatsAppAdapter {
           message.accountId,
           message.customerIdentifier,
           message.image,
+          ...(durable ? [durable] : []),
         );
       case 'text': {
         const fallbackSelection = capabilities.interactiveButtons
@@ -163,17 +168,19 @@ export class WhatsAppAdapter {
               message.accountId,
               message.customerIdentifier,
               fallbackSelection,
+              ...(durable ? [durable] : []),
             )
           : this.chatbotService.processTextMessage(
               message.accountId,
               message.customerIdentifier,
               message.text,
+              ...(durable ? [durable] : []),
             );
       }
     }
   }
 
-  private toWhatsAppMessages(
+  toWhatsAppMessages(
     response: ChatbotResponse,
     capabilities: WhatsAppCapabilities,
   ): WhatsAppOutboundMessage[] {
