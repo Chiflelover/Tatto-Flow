@@ -1,0 +1,114 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.page h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  margin: 0.25rem 0;
+}
+.page h2 {
+  margin: 0 0 1rem;
+}
+.page button {
+  cursor: pointer;
+  border: 1px solid currentColor;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  padding: 0.6rem 1rem;
+}
+.page button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+}
+.panel {
+  border: 1px solid currentColor;
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+.styleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.8rem;
+}
+.styleCard {
+  border: 1px solid currentColor;
+  border-radius: 0.7rem;
+  padding: 1rem;
+}
+.styleCard label {
+  font-weight: 700;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.styleActions {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.styleActions small {
+  line-height: 1.4;
+}
+.imageWrap {
+  max-width: 32rem;
+  background: #eee;
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+.imageWrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 32rem;
+  object-fit: contain;
+}
+.answerForm,
+.adjustmentForm {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 25rem;
+  margin-top: 1rem;
+}
+.answerForm label,
+.adjustmentForm label {
+  font-weight: 700;
+}
+.answerForm > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.answerForm input,
+.adjustmentForm input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+}
+.steps {
+  display: flex;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+.history {
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.error,
+.notice {
+  padding: 0.8rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+}

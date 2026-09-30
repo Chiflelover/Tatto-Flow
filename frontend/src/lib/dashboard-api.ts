@@ -76,9 +76,45 @@ export interface LeadDetail extends LeadSummary {
 
 export interface LeadReferenceAccess {
   available: boolean;
+  imageId: string | null;
   signedUrl: string | null;
   expiresInSeconds: number | null;
   message: string | null;
+}
+
+export interface ManagedImageView {
+  id: string;
+  accountId: string;
+  accountName: string;
+  customerPhoneNumber: string;
+  leadId: string;
+  createdAt: string;
+  previewUrl: string | null;
+}
+
+export function listManagedImages(
+  filters: { accountId?: string; from?: string; to?: string; phone?: string; page?: number } = {},
+): Promise<{ images: ManagedImageView[]; page: number; total: number; totalPages: number }> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, String(value));
+  const search = params.toString();
+  return dashboardRequest(`admin/images${search ? `?${search}` : ''}`);
+}
+
+export function deleteManagedImages(ids: string[]): Promise<{
+  deletedCount: number;
+  results: (
+    | { id: string; status: 'deleted' | 'already_deleted' | 'not_found' }
+    | { id: string; status: 'retry_required'; stage: 'lookup' | 'storage' | 'metadata' }
+  )[];
+}> {
+  return jsonRequest('admin/images/delete', 'POST', { ids });
+}
+
+export function getImageDownload(
+  id: string,
+): Promise<{ url: string; fileName: string; expiresInSeconds: number }> {
+  return dashboardRequest(`dashboard/images/${encodeURIComponent(id)}/download`);
 }
 
 export interface DashboardMetrics {
@@ -100,6 +136,39 @@ export interface PricingRuleView {
   detailLabel: string;
   minPrice: string;
   maxPrice: string;
+}
+
+export interface CalibrationStyleView {
+  id: string;
+  code: string;
+  name: string;
+  enabled: boolean;
+  caseCount: number;
+  activeVersion: number | null;
+}
+
+export interface CalibrationDraftView {
+  id: string;
+  styleId: string;
+  styleName: string;
+  version: number;
+  answeredCount: number;
+  totalCount: number;
+  cases: { id: string; imageUrl: string; position: number; pricePen: string | null }[];
+}
+
+export interface PricingModelView {
+  id: string;
+  styleId: string;
+  styleName: string;
+  styleCode: string;
+  version: number;
+  status: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED';
+  algorithmVersion: string;
+  adjustmentPercent: string;
+  sourceVersionId: string | null;
+  createdAt: string;
+  activatedAt: string | null;
 }
 
 export interface PricingRuleUpdate {
@@ -226,7 +295,7 @@ async function dashboardRequest<T>(path: string, init: RequestInit = {}): Promis
 
 function jsonRequest<T>(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   body?: object,
 ): Promise<T> {
   return dashboardRequest<T>(path, {
@@ -314,6 +383,57 @@ export function updatePricingRules(
   updates: PricingRuleUpdate[],
 ): Promise<UpdatePricingRulesResult> {
   return jsonRequest('dashboard/pricing', 'PATCH', { updates });
+}
+
+export function getCalibrationStyles(): Promise<CalibrationStyleView[]> {
+  return dashboardRequest('dashboard/calibration/styles');
+}
+
+export function setCalibrationStyle(styleId: string, enabled: boolean): Promise<void> {
+  return jsonRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}`, 'PATCH', {
+    enabled,
+  });
+}
+
+export function getCalibrationDraft(styleId: string): Promise<CalibrationDraftView | null> {
+  return dashboardRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`);
+}
+
+export function startCalibrationDraft(styleId: string): Promise<CalibrationDraftView> {
+  return jsonRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`, 'POST');
+}
+
+export function saveCalibrationAnswer(
+  styleId: string,
+  caseId: string,
+  price: number,
+): Promise<CalibrationDraftView> {
+  return jsonRequest(
+    `dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft/answers/${encodeURIComponent(caseId)}`,
+    'PUT',
+    { price },
+  );
+}
+
+export function activateCalibration(styleId: string): Promise<PricingModelView> {
+  return jsonRequest(
+    `dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft/activate`,
+    'POST',
+  );
+}
+
+export function getPricingModels(): Promise<PricingModelView[]> {
+  return dashboardRequest('dashboard/calibration/models');
+}
+
+export function getGeneralAdjustment(): Promise<{ percent: string }> {
+  return dashboardRequest('dashboard/calibration/adjustment');
+}
+
+export function setGeneralAdjustment(
+  percent: number,
+): Promise<{ percent: string; newVersions: number }> {
+  return jsonRequest('dashboard/calibration/adjustment', 'PATCH', { percent });
 }
 
 export function isUnauthorized(error: unknown): boolean {

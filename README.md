@@ -123,9 +123,9 @@ Cuando un lead requiere revisión, el tatuador puede definir un rango válido y 
 
 ## Storage y privacidad
 
-Las imágenes se guardan en un bucket privado de Supabase Storage. La base de datos conserva la ruta del objeto y sus fechas de retención; el dashboard obtiene URLs firmadas de corta duración mediante endpoints autenticados.
+Las imágenes se guardan en un bucket privado de Supabase Storage. La base de datos conserva la ruta del objeto; el dashboard obtiene URLs firmadas de corta duración mediante endpoints autenticados.
 
-Cada imagen tiene una retención máxima de 15 días. Un cron diario protegido elimina los objetos expirados y marca su eliminación sin borrar el lead, el análisis ni el precio histórico.
+Las imágenes de clientes no se eliminan automáticamente por antigüedad. El ADMIN puede verlas y eliminarlas manualmente desde `/admin/images`; esta operación conserva el lead, el análisis y el precio histórico. El tatuador puede descargar imágenes de sus propios leads mediante una URL firmada temporal.
 
 La política pública está disponible en `/privacy` y explica los datos recopilados, la finalidad de uso, la retención de imágenes, los proveedores tecnológicos y el canal de contacto.
 
@@ -210,7 +210,6 @@ WhatsApp:
 
 Operación:
 
-- `CRON_SECRET`
 - `BUSINESS_HOURS_TEST_PHONE`: bypass horario opcional y temporal para un único número autorizado.
 
 No deben configurarse `AI_MODE` ni variables `AI_MOCK_*`: fueron retiradas del runtime.
@@ -249,6 +248,16 @@ npm --workspace backend run admin:create
 
 El panel `/admin` permite crear cuentas de tatuador, asignar su número de Nita y `phone_number_id`, cambiar contraseña o estado y copiar su URL `wa.me`. Si la cuenta heredada no tiene canal, asígnale ambos valores desde el panel antes de recibir mensajes; también puede registrarse automáticamente con `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_NITA_NUMBER` configurados. Una cuenta inactiva conserva sus datos y no procesa nuevos mensajes ni admite sesiones del tatuador.
 
+### Precios por estilo (Fase 2)
+
+`/dashboard/pricing/calibrate` permite habilitar estilos, responder los casos de calibración y activar un modelo por estilo. El ajuste general crea versiones nuevas sin modificar respuestas ni parámetros anteriores. Este pricing todavía no participa en las conversaciones ni en las cotizaciones de Nita; la matriz v0.1 sigue activa.
+
+El algoritmo `AREA_COLOR_SEPARABLE_V1` interpola una curva base de precio por área con los casos `AREA` y una curva de factores propios del tatuador y estilo con los casos `COLOR`. El factor en cobertura cero es 1. Fuera de los rangos calibrados no entrega precio. El importe se calcula con precisión decimal y después se aplica el ajuste general.
+
+Los ocho estilos iniciales se cargan con la migración. Los casos se administran mediante `/api/admin/catalog/styles` y `/api/admin/catalog/styles/:id/cases`, usando referencias HTTPS duraderas, separadas de `LeadImage`. No se cargan casos ficticios: las imágenes y sus metadatos internos deben prepararse antes de calibrar cada estilo. El sistema usa cuantos casos activos haya al iniciar cada borrador; la configuración inicial prevista es cinco `AREA` y cuatro `COLOR` por estilo.
+
+Regla de producto para el flujo futuro: **Black & Grey = BLACK_ONLY**. Todavía no interviene en este pricing ni en la conversación v0.1.
+
 ## Tests y build
 
 Backend:
@@ -283,7 +292,9 @@ Los smoke tests reales de proveedores requieren credenciales locales y una image
 - `/dashboard/leads`: bandeja, búsqueda, filtros, sorting y paginación;
 - `/dashboard/leads/[id]`: detalle, evaluación explicable y acciones del lead;
 - `/dashboard/pricing`: matriz de precios;
+- `/dashboard/pricing/calibrate`: selección de estilos y calibración de precios v0.2;
 - `/admin`: administración básica de cuentas y canales de Nita;
+- `/admin/images`: imágenes de clientes de todas las cuentas y eliminación manual;
 - `/privacy`: política de privacidad pública, sin autenticación.
 
 ## Despliegue en Vercel
@@ -294,9 +305,8 @@ El `vercel.json` de la raíz configura un único proyecto con dos Services:
 - `backend`: servicio NestJS compilado;
 - `/api/*`: se dirige al backend;
 - el resto de rutas: se dirige al frontend;
-- `/api/cron/cleanup-expired-images`: cron diario protegido por `CRON_SECRET`.
 
-El backend es ESM nativo y ejecuta el artefacto compilado. No depende de procesos persistentes ni del filesystem local. Las conversaciones vencen al recibir una nueva interacción y la limpieza de imágenes se ejecuta mediante Vercel Cron.
+El backend es ESM nativo y ejecuta el artefacto compilado. No depende de procesos persistentes ni del filesystem local. Las conversaciones vencen al recibir una nueva interacción.
 
 Antes de desplegar:
 

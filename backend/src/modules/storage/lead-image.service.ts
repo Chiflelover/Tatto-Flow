@@ -7,8 +7,6 @@ import { validateLeadImageFile } from './lead-image-file.js';
 import { createLeadImageStoragePath } from './storage-path.js';
 import { StorageService } from './storage.service.js';
 
-const RETENTION_DAYS = 15;
-const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const FRIENDLY_STORAGE_ERROR = 'No pudimos guardar la imagen de referencia. Inténtalo nuevamente.';
 
 export class LeadImageStorageException extends ServiceUnavailableException {
@@ -34,7 +32,6 @@ export class LeadImageService {
       where: {
         leadId,
         deletedAt: null,
-        expiresAt: { gt: new Date() },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -65,7 +62,6 @@ export class LeadImageService {
           leadId,
           storagePath,
           createdAt,
-          expiresAt: new Date(createdAt.getTime() + RETENTION_MS),
         },
       });
 
@@ -83,5 +79,3 @@ export class LeadImageService {
     }
   }
 }
-
-export const LEAD_IMAGE_RETENTION_DAYS = RETENTION_DAYS;

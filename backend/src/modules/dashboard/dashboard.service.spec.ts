@@ -208,8 +208,7 @@ describe('DashboardService', () => {
     });
   });
 
-  it('creates a five-minute signed URL only for a current stored image', async () => {
-    const now = new Date('2026-09-14T12:00:00.000Z');
+  it('creates a five-minute signed URL for a stored image regardless of age', async () => {
     const storagePath =
       'leads/290f2044-e63c-4e49-8847-067cd62426e4/bf3b934c-8338-45f3-992f-3ad65c3ce537.png';
     const exists = vi.fn().mockResolvedValue(true);
@@ -220,7 +219,9 @@ describe('DashboardService', () => {
           findFirst: vi.fn().mockResolvedValue({
             id: LEAD_ID,
             accountId: ACCOUNT_ID,
-            images: [{ storagePath, expiresAt: new Date(now.getTime() + 60_000) }],
+            images: [
+              { id: 'image-1', storagePath, createdAt: new Date('2025-01-01T00:00:00.000Z') },
+            ],
           }),
         },
       },
@@ -228,8 +229,9 @@ describe('DashboardService', () => {
       { exists, createSignedUrl },
     );
 
-    await expect(service.getLeadReference(ACCOUNT_ID, LEAD_ID, now)).resolves.toEqual({
+    await expect(service.getLeadReference(ACCOUNT_ID, LEAD_ID)).resolves.toEqual({
       available: true,
+      imageId: 'image-1',
       signedUrl: 'https://temporary.example/signed',
       expiresInSeconds: 300,
       message: null,
@@ -238,38 +240,25 @@ describe('DashboardService', () => {
     expect(createSignedUrl).toHaveBeenCalledWith(storagePath, 300);
   });
 
-  it.each([
-    ['deleted', []],
-    [
-      'expired',
-      [
-        {
-          storagePath:
-            'leads/290f2044-e63c-4e49-8847-067cd62426e4/bf3b934c-8338-45f3-992f-3ad65c3ce537.png',
-          expiresAt: new Date('2026-09-14T12:00:00.000Z'),
-        },
-      ],
-    ],
-  ] as const)('does not sign a %s image', async (_case, images) => {
+  it('does not sign a manually deleted image', async () => {
     const exists = vi.fn();
     const createSignedUrl = vi.fn();
     const { service } = serviceWith(
       {
         lead: {
-          findFirst: vi.fn().mockResolvedValue({ id: LEAD_ID, images }),
+          findFirst: vi.fn().mockResolvedValue({ id: LEAD_ID, images: [] }),
         },
       },
       {},
       { exists, createSignedUrl },
     );
 
-    await expect(
-      service.getLeadReference(ACCOUNT_ID, LEAD_ID, new Date('2026-09-14T12:00:00.000Z')),
-    ).resolves.toEqual({
+    await expect(service.getLeadReference(ACCOUNT_ID, LEAD_ID)).resolves.toEqual({
       available: false,
+      imageId: null,
       signedUrl: null,
       expiresInSeconds: null,
-      message: 'Imagen eliminada por política de retención.',
+      message: 'Imagen no disponible.',
     });
     expect(exists).not.toHaveBeenCalled();
     expect(createSignedUrl).not.toHaveBeenCalled();
@@ -288,7 +277,6 @@ describe('DashboardService', () => {
               {
                 storagePath:
                   'leads/290f2044-e63c-4e49-8847-067cd62426e4/bf3b934c-8338-45f3-992f-3ad65c3ce537.png',
-                expiresAt: new Date('2026-09-15T12:00:00.000Z'),
               },
             ],
           }),
@@ -298,13 +286,9 @@ describe('DashboardService', () => {
       { exists, createSignedUrl },
     );
 
-    const result = await service.getLeadReference(
-      ACCOUNT_ID,
-      LEAD_ID,
-      new Date('2026-09-14T12:00:00.000Z'),
-    );
+    const result = await service.getLeadReference(ACCOUNT_ID, LEAD_ID);
 
-    expect(result.message).toBe('Imagen eliminada por política de retención.');
+    expect(result.message).toBe('Imagen no disponible.');
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 

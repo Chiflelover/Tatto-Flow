@@ -25,11 +25,5 @@
         "service": "frontend"
       }
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/cleanup-expired-images",
-      "schedule": "0 8 * * *"
-    }
   ]
 }

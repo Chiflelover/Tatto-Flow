@@ -59,7 +59,7 @@ interface LeadDeletionCandidate {
   evaluation: { readinessStatus: ReadinessStatus } | null;
 }
 
-const RETAINED_IMAGE_MESSAGE = 'Imagen eliminada por política de retención.';
+const RETAINED_IMAGE_MESSAGE = 'Imagen no disponible.';
 const SIGNED_URL_TTL_SECONDS = 5 * 60;
 const COMPLETABLE_LEAD_STATUSES = [
   LeadStatus.VERIFIED,
@@ -150,7 +150,7 @@ export class DashboardService {
     return this.toDetail(lead);
   }
 
-  async getLeadReference(accountId: string, leadId: string, now = new Date()) {
+  async getLeadReference(accountId: string, leadId: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: leadId, accountId },
       select: {
@@ -159,7 +159,7 @@ export class DashboardService {
           where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { storagePath: true, expiresAt: true },
+          select: { id: true, storagePath: true },
         },
       },
     });
@@ -170,7 +170,7 @@ export class DashboardService {
 
     const image = lead.images[0];
 
-    if (!image || image.expiresAt.getTime() <= now.getTime()) {
+    if (!image) {
       return this.unavailableReference();
     }
 
@@ -181,6 +181,7 @@ export class DashboardService {
 
       return {
         available: true,
+        imageId: image.id,
         signedUrl: await this.storage.createSignedUrl(image.storagePath, SIGNED_URL_TTL_SECONDS),
         expiresInSeconds: SIGNED_URL_TTL_SECONDS,
         message: null,
@@ -464,6 +465,7 @@ export class DashboardService {
   private unavailableReference() {
     return {
       available: false,
+      imageId: null,
       signedUrl: null,
       expiresInSeconds: null,
       message: RETAINED_IMAGE_MESSAGE,

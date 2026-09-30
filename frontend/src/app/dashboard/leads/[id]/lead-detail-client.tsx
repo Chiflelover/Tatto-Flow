@@ -9,6 +9,7 @@ import {
   completeLead,
   dashboardErrorMessage,
   getLead,
+  getImageDownload,
   getLeadReference,
   isUnauthorized,
   saveManualFinalPrice,
@@ -54,6 +55,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [reference, setReference] = useState<LeadReferenceAccess | null>(null);
   const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
@@ -200,6 +202,27 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     }
   }
 
+  async function downloadImage(): Promise<void> {
+    if (!reference?.imageId || downloading) return;
+    setDownloading(true);
+    setReferenceError(null);
+    try {
+      const { url, fileName } = await getImageDownload(reference.imageId);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (requestError) {
+      if (isUnauthorized(requestError)) router.replace('/login');
+      else setReferenceError(dashboardErrorMessage(requestError));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   if (error) {
     return (
       <DashboardError
@@ -339,6 +362,16 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 (referenceError ?? reference?.message ?? 'Cargando imagen de referencia…')
               )}
             </div>
+            {reference?.available && reference.imageId && (
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={downloading}
+                onClick={() => void downloadImage()}
+              >
+                {downloading ? 'Preparando descarga…' : 'Descargar imagen'}
+              </button>
+            )}
           </section>
 
           <section className={`${styles.panel} ${styles.evaluationPanel}`}>

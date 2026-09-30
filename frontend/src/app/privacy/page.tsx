@@ -82,18 +82,17 @@ export default function PrivacyPage() {
         <section>
           <h2>Imágenes de referencia y retención</h2>
           <p>
-            Tatuoflow almacena temporalmente la imagen de referencia en un espacio privado de
-            Supabase. El acceso desde el dashboard requiere autenticación y utiliza enlaces
-            temporales; el archivo no se publica como una URL abierta permanente.
+            Tatuoflow almacena la imagen de referencia en un espacio privado de Supabase. El acceso
+            desde el dashboard requiere autenticación y utiliza enlaces temporales; el archivo no se
+            publica como una URL abierta permanente.
           </p>
           <p>
-            Cada imagen recibe una fecha de expiración de 15 días. Un proceso automático diario
-            busca las imágenes vencidas y elimina sus archivos. Por ello, el objetivo operativo de
-            Tatuoflow es conservarlas durante un máximo de 15 días, aunque una falla temporal del
-            proceso podría retrasar la eliminación hasta su siguiente ejecución correcta.
+            Las imágenes no se eliminan automáticamente por antigüedad. Un administrador puede
+            eliminarlas manualmente; en ese caso se conserva el historial de la solicitud, el
+            análisis y el precio, pero la imagen deja de estar disponible.
           </p>
           <p>
-            Este plazo describe la copia administrada por Tatuoflow en Supabase. El tratamiento
+            Esta política describe la copia administrada por Tatuoflow en Supabase. El tratamiento
             temporal realizado por los proveedores de inteligencia artificial se rige por sus
             propias condiciones y configuraciones, que Tatuoflow no controla por completo.
           </p>

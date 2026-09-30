@@ -1,17 +1,13 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { StorageMode } from '../../config/environment.validation.js';
-import { CronSecretGuard } from './cron-secret.guard.js';
 import { InMemoryStorageService } from './in-memory-storage.service.js';
-import { LeadImageRetentionService } from './lead-image-retention.service.js';
 import { LeadImageService } from './lead-image.service.js';
-import { RetentionCronController } from './retention-cron.controller.js';
 import { StorageService } from './storage.service.js';
 import { SupabaseStorageService } from './supabase-storage.service.js';
 
 @Global()
 @Module({
-  controllers: [RetentionCronController],
   providers: [
     {
       provide: StorageService,
@@ -33,9 +29,7 @@ import { SupabaseStorageService } from './supabase-storage.service.js';
       },
     },
     LeadImageService,
-    LeadImageRetentionService,
-    CronSecretGuard,
   ],
-  exports: [StorageService, LeadImageService, LeadImageRetentionService],
+  exports: [StorageService, LeadImageService],
 })
 export class StorageModule {}

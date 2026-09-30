@@ -22,6 +22,21 @@ enum FlowVersion {
   @@map("flow_version")
 }
 
+enum CalibrationCaseType {
+  AREA
+  COLOR
+
+  @@map("calibration_case_type")
+}
+
+enum PricingModelStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+
+  @@map("pricing_model_status")
+}
+
 enum TattooSize {
   SMALL
   MEDIUM
@@ -99,25 +114,104 @@ model User {
   updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   pricingChanges PricingRuleHistory[]
   sessions       AuthSession[]
+  deletedImages  LeadImage[]          @relation("DeletedLeadImages")
   account        TattooArtistAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@map("users")
 }
 
 model TattooArtistAccount {
-  id            String           @id @default(uuid()) @db.Uuid
-  name          String           @db.VarChar(120)
-  isActive      Boolean          @default(true) @map("is_active")
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user          User?
-  channel       WhatsAppChannel?
-  customers     Customer[]
-  conversations Conversation[]
-  leads         Lead[]
-  pricingRules  PricingRule[]
+  id                String                @id @default(uuid()) @db.Uuid
+  name              String                @db.VarChar(120)
+  isActive          Boolean               @default(true) @map("is_active")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              User?
+  channel           WhatsAppChannel?
+  customers         Customer[]
+  conversations     Conversation[]
+  leads             Lead[]
+  pricingRules      PricingRule[]
+  artistStyles      ArtistStyle[]
+  modelVersions     PricingModelVersion[]
+  adjustmentPercent Decimal               @default(0) @map("adjustment_percent") @db.Decimal(7, 2)
 
   @@map("tattoo_artist_accounts")
+}
+
+model TattooStyle {
+  id            String                @id @default(uuid()) @db.Uuid
+  code          String                @unique @db.VarChar(64)
+  name          String                @db.VarChar(120)
+  isActive      Boolean               @default(true) @map("is_active")
+  artistStyles  ArtistStyle[]
+  cases         CalibrationCase[]
+  modelVersions PricingModelVersion[]
+
+  @@map("tattoo_styles")
+}
+
+model ArtistStyle {
+  accountId String              @map("account_id") @db.Uuid
+  styleId   String              @map("style_id") @db.Uuid
+  isEnabled Boolean             @default(true) @map("is_enabled")
+  account   TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  style     TattooStyle         @relation(fields: [styleId], references: [id], onDelete: Restrict)
+
+  @@id([accountId, styleId])
+  @@map("artist_styles")
+}
+
+model CalibrationCase {
+  id            String              @id @default(uuid()) @db.Uuid
+  styleId       String              @map("style_id") @db.Uuid
+  imageUrl      String              @map("image_url") @db.Text
+  type          CalibrationCaseType
+  areaCm2       Decimal             @map("area_cm2") @db.Decimal(12, 2)
+  colorCoverage Decimal             @map("color_coverage") @db.Decimal(4, 3)
+  displayOrder  Int                 @map("display_order")
+  isActive      Boolean             @default(true) @map("is_active")
+  style         TattooStyle         @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  answers       CalibrationAnswer[]
+
+  @@index([styleId, isActive, displayOrder])
+  @@map("calibration_cases")
+}
+
+model PricingModelVersion {
+  id                String                @id @default(uuid()) @db.Uuid
+  accountId         String                @map("account_id") @db.Uuid
+  styleId           String                @map("style_id") @db.Uuid
+  version           Int
+  status            PricingModelStatus    @default(DRAFT)
+  caseSnapshot      Json                  @map("case_snapshot") @db.JsonB
+  modelParameters   Json?                 @map("model_parameters") @db.JsonB
+  algorithmVersion  String                @default("AREA_COLOR_SEPARABLE_V1") @map("algorithm_version") @db.VarChar(64)
+  adjustmentPercent Decimal               @default(0) @map("adjustment_percent") @db.Decimal(7, 2)
+  sourceVersionId   String?               @map("source_version_id") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  activatedAt       DateTime?             @map("activated_at") @db.Timestamptz(3)
+  account           TattooArtistAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  style             TattooStyle           @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  sourceVersion     PricingModelVersion?  @relation("ModelSource", fields: [sourceVersionId], references: [id], onDelete: Restrict)
+  derivedVersions   PricingModelVersion[] @relation("ModelSource")
+  answers           CalibrationAnswer[]
+
+  @@unique([accountId, styleId, version])
+  @@index([accountId, styleId, status])
+  @@map("pricing_model_versions")
+}
+
+model CalibrationAnswer {
+  id              String              @id @default(uuid()) @db.Uuid
+  modelVersionId  String              @map("model_version_id") @db.Uuid
+  caseId          String              @map("case_id") @db.Uuid
+  pricePen        Decimal             @map("price_pen") @db.Decimal(12, 2)
+  modelVersion    PricingModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
+  calibrationCase CalibrationCase     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@unique([modelVersionId, caseId])
+  @@map("calibration_answers")
 }
 
 model WhatsAppChannel {
@@ -238,16 +332,17 @@ model LeadEvaluation {
 }
 
 model LeadImage {
-  id          String    @id @default(uuid()) @db.Uuid
-  leadId      String    @map("lead_id") @db.Uuid
-  storagePath String    @map("storage_path") @db.Text
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
-  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid()) @db.Uuid
+  leadId          String    @map("lead_id") @db.Uuid
+  storagePath     String    @map("storage_path") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedByUserId String?   @map("deleted_by_user_id") @db.Uuid
+  lead            Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  deletedBy       User?     @relation("DeletedLeadImages", fields: [deletedByUserId], references: [id], onDelete: Restrict)
 
   @@index([leadId])
-  @@index([expiresAt, deletedAt])
+  @@index([deletedAt])
   @@map("lead_images")
 }
 

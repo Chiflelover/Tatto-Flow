@@ -91,7 +91,11 @@ export class SupabaseStorageService extends StorageService {
     return data;
   }
 
-  async createSignedUrl(path: string, expiresInSeconds: number): Promise<string> {
+  async createSignedUrl(
+    path: string,
+    expiresInSeconds: number,
+    downloadName?: string,
+  ): Promise<string> {
     assertSafeStoragePath(path);
 
     if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < 1) {
@@ -100,7 +104,11 @@ export class SupabaseStorageService extends StorageService {
 
     const { data, error } = await this.client.storage
       .from(this.bucket)
-      .createSignedUrl(path, expiresInSeconds);
+      .createSignedUrl(
+        path,
+        expiresInSeconds,
+        downloadName ? { download: downloadName } : undefined,
+      );
 
     if (error) {
       throw new Error(STORAGE_ERROR_MESSAGE);

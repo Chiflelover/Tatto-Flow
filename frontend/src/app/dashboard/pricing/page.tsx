@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -239,6 +240,10 @@ export default function PricingPage() {
           <p>Edita únicamente los importes. Los tamaños y sus rangos permanecen fijos.</p>
         </div>
       </header>
+
+      <p>
+        <Link href="/dashboard/pricing/calibrate">Configurar / Calibrar precios por estilo →</Link>
+      </p>
 
       {loadError && (
         <DashboardError

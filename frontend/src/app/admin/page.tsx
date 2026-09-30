@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { LogoutButton } from '@/components/dashboard/logout-button';
 import {
@@ -116,6 +117,7 @@ export default function AdminPage() {
         <div>
           <p className={styles.eyebrow}>Tatuo Flow</p>
           <h1>Administración de tatuadores</h1>
+          <Link href="/admin/images">Imágenes de clientes →</Link>
         </div>
         <LogoutButton />
       </header>

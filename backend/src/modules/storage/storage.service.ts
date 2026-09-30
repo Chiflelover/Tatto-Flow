@@ -13,5 +13,9 @@ export abstract class StorageService {
 
   abstract exists(path: string): Promise<boolean>;
 
-  abstract createSignedUrl(path: string, expiresInSeconds: number): Promise<string>;
+  abstract createSignedUrl(
+    path: string,
+    expiresInSeconds: number,
+    downloadName?: string,
+  ): Promise<string>;
 }

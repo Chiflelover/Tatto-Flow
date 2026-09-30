@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import { initialPricingRules } from './pricing-rules.seed-data.js';
 import { LEGACY_ACCOUNT_ID } from '../src/modules/accounts/account.constants.js';
+import { INITIAL_TATTOO_STYLES } from './tattoo-styles.seed-data.js';
 
 const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
@@ -15,6 +16,15 @@ const prisma = new PrismaClient({
 });
 
 async function seed() {
+  await prisma.$transaction(
+    INITIAL_TATTOO_STYLES.map((style) =>
+      prisma.tattooStyle.upsert({
+        where: { code: style.code },
+        update: {},
+        create: style,
+      }),
+    ),
+  );
   await prisma.$transaction(
     initialPricingRules.map((pricingRule) =>
       prisma.pricingRule.upsert({
