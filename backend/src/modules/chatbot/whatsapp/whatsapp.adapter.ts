@@ -105,6 +105,10 @@ export class WhatsAppAdapter {
     @Inject(ConfigService) private readonly config: ConfigService,
   ) {}
 
+  resumePendingV2Analysis(accountId: string, customerIdentifier: string): Promise<void> {
+    return this.chatbotService.resumePendingV2Analysis(accountId, customerIdentifier);
+  }
+
   async handleIncoming(
     message: WhatsAppInboundMessage,
     capabilities: WhatsAppCapabilities = { interactiveButtons: true },

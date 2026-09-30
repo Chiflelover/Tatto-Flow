@@ -7,6 +7,7 @@ import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { WhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
+import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
 import { StorageModule } from '../storage/storage.module.js';
 
 @Module({
@@ -17,6 +18,7 @@ import { StorageModule } from '../storage/storage.module.js';
     NitaStateMachine,
     WhatsAppAdapter,
     NitaV2IntakeService,
+    NitaV2AnalysisService,
   ],
   exports: [ChatbotService, WhatsAppAdapter],
 })

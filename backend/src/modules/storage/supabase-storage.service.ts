@@ -116,4 +116,13 @@ export class SupabaseStorageService extends StorageService {
 
     return data.signedUrl;
   }
+
+  async download(path: string): Promise<{ content: Uint8Array; mimeType: string }> {
+    assertSafeStoragePath(path);
+    const { data, error } = await this.client.storage
+      .from(this.bucket)
+      .download(path, {}, { signal: AbortSignal.timeout(20_000) });
+    if (error || !data) throw new Error(STORAGE_ERROR_MESSAGE);
+    return { content: new Uint8Array(await data.arrayBuffer()), mimeType: data.type };
+  }
 }

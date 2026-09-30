@@ -40,6 +40,7 @@ function createFixture() {
   const claim = vi.fn().mockResolvedValue(true);
   const release = vi.fn().mockResolvedValue(undefined);
   const handleIncoming = vi.fn().mockResolvedValue([{ type: 'text', text: 'Respuesta de Nita' }]);
+  const resumePendingV2Analysis = vi.fn().mockResolvedValue(undefined);
   const sendMessage = vi.fn().mockResolvedValue(undefined);
   const downloadImage = vi.fn().mockResolvedValue({
     content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
@@ -60,7 +61,7 @@ function createFixture() {
     }),
     { assertValidPayload } as unknown as WhatsAppSignatureService,
     { claim, release } as unknown as WhatsAppInboundMessageRepository,
-    { handleIncoming } as unknown as WhatsAppAdapter,
+    { handleIncoming, resumePendingV2Analysis } as unknown as WhatsAppAdapter,
     { sendMessage, downloadImage } as unknown as WhatsAppCloudApiClient,
     { resolve } as unknown as WhatsAppChannelService,
   );
@@ -71,6 +72,7 @@ function createFixture() {
     claim,
     release,
     handleIncoming,
+    resumePendingV2Analysis,
     sendMessage,
     downloadImage,
     resolve,
@@ -82,6 +84,35 @@ function observeServiceLogs(service: WhatsAppWebhookService) {
 }
 
 describe('WhatsAppWebhookService', () => {
+  it('resumes only pending V2 work on duplicate delivery without replaying the message', async () => {
+    const f = createFixture();
+    f.claim.mockResolvedValue(false);
+    await f.service.handleWebhook(
+      payload({
+        id: MESSAGE_ID,
+        from: CUSTOMER,
+        type: 'text',
+        text: { body: 'Respuesta anterior' },
+      }),
+      'sha256=valid',
+    );
+    expect(f.resumePendingV2Analysis).toHaveBeenCalledWith(ACCOUNT_ID, CUSTOMER);
+    expect(f.handleIncoming).not.toHaveBeenCalled();
+    expect(f.sendMessage).not.toHaveBeenCalled();
+  });
+  it('keeps a duplicate retryable if its V2 claim is still busy or recovery fails', async () => {
+    const f = createFixture();
+    f.claim.mockResolvedValue(false);
+    f.resumePendingV2Analysis.mockRejectedValue(new Error('Retry recovery'));
+    await expect(
+      f.service.handleWebhook(
+        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Anterior' } }),
+        'sha256=valid',
+      ),
+    ).rejects.toThrow('Retry recovery');
+    expect(f.release).not.toHaveBeenCalled();
+    expect(f.handleIncoming).not.toHaveBeenCalled();
+  });
   it('routes the same sender to the account and outgoing Nita number of each receiving channel', async () => {
     const fixture = createFixture();
     const secondPhoneId = '3333333333';

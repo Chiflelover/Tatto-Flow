@@ -22,6 +22,8 @@ function makeConversation(id: string, customerId: string): Conversation {
     id,
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    v2AnalysisClaimId: null,
+    v2AnalysisLeaseUntil: null,
     firstTattoo: null,
     sameSizeAsReference: null,
     targetSizeCm: null,

@@ -1,6 +1,11 @@
 import type { Conversation } from '../../generated/prisma/client.js';
 
-export function v2IntakeSnapshot(conversation: Conversation) {
+export type V2Intake = Pick<
+  Conversation,
+  'firstTattoo' | 'sameSizeAsReference' | 'targetSizeCm' | 'colorDeclaration' | 'bodyPart'
+>;
+
+export function v2IntakeSnapshot(conversation: V2Intake) {
   return {
     firstTattoo: conversation.firstTattoo,
     sameSizeAsReference: conversation.sameSizeAsReference,
@@ -10,7 +15,7 @@ export function v2IntakeSnapshot(conversation: Conversation) {
   };
 }
 
-export function hasCompleteV2Intake(conversation: Conversation): boolean {
+export function hasCompleteV2Intake(conversation: V2Intake): boolean {
   return (
     typeof conversation.firstTattoo === 'boolean' &&
     typeof conversation.sameSizeAsReference === 'boolean' &&

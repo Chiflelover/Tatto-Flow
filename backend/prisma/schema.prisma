@@ -90,6 +90,9 @@ enum ConversationState {
   ASK_DESIRED_SIZE_CM
   ASK_COLOR
   READY_FOR_ANALYSIS
+  READY_FOR_PRICING
+  HUMAN_REVIEW
+  SPECIAL_REVIEW
 
   @@map("conversation_state")
 }
@@ -283,26 +286,28 @@ model Customer {
 }
 
 model Conversation {
-  id                  String              @id @default(uuid()) @db.Uuid
-  accountId           String              @map("account_id") @db.Uuid
-  customerId          String              @map("customer_id") @db.Uuid
-  flowVersion         FlowVersion         @default(V1) @map("flow_version")
-  currentState        ConversationState   @default(START) @map("current_state")
-  status              ConversationStatus  @default(ACTIVE)
-  selectedSize        TattooSize?         @map("selected_size")
-  selectedDetail      DetailLevel?        @map("selected_detail")
+  id                   String              @id @default(uuid()) @db.Uuid
+  accountId            String              @map("account_id") @db.Uuid
+  customerId           String              @map("customer_id") @db.Uuid
+  flowVersion          FlowVersion         @default(V1) @map("flow_version")
+  currentState         ConversationState   @default(START) @map("current_state")
+  status               ConversationStatus  @default(ACTIVE)
+  selectedSize         TattooSize?         @map("selected_size")
+  selectedDetail       DetailLevel?        @map("selected_detail")
   /// Placement in V2; reuse the existing field rather than duplicate it.
-  bodyPart            String?             @map("body_part") @db.VarChar(120)
-  firstTattoo         Boolean?            @map("first_tattoo")
-  sameSizeAsReference Boolean?            @map("same_size_as_reference")
-  targetSizeCm        Float?              @map("target_size_cm") @db.DoublePrecision
-  colorDeclaration    ColorDeclaration?   @map("color_declaration")
-  lastActivityAt      DateTime            @default(now()) @map("last_activity_at") @db.Timestamptz(3)
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  lead                Lead?
-  account             TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  bodyPart             String?             @map("body_part") @db.VarChar(120)
+  firstTattoo          Boolean?            @map("first_tattoo")
+  sameSizeAsReference  Boolean?            @map("same_size_as_reference")
+  targetSizeCm         Float?              @map("target_size_cm") @db.DoublePrecision
+  colorDeclaration     ColorDeclaration?   @map("color_declaration")
+  v2AnalysisClaimId    String?             @map("v2_analysis_claim_id") @db.Uuid
+  v2AnalysisLeaseUntil DateTime?           @map("v2_analysis_lease_until") @db.Timestamptz(3)
+  lastActivityAt       DateTime            @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer             Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lead                 Lead?
+  account              TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@index([accountId, status, lastActivityAt])
   @@index([customerId])
@@ -325,6 +330,8 @@ model Lead {
   sameSizeAsReference Boolean?            @map("same_size_as_reference")
   targetSizeCm        Float?              @map("target_size_cm") @db.DoublePrecision
   colorDeclaration    ColorDeclaration?   @map("color_declaration")
+  /// Backend-derived preparation and decision. Decimal measurements are serialized as strings.
+  v2Preparation       Json?               @map("v2_preparation") @db.JsonB
   status              LeadStatus          @default(ANALYZING)
   reviewReasons       ReviewReason[]      @default([]) @map("review_reasons")
   manualFinalPrice    Decimal?            @map("manual_final_price") @db.Decimal(10, 2)

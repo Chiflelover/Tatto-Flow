@@ -276,9 +276,8 @@ aislado se puede configurar `V2` para nuevas conversaciones. El valor persistido
 las conversaciones existentes nunca se cambia por esta configuración. También se
 puede iniciar V2 explícitamente mediante el servicio interno de conversaciones en tests.
 
-V2 recopila primer tatuaje, referencia privada, mismo tamaño o dimensión principal
-en cm, color y ubicación. Termina en `READY_FOR_ANALYSIS`, sin ejecutar IA, pricing,
-revisión ni intención de reserva. Las respuestas temporales viven en `Conversation`;
+El intake V2 recopila primer tatuaje, referencia privada, mismo tamaño o dimensión principal
+en cm, color y ubicación, hasta `READY_FOR_ANALYSIS`. Las respuestas temporales viven en `Conversation`;
 el candidato se crea al guardar la imagen y recibe los datos consolidados al completar
 el intake. `bodyPart` se reutiliza para ubicación (máximo 120 caracteres).
 
@@ -290,6 +289,44 @@ $env:RUN_NITA_V2_DB_TESTS = "1"
 npm --workspace backend run test:e2e
 Remove-Item Env:RUN_NITA_V2_DB_TESTS
 ```
+
+### Nita V2 — análisis y preparación (Fase 4B)
+
+Al completar el intake, V2 procesa `READY_FOR_ANALYSIS → ANALYZING` y termina internamente
+en `READY_FOR_PRICING`, `HUMAN_REVIEW` o `SPECIAL_REVIEW`. Reutiliza AI Vision V2 y su fallback.
+No calcula precios, selecciona modelos, genera cotizaciones V2, ejecuta scoring V2 ni envía
+mensajes finales de precio, revisión o reserva. El acuse de recepción del intake se conserva.
+
+`AiAnalysis` mantiene las observaciones y metadata originales. `Lead.v2Preparation` guarda
+una estructura versionada con decisión, diagnósticos, las dos señales especiales, comparación
+de color y datos derivados. Las medidas y el factor se calculan con Decimal (40 dígitos)
+y se serializan como strings para conservar precisión. No se crean tablas nuevas.
+
+SAME_SIZE copia medidas suficientes de la referencia; DIFFERENT_SIZE aplica el cociente
+de dimensiones y escala el área con su cuadrado. Solo EXPLICIT_REFERENCE permite continuar;
+BODY_CONTEXT conserva estimaciones y requiere revisión, y NONE no produce un área objetivo.
+La única regla comercial de confianza sigue siendo `overallConfidence >= 0.90`.
+
+Para BLACK_ONLY, la cobertura objetivo es 0. Cuando la referencia ya tiene color y el cliente
+mantiene color se conserva su cobertura observada, sin porcentajes fijos por opción. Añadir
+color a una referencia esencialmente negra exige revisión especial sin inventar cobertura.
+La otra señal especial es cobertura corporal extensa; ambas pueden guardarse juntas.
+
+El procesamiento usa un claim persistido de 120 s con ID de intento, transacciones breves
+y un límite técnico de 90 s para AI (compatible con los reintentos/fallback existentes).
+Un reintento puede recuperar un claim vencido y reutiliza el análisis ya guardado. Si un webhook
+duplicado encuentra un análisis pendiente, retoma únicamente ese trabajo sin repetir intake;
+si otro worker mantiene el claim, responde 503 para que el envío siga siendo reintentable.
+Los fallos definitivos de análisis terminan en HUMAN_REVIEW. Los resultados tardíos de un
+intento sustituido no alteran la decisión ni el histórico. No se añade un cron en esta fase.
+
+**Deuda técnica previa a activar V2:** Desacoplar o validar la ejecución de AI Vision respecto
+del webhook de WhatsApp para evitar mantener la respuesta HTTP abierta durante
+análisis/reintentos del proveedor.
+
+La suite `nita-v2-database` comprueba el intake con preparación sustituida por un stub.
+`nita-v2-preparation` comprueba el pipeline completo por webhook con la BD de desarrollo,
+cuentas y estilo aislados, IA/Storage/WhatsApp simulados, y limpieza posterior.
 
 Backend:
 

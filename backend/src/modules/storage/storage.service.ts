@@ -13,6 +13,8 @@ export abstract class StorageService {
 
   abstract exists(path: string): Promise<boolean>;
 
+  abstract download(path: string): Promise<{ content: Uint8Array; mimeType: string }>;
+
   abstract createSignedUrl(
     path: string,
     expiresInSeconds: number,

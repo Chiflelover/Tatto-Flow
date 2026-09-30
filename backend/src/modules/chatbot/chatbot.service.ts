@@ -21,6 +21,8 @@ import type {
 import { NitaStateMachine } from './domain/nita-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
+import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
+import { V2_ANALYSIS_STATES, V2_DECISION_STATES } from './domain/nita-v2-decision.js';
 
 const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
   `Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/${minimum} y S/${maximum}.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.`;
@@ -52,6 +54,8 @@ export class ChatbotService {
     private readonly configService: ConfigService,
     @Inject(NitaV2IntakeService)
     private readonly v2Intake: NitaV2IntakeService,
+    @Inject(NitaV2AnalysisService)
+    private readonly v2Analysis: NitaV2AnalysisService,
   ) {}
 
   async processStart(accountId: string, customerIdentifier: string): Promise<ChatbotResponse> {
@@ -62,6 +66,9 @@ export class ChatbotService {
     }
 
     const { conversation } = access;
+
+    if (this.isV2ProcessingOrDecided(conversation))
+      return this.silentResponse(conversation.currentState);
 
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
@@ -85,6 +92,10 @@ export class ChatbotService {
     return this.processInput(accountId, customerIdentifier, { type: 'option', ...selection });
   }
 
+  resumePendingV2Analysis(accountId: string, customerIdentifier: string): Promise<void> {
+    return this.v2Analysis.resumePendingForCustomer(accountId, customerIdentifier);
+  }
+
   processTextMessage(
     accountId: string,
     customerIdentifier: string,
@@ -105,6 +116,9 @@ export class ChatbotService {
     }
 
     const { conversation } = access;
+
+    if (this.isV2ProcessingOrDecided(conversation))
+      return this.silentResponse(conversation.currentState);
 
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
@@ -222,6 +236,9 @@ export class ChatbotService {
 
     const { conversation } = access;
 
+    if (this.isV2ProcessingOrDecided(conversation))
+      return this.silentResponse(conversation.currentState);
+
     if (this.isHandedOff(conversation)) {
       return this.silentHandoff();
     }
@@ -276,6 +293,11 @@ export class ChatbotService {
         ? await this.conversationsService.getOrCreateActive(accountId, customer.id)
         : await this.conversationsService.getOrCreateActive(accountId, customer.id, defaultVersion);
 
+    if (
+      conversation.flowVersion === FlowVersion.V2 &&
+      V2_ANALYSIS_STATES.some((state) => state === conversation.currentState)
+    )
+      return { conversation: await this.v2Analysis.process(accountId, conversation.id) };
     return { conversation };
   }
 
@@ -311,7 +333,23 @@ export class ChatbotService {
       return this.silentResponse(result.conversation.currentState);
     }
 
+    if (
+      result.conversation.flowVersion === FlowVersion.V2 &&
+      result.conversation.currentState === ConversationState.READY_FOR_ANALYSIS
+    ) {
+      const prepared = await this.v2Analysis.process(conversation.accountId, conversation.id);
+      return { ...decision.response, state: prepared.currentState };
+    }
     return decision.response;
+  }
+
+  private isV2ProcessingOrDecided(conversation: Conversation): boolean {
+    return (
+      conversation.flowVersion === FlowVersion.V2 &&
+      [...V2_ANALYSIS_STATES, ...V2_DECISION_STATES].some(
+        (state) => state === conversation.currentState,
+      )
+    );
   }
 
   private isHandedOff(conversation: Conversation): boolean {

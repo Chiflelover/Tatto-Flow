@@ -38,6 +38,16 @@ export class InMemoryStorageService extends StorageService {
     return Promise.resolve(this.objects.has(path));
   }
 
+  download(path: string): Promise<{ content: Uint8Array; mimeType: string }> {
+    assertSafeStoragePath(path);
+    const object = this.objects.get(path);
+    if (!object) return Promise.reject(new Error('Imagen no disponible.'));
+    return Promise.resolve({
+      content: new Uint8Array(object.content),
+      mimeType: object.contentType,
+    });
+  }
+
   createSignedUrl(path: string, expiresInSeconds: number): Promise<string> {
     assertSafeStoragePath(path);
     const object = this.objects.get(path);

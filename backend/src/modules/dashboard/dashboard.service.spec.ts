@@ -45,6 +45,7 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     sameSizeAsReference: null,
     targetSizeCm: null,
     colorDeclaration: null,
+    v2Preparation: null,
     status: LeadStatus.VERIFIED,
     reviewReasons: [],
     manualFinalPrice: null,

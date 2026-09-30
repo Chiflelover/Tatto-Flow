@@ -12,6 +12,7 @@ import { PrismaService } from '../src/infrastructure/prisma/prisma.service.js';
 import { ChatbotService } from '../src/modules/chatbot/chatbot.service.js';
 import { NitaBusinessHoursService } from '../src/modules/chatbot/nita-business-hours.service.js';
 import { NitaV2IntakeService } from '../src/modules/chatbot/nita-v2-intake.service.js';
+import { NitaV2AnalysisService } from '../src/modules/chatbot/nita-v2-analysis.service.js';
 import { WHATSAPP_BUTTON_IDS as Buttons } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
 import { ConversationAbandonmentService } from '../src/modules/conversations/conversation-abandonment.service.js';
 import { ImageAnalysisWorkflowService } from '../src/modules/image-analysis/image-analysis-workflow.service.js';
@@ -72,6 +73,13 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)
         .useValue({ isOpen: () => true })
+        // Intake-only coverage. The full preparation workflow has its own E2E suite.
+        .overrideProvider(NitaV2AnalysisService)
+        .useValue({
+          resumePendingForCustomer: vi.fn().mockResolvedValue(undefined),
+          process: (accountId: string, id: string) =>
+            prisma.conversation.findFirstOrThrow({ where: { id, accountId } }),
+        })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
       app.setGlobalPrefix('api');

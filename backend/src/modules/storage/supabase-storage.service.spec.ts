@@ -4,6 +4,7 @@ const supabaseMocks = vi.hoisted(() => ({
   remove: vi.fn(),
   exists: vi.fn(),
   createSignedUrl: vi.fn(),
+  download: vi.fn(),
 }));
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -15,6 +16,7 @@ vi.mock('@supabase/supabase-js', () => ({
         remove: supabaseMocks.remove,
         exists: supabaseMocks.exists,
         createSignedUrl: supabaseMocks.createSignedUrl,
+        download: supabaseMocks.download,
       })),
     },
   })),
@@ -75,5 +77,37 @@ describe('SupabaseStorageService', () => {
     );
 
     await expect(storage.exists(PATH)).resolves.toBe(false);
+  });
+
+  it('downloads bytes with the backend credentials, bounded time and no signed URL', async () => {
+    const content = new Uint8Array([1, 2, 3]);
+    supabaseMocks.download.mockResolvedValue({
+      data: new Blob([content], { type: 'image/png' }),
+      error: null,
+    });
+    const storage = new SupabaseStorageService(
+      'https://project-ref.supabase.co',
+      'backend-secret',
+      'tattoo-references',
+    );
+    expect(await storage.download(PATH)).toEqual({ content, mimeType: 'image/png' });
+    expect(supabaseMocks.download).toHaveBeenCalledWith(
+      PATH,
+      {},
+      { signal: expect.any(AbortSignal) as unknown },
+    );
+    expect(supabaseMocks.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unavailable private object without returning empty bytes', async () => {
+    supabaseMocks.download.mockResolvedValue({ data: null, error: new Error('not found') });
+    const storage = new SupabaseStorageService(
+      'https://project-ref.supabase.co',
+      'backend-secret',
+      'tattoo-references',
+    );
+    await expect(storage.download(PATH)).rejects.toThrow(
+      'La operación de almacenamiento no pudo completarse.',
+    );
   });
 });

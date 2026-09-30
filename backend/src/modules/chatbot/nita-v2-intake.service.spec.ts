@@ -12,6 +12,8 @@ function fixture(overrides: Partial<Conversation> = {}) {
     accountId: crypto.randomUUID(),
     customerId: crypto.randomUUID(),
     flowVersion: 'V2',
+    v2AnalysisClaimId: null,
+    v2AnalysisLeaseUntil: null,
     currentState: 'WAITING_IMAGE',
     status: 'ACTIVE',
     firstTattoo: false,

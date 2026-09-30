@@ -1,9 +1,10 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AnalysisVersion, FlowVersion } from '../../generated/prisma/client.js';
+import { AnalysisVersion, FlowVersion, type Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { TattooImageInput } from './domain/image-analysis.types.js';
 import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysis.service.js';
 import { normalizeImageAnalysisV2Observation } from './image-analysis-v2.contract.js';
+import type { ImageAnalysisV2Result } from './domain/image-analysis-v2.types.js';
 
 @Injectable()
 export class ImageAnalysisV2Service {
@@ -37,29 +38,38 @@ export class ImageAnalysisV2Service {
       return lead.aiAnalysis;
     }
     const result = await this.analyzeReference(image, { leadId });
-    return this.prisma.$transaction(async (tx) => {
-      const ownedLead = await tx.lead.findFirst({
-        where: { id: leadId, accountId, conversation: { flowVersion: FlowVersion.V2 } },
-        select: { id: true },
-      });
-      if (!ownedLead) throw new ConflictException('El lead ya no admite un análisis V2.');
-      const analysis = await tx.aiAnalysis.upsert({
-        where: { leadId },
-        update: {},
-        create: {
-          leadId,
-          analysisVersion: AnalysisVersion.V2,
-          ...result.observations,
-          provider: result.provider,
-          model: result.model,
-          promptVersion: result.promptVersion,
-          schemaVersion: result.schemaVersion,
-          rawResponse: result.rawResponse,
-        },
-      });
-      if (analysis.analysisVersion !== AnalysisVersion.V2)
-        throw new ConflictException('El análisis histórico V1 debe conservarse.');
-      return analysis;
+    return this.prisma.$transaction((tx) =>
+      this.persistLeadReference(tx, accountId, leadId, result),
+    );
+  }
+
+  async persistLeadReference(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    leadId: string,
+    result: ImageAnalysisV2Result,
+  ) {
+    const ownedLead = await tx.lead.findFirst({
+      where: { id: leadId, accountId, conversation: { flowVersion: FlowVersion.V2 } },
+      select: { id: true },
     });
+    if (!ownedLead) throw new ConflictException('El lead ya no admite un análisis V2.');
+    const analysis = await tx.aiAnalysis.upsert({
+      where: { leadId },
+      update: {},
+      create: {
+        leadId,
+        analysisVersion: AnalysisVersion.V2,
+        ...normalizeImageAnalysisV2Observation(result.observations),
+        provider: result.provider,
+        model: result.model,
+        promptVersion: result.promptVersion,
+        schemaVersion: result.schemaVersion,
+        rawResponse: result.rawResponse,
+      },
+    });
+    if (analysis.analysisVersion !== AnalysisVersion.V2)
+      throw new ConflictException('El análisis histórico V1 debe conservarse.');
+    return analysis;
   }
 }

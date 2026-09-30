@@ -189,6 +189,7 @@ export class WhatsAppWebhookService {
     }
 
     if (!(await this.messages.claim(messageId))) {
+      await this.adapter.resumePendingV2Analysis(channel.accountId, customerIdentifier);
       this.logger.info('whatsapp.message.duplicate_ignored', { whatsappMessageId: messageId });
       return;
     }

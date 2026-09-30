@@ -27,6 +27,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     id: crypto.randomUUID(),
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    v2AnalysisClaimId: null,
+    v2AnalysisLeaseUntil: null,
     firstTattoo: null,
     sameSizeAsReference: null,
     targetSizeCm: null,
@@ -137,6 +139,8 @@ describe('ConversationAbandonmentService', () => {
     const fixture = createFixture([
       makeConversation({
         flowVersion: 'V2',
+        v2AnalysisClaimId: null,
+        v2AnalysisLeaseUntil: null,
         currentState: ConversationState.ASK_COLOR,
         firstTattoo: false,
         sameSizeAsReference: false,

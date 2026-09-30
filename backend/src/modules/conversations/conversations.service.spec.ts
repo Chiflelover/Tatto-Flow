@@ -58,6 +58,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     id: ABANDONED_CONVERSATION_ID,
     accountId: ACCOUNT_ID,
     flowVersion: 'V1',
+    v2AnalysisClaimId: null,
+    v2AnalysisLeaseUntil: null,
     firstTattoo: null,
     sameSizeAsReference: null,
     targetSizeCm: null,
