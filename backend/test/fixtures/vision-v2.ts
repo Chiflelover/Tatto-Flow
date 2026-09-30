@@ -22,6 +22,10 @@ export const VISION_STYLES: VisionStyle[] = [
 ];
 
 export const VISION_RESPONSE = {
+  valid_tattoo_reference: true,
+  reference_validation_confidence: 0.99,
+  composition_aspect_ratio: 0.5,
+  composition_fill_ratio: 0.75,
   style: 'FINE_LINE',
   style_confidence: 0.94,
   scale_reference_type: 'EXPLICIT_REFERENCE',
@@ -63,11 +67,16 @@ export function persistedVision(version: AnalysisVersion = AnalysisVersion.V2): 
     id: '00000000-0000-4000-8000-000000000010',
     leadId: '00000000-0000-4000-8000-000000000020',
     analysisVersion: version,
+    validTattooReference: version === 'V1' ? null : result.observations.validTattooReference,
+    referenceValidationConfidence:
+      version === 'V1' ? null : result.observations.referenceValidationConfidence,
     detectedSize: version === 'V1' ? TattooSize.MEDIUM : null,
     sizeConfidence: version === 'V1' ? new Prisma.Decimal('0.951') : null,
     detectedDetail: version === 'V1' ? DetailLevel.LIGHT : null,
     detailConfidence: version === 'V1' ? new Prisma.Decimal('0.963') : null,
     style: version === 'V1' ? null : result.observations.style,
+    compositionAspectRatio: version === 'V1' ? null : result.observations.compositionAspectRatio,
+    compositionFillRatio: version === 'V1' ? null : result.observations.compositionFillRatio,
     styleConfidence: version === 'V1' ? null : result.observations.styleConfidence,
     scaleReferenceType: version === 'V1' ? null : result.observations.scaleReferenceType,
     scaleConfidence: version === 'V1' ? null : result.observations.scaleConfidence,

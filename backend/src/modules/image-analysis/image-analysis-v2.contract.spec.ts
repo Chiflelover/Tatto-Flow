@@ -10,6 +10,58 @@ const parse = (overrides: Record<string, unknown> = {}) =>
   parseImageAnalysisV2Response(JSON.stringify({ ...VISION_RESPONSE, ...overrides }), VISION_STYLES);
 
 describe('AI Vision V2 contract', () => {
+  it('requires a simple reference observation in both provider schemas', () => {
+    for (const valid_tattoo_reference of [true, false])
+      expect(parse({ valid_tattoo_reference }).validTattooReference).toBe(valid_tattoo_reference);
+    for (const valid_tattoo_reference of [undefined, null, 1, 'true'])
+      expect(() => parse({ valid_tattoo_reference })).toThrow();
+    for (const provider of ['gemini', 'openai'] as const) {
+      const schema = createImageAnalysisV2Schema(VISION_STYLES, provider);
+      expect(schema.required).toContain('valid_tattoo_reference');
+      expect(schema.required).toContain('reference_validation_confidence');
+      expect(schema.properties.valid_tattoo_reference).toEqual({ type: 'boolean' });
+    }
+    const prompt = createImageAnalysisV2Prompt(VISION_STYLES);
+    expect(prompt).toContain('fotografía de tatuaje sobre piel');
+    expect(prompt).toContain('un diseño de tatuaje');
+    expect(prompt).toContain('Una selfie sin diseño');
+    expect(prompt).toContain('una captura aleatoria');
+  });
+  it.each(['composition_aspect_ratio', 'composition_fill_ratio'])(
+    'validates dimensionless %s in both provider schemas',
+    (field) => {
+      for (const value of [null, 0.001, 0.4, 1])
+        expect(() => parse({ [field]: value })).not.toThrow();
+      for (const value of [undefined, 0, -0.1, 1.001, '0.4'])
+        expect(() => parse({ [field]: value })).toThrow();
+      for (const provider of ['gemini', 'openai'] as const) {
+        const schema = createImageAnalysisV2Schema(VISION_STYLES, provider);
+        expect(schema.required).toContain(field);
+        expect(schema.properties.composition_aspect_ratio.anyOf).toContainEqual({ type: 'null' });
+        expect(schema.properties.composition_aspect_ratio.anyOf[0]).toMatchObject({
+          type: 'number',
+          maximum: 1,
+        });
+      }
+    },
+  );
+  it.each(['NONE', 'BODY_CONTEXT'])(
+    'preserves independent geometry with %s',
+    (scale_reference_type) => {
+      expect(
+        parse({ scale_reference_type, composition_aspect_ratio: 0.4, composition_fill_ratio: 0.7 }),
+      ).toMatchObject({
+        compositionAspectRatio: 0.4,
+        compositionFillRatio: 0.7,
+        scaleReferenceType: scale_reference_type,
+      });
+      expect(parse({ scale_reference_type: 'NONE' })).toMatchObject({
+        referenceMainDimensionCm: null,
+        referenceAreaCm2: null,
+        compositionAspectRatio: 0.5,
+      });
+    },
+  );
   it('uses the available catalog and supports extensions and insufficient classification', () => {
     expect(parse().style).toBe('FINE_LINE');
     expect(parse({ style: 'DOTWORK' }).style).toBe('DOTWORK');
@@ -24,6 +76,7 @@ describe('AI Vision V2 contract', () => {
   });
 
   it.each([
+    'reference_validation_confidence',
     'style_confidence',
     'scale_confidence',
     'area_confidence',

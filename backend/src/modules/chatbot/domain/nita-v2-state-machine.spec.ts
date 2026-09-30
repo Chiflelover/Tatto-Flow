@@ -25,6 +25,41 @@ function context(
 const text = (value: string): ChatbotInput => ({ type: 'text', value });
 
 describe('Nita V2 intake state machine', () => {
+  it.each([
+    ['8', 8],
+    ['8 cm', 8],
+    ['12.5 cm', 12.5],
+  ])('accepts %s after analysis without replacing previous intake', (value, targetSizeCm) => {
+    const current = context(State.ASK_TARGET_SIZE_AFTER_ANALYSIS, {
+      firstTattoo: false,
+      sameSizeAsReference: true,
+      colorDeclaration: 'BLACK_ONLY',
+      bodyPart: 'Antebrazo',
+    });
+    const decision = machine.process(current, text(String(value)));
+    expect(decision.update).toEqual({ targetSizeCm, currentState: State.READY_FOR_ANALYSIS });
+    expect({ ...current, ...decision.update }).toMatchObject({
+      firstTattoo: false,
+      sameSizeAsReference: true,
+      colorDeclaration: 'BLACK_ONLY',
+      bodyPart: 'Antebrazo',
+      targetSizeCm,
+    });
+  });
+  it('keeps the post-analysis size question pending for invalid sizes and ignores old buttons', () => {
+    const current = context(State.ASK_TARGET_SIZE_AFTER_ANALYSIS);
+    for (const value of ['0', '-8', '8 x 10', 'como la foto'])
+      expect(machine.process(current, text(value))).toMatchObject({
+        update: {},
+        response: { state: State.ASK_TARGET_SIZE_AFTER_ANALYSIS },
+      });
+    expect(
+      machine.process(current, { type: 'option', stage: 'sameSize', value: true }),
+    ).toMatchObject({ ignored: true, update: {} });
+    expect(machine.prompt(current).messages[0]?.text).toBe(
+      'No puedo saber el tamaño real de la referencia con suficiente precisión. ¿Aproximadamente de cuántos cm quieres que sea el tatuaje?',
+    );
+  });
   it.each([true, false])(
     'completes the intake with sameSize=%s and stops before analysis',
     (sameSize) => {

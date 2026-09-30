@@ -2,7 +2,7 @@ import { ScaleReferenceType, type Prisma } from '../../generated/prisma/client.j
 import type { ImageAnalysisV2Observation, VisionStyle } from './domain/image-analysis-v2.types.js';
 import { InvalidImageAnalysisResponseError } from './image-analysis-response.js';
 
-export const IMAGE_ANALYSIS_V2_SCHEMA_VERSION = 'VISION_V2_2';
+export const IMAGE_ANALYSIS_V2_SCHEMA_VERSION = 'VISION_V2_4';
 
 const confidenceSchema = { type: 'number', minimum: 0, maximum: 1 } as const;
 
@@ -21,7 +21,22 @@ export function createImageAnalysisV2Schema(
       { type: 'null' },
     ],
   };
+  const relativeGeometry = {
+    anyOf: [
+      {
+        type: 'number',
+        ...(provider === 'openai' ? { exclusiveMinimum: 0 } : { minimum: 0 }),
+        maximum: 1,
+        description: 'Proporción visual sin unidades, estrictamente mayor que 0 y hasta 1.',
+      },
+      { type: 'null' },
+    ],
+  };
   const properties = {
+    valid_tattoo_reference: { type: 'boolean' },
+    reference_validation_confidence: confidenceSchema,
+    composition_aspect_ratio: relativeGeometry,
+    composition_fill_ratio: relativeGeometry,
     style: styles.length
       ? { anyOf: [{ type: 'string', enum: styles.map((style) => style.code) }, { type: 'null' }] }
       : { type: 'null' },
@@ -64,10 +79,14 @@ export function parseImageAnalysisV2Response(
   if (
     Object.keys(candidate).length !== expectedKeys.length ||
     !Object.keys(candidate).every((key) => expectedKeys.includes(key)) ||
+    typeof candidate.valid_tattoo_reference !== 'boolean' ||
+    !isFraction(candidate.reference_validation_confidence) ||
     !(candidate.style === null || styles.some((style) => style.code === candidate.style)) ||
     !isFraction(candidate.style_confidence) ||
     !isScaleReferenceType(candidate.scale_reference_type) ||
     !isFraction(candidate.scale_confidence) ||
+    !isPositiveFractionOrNull(candidate.composition_aspect_ratio) ||
+    !isPositiveFractionOrNull(candidate.composition_fill_ratio) ||
     !isPositiveOrNull(candidate.reference_main_dimension_cm) ||
     !isPositiveOrNull(candidate.reference_area_cm2) ||
     !isFraction(candidate.area_confidence) ||
@@ -79,6 +98,10 @@ export function parseImageAnalysisV2Response(
   )
     throw new InvalidImageAnalysisResponseError();
   return normalizeImageAnalysisV2Observation({
+    validTattooReference: candidate.valid_tattoo_reference,
+    referenceValidationConfidence: candidate.reference_validation_confidence,
+    compositionAspectRatio: candidate.composition_aspect_ratio,
+    compositionFillRatio: candidate.composition_fill_ratio,
     style: candidate.style as string | null,
     styleConfidence: candidate.style_confidence,
     scaleReferenceType: candidate.scale_reference_type,
@@ -111,6 +134,10 @@ function isFraction(value: unknown): value is number {
 
 function isPositiveOrNull(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+}
+
+function isPositiveFractionOrNull(value: unknown): value is number | null {
+  return value === null || (isFraction(value) && value > 0);
 }
 
 export function serializeProviderResponse(response: unknown, outputText: string | undefined) {

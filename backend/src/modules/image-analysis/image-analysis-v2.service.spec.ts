@@ -98,6 +98,8 @@ describe('controlled AI Vision V2 persistence', () => {
       select: { id: true },
     });
     expect(stored.referenceAreaCm2).toBeNull();
+    expect(stored.validTattooReference).toBe(true);
+    expect(stored.referenceValidationConfidence).toBe(0.99);
     expect(stored.scaleReferenceType).toBe('BODY_CONTEXT');
     expect(stored.scaleConfidence).toBe(0.12);
     expect(stored.extensiveBodyCoverage).toBe(true);

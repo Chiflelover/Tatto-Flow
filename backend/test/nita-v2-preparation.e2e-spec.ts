@@ -232,7 +232,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           analysisVersion: 'V2',
           provider: 'gemini',
           model: 'gemini-test-model',
-          schemaVersion: 'VISION_V2_2',
+          schemaVersion: 'VISION_V2_4',
           rawResponse: result().rawResponse,
         },
         v2Preparation: { decision: 'READY_FOR_PRICING', targetAreaCm2: '54', scaleFactor: '1' },
@@ -244,7 +244,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       });
       expect(await storage.exists(conversation.path)).toBe(true);
     });
-    it('scales 10/42 to 22/203.28 and ignores concurrent and later message retries', async () => {
+    it('uses client size 22 and relative geometry for area 181.5 and ignores concurrent and later message retries', async () => {
       const observation = result();
       observation.observations.referenceMainDimensionCm = 10;
       observation.observations.referenceAreaCm2 = 42;
@@ -260,8 +260,8 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(await read(conversation.id)).toEqual(first);
       expect(first.lead?.v2Preparation).toMatchObject({
         decision: 'READY_FOR_PRICING',
-        scaleFactor: '2.2',
-        targetAreaCm2: '203.28',
+        scaleFactor: null,
+        targetAreaCm2: '181.5',
       });
       expect(await prisma.aiAnalysis.count({ where: { lead: { accountId: accounts[0] } } })).toBe(
         1,
@@ -347,20 +347,25 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(analyze).toHaveBeenCalledOnce();
       expect(cloud.sendMessage).not.toHaveBeenCalled();
     });
-    it('does not use BODY_CONTEXT estimates as validated physical scale', async () => {
+    it('asks for size instead of treating BODY_CONTEXT as validated physical scale', async () => {
       const observation = result();
       observation.observations.scaleReferenceType = 'BODY_CONTEXT';
       analyze.mockResolvedValue(observation);
-      const conversation = await seed();
-      await inbound();
+      const conversation = await seed(0, { state: 'ASK_BODY_PART' });
+      await inbound(0, randomUUID(), 'Antebrazo');
       const value = await read(conversation.id);
-      expect(value.currentState).toBe('HUMAN_REVIEW');
+      expect(value.currentState).toBe('ASK_TARGET_SIZE_AFTER_ANALYSIS');
       expect(value.lead?.v2Preparation).toMatchObject({
-        targetAreaCm2: '54',
-        reviewReasons: ['BODY_CONTEXT_SCALE'],
+        targetAreaCm2: null,
+        reviewReasons: [],
       });
       expect(value.lead?.aiAnalysis?.scaleReferenceType).toBe('BODY_CONTEXT');
-      expect(cloud.sendMessage).not.toHaveBeenCalled();
+      expect(
+        await prisma.whatsAppDelivery.count({
+          where: { leadId: conversation.leadId, kind: 'TARGET_SIZE' },
+        }),
+      ).toBe(1);
+      expect(cloud.sendMessage).toHaveBeenCalledOnce();
     });
 
     it('recovers a crash through the same recorded webhook ID after lease expiry, without replaying intake', async () => {

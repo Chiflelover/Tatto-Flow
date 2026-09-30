@@ -8,6 +8,8 @@ export const V2_BOOKING_BUTTON_IDS = {
 } as const;
 export const V2_REVIEW_MESSAGE =
   'Muchas gracias por la información. Un tatuador del estudio revisará tu solicitud y se pondrá en contacto contigo próximamente.';
+export const V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION =
+  'No puedo saber el tamaño real de la referencia con suficiente precisión. ¿Aproximadamente de cuántos cm quieres que sea el tatuaje?';
 export const V2_ADVANCE_QUESTION: WhatsAppOutboundMessage = {
   type: 'interactive_buttons',
   body: '¿Deseas coordinar para separar una cita?\n\n- Sí, quiero separar una cita\n- Prefiero que me contacte el tatuador',
@@ -31,3 +33,6 @@ export function v2BookingSelection(input: ChatbotInput): BookingIntent | null {
     return 'ARTIST_CONTACT';
   return null;
 }
+export const V2_INVALID_REFERENCE_MESSAGE =
+  'No pude identificar una referencia de tatuaje en la imagen enviada, así que no podré continuar con esta cotización.\n\n' +
+  'Si deseas intentarlo nuevamente, escríbeme otra vez y comenzaremos una nueva cotización.';

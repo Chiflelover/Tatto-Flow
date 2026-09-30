@@ -337,7 +337,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(lead.calculatedMinPrice).toBeNull();
       expect(lead.manualFinalPrice).toBeNull();
       expect(analyzeV2).toHaveBeenCalledOnce();
-      expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_2');
+      expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_4');
       const messages = cloud.sendMessage.mock.calls
         .map((call) => JSON.stringify(call[2]))
         .join('\n');
@@ -440,8 +440,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       'delivers existing %s results without pricing or booking',
       async (decision) => {
         const observation = result();
-        if (decision === 'HUMAN_REVIEW')
-          observation.observations.scaleReferenceType = 'BODY_CONTEXT';
+        if (decision === 'HUMAN_REVIEW') observation.observations.overallConfidence = 0.89;
         else
           Object.assign(observation.observations, {
             referenceEssentiallyBlack: true,

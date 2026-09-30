@@ -19,11 +19,10 @@ export function hasCompleteV2Intake(conversation: V2Intake): boolean {
   return (
     typeof conversation.firstTattoo === 'boolean' &&
     typeof conversation.sameSizeAsReference === 'boolean' &&
-    (conversation.sameSizeAsReference
-      ? conversation.targetSizeCm === null
-      : typeof conversation.targetSizeCm === 'number' &&
+    ((conversation.sameSizeAsReference && conversation.targetSizeCm === null) ||
+      (typeof conversation.targetSizeCm === 'number' &&
         Number.isFinite(conversation.targetSizeCm) &&
-        conversation.targetSizeCm > 0) &&
+        conversation.targetSizeCm > 0)) &&
     conversation.colorDeclaration !== null &&
     Boolean(conversation.bodyPart?.trim()) &&
     (conversation.bodyPart?.length ?? 0) <= 120

@@ -9,7 +9,7 @@ import {
   WhatsAppCloudApiClient,
 } from './whatsapp-cloud-api.client.js';
 
-const DELIVERY_ORDER = ['RESULT', 'ADVANCE_INTENT', 'HANDOFF'];
+const DELIVERY_ORDER = ['TARGET_SIZE', 'RESULT', 'ADVANCE_INTENT', 'HANDOFF'];
 export const V2_DELIVERY_LEASE_MS = 60_000;
 
 @Injectable()
@@ -33,16 +33,26 @@ export class WhatsAppV2DeliveryService {
     const lead = await this.prisma.lead.findFirst({
       where: {
         accountId,
-        status: { not: 'COMPLETED' },
         customer: { phoneNumber },
         conversation: { flowVersion: 'V2', status: { not: 'ABANDONED' } },
+        OR: [
+          { status: { not: 'COMPLETED' } },
+          {
+            status: 'COMPLETED',
+            conversation: { status: 'COMPLETED', currentState: 'INVALID_REFERENCE' },
+          },
+        ],
         deliveries: { some: { sentAt: null } },
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: { id: true, conversation: { select: { currentState: true } } },
     });
     if (!lead) return 'DONE';
-    for (const kind of DELIVERY_ORDER) {
+    const order =
+      lead.conversation?.currentState === 'INVALID_REFERENCE'
+        ? ['INVALID_REFERENCE']
+        : DELIVERY_ORDER;
+    for (const kind of order) {
       const delivery = await this.claim(accountId, lead.id, kind);
       if (delivery === 'UNKNOWN') return 'UNKNOWN';
       if (!delivery) continue;
@@ -160,8 +170,19 @@ export class WhatsAppV2DeliveryService {
         where: {
           id: leadId,
           accountId,
-          status: { not: 'COMPLETED' },
-          conversation: { flowVersion: 'V2', status: { not: 'ABANDONED' } },
+          ...(kind === 'INVALID_REFERENCE'
+            ? {
+                status: 'COMPLETED' as const,
+                conversation: {
+                  flowVersion: 'V2' as const,
+                  status: 'COMPLETED' as const,
+                  currentState: 'INVALID_REFERENCE' as const,
+                },
+              }
+            : {
+                status: { not: 'COMPLETED' as const },
+                conversation: { flowVersion: 'V2' as const, status: { not: 'ABANDONED' as const } },
+              }),
         },
         select: { id: true },
       });

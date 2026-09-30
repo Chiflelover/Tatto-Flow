@@ -21,6 +21,10 @@ import {
   prepareV2Case,
   type V2ReviewReason,
 } from './domain/nita-v2-decision.js';
+import {
+  V2_INVALID_REFERENCE_MESSAGE,
+  V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION,
+} from './domain/nita-v2-messages.js';
 
 // Technical deadlines: allow the existing Gemini retries and OpenAI fallback to finish.
 export const V2_ANALYSIS_TIMEOUT_MS = 90_000;
@@ -225,15 +229,19 @@ export class NitaV2AnalysisService {
       let analysis = conversation.lead?.aiAnalysis ?? null;
       if (!analysis && result)
         analysis = await this.vision.persistLeadReference(tx, accountId, lead.id, result);
-      const style = analysis?.style
-        ? await tx.tattooStyle.findUnique({
-            where: { code: analysis.style },
-            select: {
-              id: true,
-              artistStyles: { where: { accountId, isEnabled: true }, select: { accountId: true } },
-            },
-          })
-        : null;
+      const style =
+        analysis?.validTattooReference !== false && analysis?.style
+          ? await tx.tattooStyle.findUnique({
+              where: { code: analysis.style },
+              select: {
+                id: true,
+                artistStyles: {
+                  where: { accountId, isEnabled: true },
+                  select: { accountId: true },
+                },
+              },
+            })
+          : null;
       const preparation = prepareV2Case(
         conversation,
         analysis,
@@ -247,12 +255,37 @@ export class NitaV2AnalysisService {
         where: { id: lead.id, accountId },
         data: {
           v2Preparation: preparation as unknown as Prisma.InputJsonValue,
+          ...(preparation.decision === 'INVALID_REFERENCE' ? { status: 'COMPLETED' as const } : {}),
         },
       });
+      if (
+        preparation.decision === 'ASK_TARGET_SIZE_AFTER_ANALYSIS' ||
+        preparation.decision === 'INVALID_REFERENCE'
+      ) {
+        const kind =
+          preparation.decision === 'INVALID_REFERENCE' ? 'INVALID_REFERENCE' : 'TARGET_SIZE';
+        await tx.whatsAppDelivery.upsert({
+          where: { leadId_kind: { leadId: lead.id, kind } },
+          update: {},
+          create: {
+            accountId,
+            leadId: lead.id,
+            kind,
+            payload: {
+              type: 'text',
+              text:
+                kind === 'INVALID_REFERENCE'
+                  ? V2_INVALID_REFERENCE_MESSAGE
+                  : V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION,
+            },
+          },
+        });
+      }
       return tx.conversation.update({
         where: { id: conversationId },
         data: {
           currentState: preparation.decision,
+          ...(preparation.decision === 'INVALID_REFERENCE' ? { status: 'COMPLETED' as const } : {}),
           v2AnalysisClaimId: null,
           v2AnalysisLeaseUntil: null,
           lastActivityAt: new Date(),

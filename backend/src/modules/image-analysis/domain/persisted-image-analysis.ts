@@ -34,6 +34,8 @@ export function toImageAnalysisV2Observation(
 ): ImageAnalysisV2Observation | null {
   if (
     analysis.analysisVersion !== AnalysisVersion.V2 ||
+    analysis.validTattooReference === null ||
+    analysis.referenceValidationConfidence === null ||
     analysis.styleConfidence === null ||
     analysis.scaleReferenceType === null ||
     analysis.scaleConfidence === null ||
@@ -45,7 +47,11 @@ export function toImageAnalysisV2Observation(
   )
     return null;
   return {
+    validTattooReference: analysis.validTattooReference,
+    referenceValidationConfidence: analysis.referenceValidationConfidence,
     style: analysis.style,
+    compositionAspectRatio: analysis.compositionAspectRatio,
+    compositionFillRatio: analysis.compositionFillRatio,
     styleConfidence: analysis.styleConfidence,
     scaleReferenceType: analysis.scaleReferenceType,
     scaleConfidence: analysis.scaleConfidence,

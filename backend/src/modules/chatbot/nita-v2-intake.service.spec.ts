@@ -73,6 +73,44 @@ function fixture(overrides: Partial<Conversation> = {}) {
 }
 
 describe('Nita V2 reference and intake persistence', () => {
+  it('persists the follow-up size with the existing intake and checkpoints before commit', async () => {
+    const f = fixture({
+      currentState: 'ASK_TARGET_SIZE_AFTER_ANALYSIS',
+      firstTattoo: false,
+      sameSizeAsReference: true,
+      colorDeclaration: 'BLACK_ONLY',
+      bodyPart: 'Antebrazo',
+    });
+    const checkpoint = vi.fn().mockResolvedValue(undefined);
+    const result = await f.service.applyTransition(
+      f.conversation.accountId,
+      f.conversation.id,
+      'ASK_TARGET_SIZE_AFTER_ANALYSIS',
+      { targetSizeCm: 10, currentState: 'READY_FOR_ANALYSIS' },
+      checkpoint,
+    );
+    expect(result).toMatchObject({
+      applied: true,
+      conversation: {
+        currentState: 'READY_FOR_ANALYSIS',
+        sameSizeAsReference: true,
+        targetSizeCm: 10,
+      },
+    });
+    expect(f.updateLead).toHaveBeenCalledWith({
+      where: { id: f.lead.id },
+      data: {
+        firstTattoo: false,
+        sameSizeAsReference: true,
+        targetSizeCm: 10,
+        colorDeclaration: 'BLACK_ONLY',
+        bodyPart: 'Antebrazo',
+      },
+    });
+    expect(checkpoint).toHaveBeenCalledWith(f.transaction, result.conversation);
+    expect(f.upsert).not.toHaveBeenCalled();
+    expect(f.ensureStored).not.toHaveBeenCalled();
+  });
   it('locks the conversation, reuses a candidate and stores privately before advancing', async () => {
     const f = fixture();
     const result = await f.service.storeReference(

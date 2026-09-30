@@ -16,7 +16,13 @@ export interface V2LeadPreparation {
   targetAreaCm2: string | null;
   targetColorCoverage: number | null;
   bookingIntent: BookingIntent | null;
-  decision: 'READY_FOR_PRICING' | 'HUMAN_REVIEW' | 'SPECIAL_REVIEW' | null;
+  decision:
+    | 'READY_FOR_PRICING'
+    | 'HUMAN_REVIEW'
+    | 'SPECIAL_REVIEW'
+    | 'ASK_TARGET_SIZE_AFTER_ANALYSIS'
+    | 'INVALID_REFERENCE'
+    | null;
   reviewReasons: string[];
   specialReviewTypes: string[];
 }

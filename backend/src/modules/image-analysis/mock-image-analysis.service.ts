@@ -40,7 +40,11 @@ export class MockImageAnalysisService extends ImageAnalysisService {
     validateLeadImageFile(image);
     // A fixture does not establish visual evidence. Keep unknown measurements and style explicit.
     const rawResponse = {
+      valid_tattoo_reference: false,
+      reference_validation_confidence: 0,
       style: null,
+      composition_aspect_ratio: null,
+      composition_fill_ratio: null,
       style_confidence: 0,
       scale_reference_type: 'NONE',
       scale_confidence: 0,

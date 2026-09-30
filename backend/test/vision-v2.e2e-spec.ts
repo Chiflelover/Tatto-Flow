@@ -48,9 +48,11 @@ describe('AI_MODE=mock with V1 and controlled V2 (e2e)', () => {
     expect(app.get(OPENAI_CLIENT)).toBeNull();
     expect(result).toMatchObject({
       provider: 'mock',
-      promptVersion: 2,
-      schemaVersion: 'VISION_V2_2',
+      promptVersion: 4,
+      schemaVersion: 'VISION_V2_4',
       observations: {
+        validTattooReference: false,
+        referenceValidationConfidence: 0,
         style: null,
         scaleReferenceType: 'NONE',
         scaleConfidence: 0,

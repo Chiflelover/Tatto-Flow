@@ -53,23 +53,26 @@ export class WhatsAppJobRepository {
           orderBy: { createdAt: 'desc' },
         })
       : null;
-    const active = customer
-      ? await this.prisma.conversation.findFirst({
-          where: {
-            accountId: channel.accountId,
-            customerId: customer.id,
-            OR: [
-              { status: 'ACTIVE' },
-              {
-                status: 'COMPLETED',
-                currentState: 'HANDOFF_TO_TATTOO_ARTIST',
-                lead: { is: { status: { not: 'COMPLETED' } } },
-              },
-            ],
-          },
-          orderBy: { createdAt: 'desc' },
-        })
-      : null;
+    const restartInvalidReference =
+      latest?.status === 'COMPLETED' && latest.currentState === 'INVALID_REFERENCE';
+    const active =
+      customer && !restartInvalidReference
+        ? await this.prisma.conversation.findFirst({
+            where: {
+              accountId: channel.accountId,
+              customerId: customer.id,
+              OR: [
+                { status: 'ACTIVE' },
+                {
+                  status: 'COMPLETED',
+                  currentState: 'HANDOFF_TO_TATTOO_ARTIST',
+                  lead: { is: { status: { not: 'COMPLETED' } } },
+                },
+              ],
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+        : null;
     const restarting = latest?.status === 'ABANDONED' && latest.flowVersion === 'V2';
     const pending = customer
       ? await this.prisma.whatsAppJob.findFirst({
@@ -84,7 +87,9 @@ export class WhatsAppJobRepository {
     const flow = restarting
       ? 'V2'
       : (active?.flowVersion ??
-        (pending ? 'V2' : (this.config.get<string>('NITA_DEFAULT_FLOW_VERSION') ?? 'V1')));
+        (pending && !restartInvalidReference
+          ? 'V2'
+          : (this.config.get<string>('NITA_DEFAULT_FLOW_VERSION') ?? 'V1')));
     if (flow !== 'V2') return { queued: false };
     const saved = await this.prisma.$transaction(async (tx) => {
       const ownedCustomer =
@@ -174,17 +179,17 @@ export class WhatsAppJobRepository {
     )
       throw new ConflictException('La conversación no corresponde al trabajo.');
     if (conversation && job.conversationId && job.conversationId !== conversation.id) {
-      const abandoned = await tx.conversation.findFirst({
+      const finalized = await tx.conversation.findFirst({
         where: {
           id: job.conversationId,
           accountId: job.accountId,
           customerId: job.customerId,
           flowVersion: 'V2',
-          status: 'ABANDONED',
+          OR: [{ status: 'ABANDONED' }, { status: 'COMPLETED', currentState: 'INVALID_REFERENCE' }],
         },
         select: { id: true },
       });
-      if (!abandoned) throw new ConflictException('La conversación no corresponde al trabajo.');
+      if (!finalized) throw new ConflictException('La conversación no corresponde al trabajo.');
     }
     const lead = conversation
       ? await tx.lead.findFirst({

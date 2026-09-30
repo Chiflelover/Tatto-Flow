@@ -194,6 +194,46 @@ function createFixture() {
 }
 
 describe('ConversationsService abandoned conversation cleanup', () => {
+  it.each([FlowVersion.V1, FlowVersion.V2])(
+    'starts a fresh configured %s after INVALID_REFERENCE, preserving its history',
+    async (flowVersion) => {
+      const f = createFixture();
+      f.conversations[0] = makeConversation({
+        flowVersion: FlowVersion.V2,
+        status: ConversationStatus.COMPLETED,
+        currentState: ConversationState.INVALID_REFERENCE,
+        firstTattoo: true,
+        sameSizeAsReference: false,
+        targetSizeCm: 12,
+        colorDeclaration: 'MOSTLY_COLOR',
+        bodyPart: 'Brazo',
+        createdAt: new Date(),
+      });
+      const history = { ...f.conversations[0] };
+      f.conversations.push(
+        makeConversation({
+          id: 'older-handoff',
+          status: ConversationStatus.COMPLETED,
+          currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+        }),
+      );
+      f.leadStatusByConversation.set('older-handoff', LeadStatus.REQUIRES_REVIEW);
+      const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID, flowVersion);
+      expect(result.created).toBe(true);
+      expect(result.conversation).toMatchObject({
+        flowVersion,
+        currentState: 'START',
+        firstTattoo: null,
+        sameSizeAsReference: null,
+        targetSizeCm: null,
+        colorDeclaration: null,
+        bodyPart: null,
+      });
+      expect(f.conversations[0]).toEqual(history);
+      expect(f.deleteLead).not.toHaveBeenCalled();
+      expect(f.deleteMany).not.toHaveBeenCalled();
+    },
+  );
   it('creates V2 when requested explicitly and defaults to V1 without prior V2', async () => {
     const f = createFixture();
     const result = await f.service.getOrCreateActive(ACCOUNT_ID, CUSTOMER_ID, FlowVersion.V2);

@@ -71,28 +71,32 @@ export class ConversationsService {
         const previousConversation = await transaction.conversation.findFirst({
           where: { accountId, customerId },
           orderBy: { createdAt: 'desc' },
-          select: { flowVersion: true, status: true },
+          select: { flowVersion: true, status: true, currentState: true },
         });
         const restartAbandonedV2 =
           previousConversation?.status === ConversationStatus.ABANDONED &&
           previousConversation.flowVersion === FlowVersion.V2;
 
-        const handedOffConversation = restartAbandonedV2
-          ? null
-          : await transaction.conversation.findFirst({
-              where: {
-                accountId,
-                customerId,
-                status: ConversationStatus.COMPLETED,
-                currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
-                lead: {
-                  is: {
-                    status: { not: LeadStatus.COMPLETED },
+        const restartInvalidReference =
+          previousConversation?.status === ConversationStatus.COMPLETED &&
+          previousConversation.currentState === ConversationState.INVALID_REFERENCE;
+        const handedOffConversation =
+          restartAbandonedV2 || restartInvalidReference
+            ? null
+            : await transaction.conversation.findFirst({
+                where: {
+                  accountId,
+                  customerId,
+                  status: ConversationStatus.COMPLETED,
+                  currentState: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
+                  lead: {
+                    is: {
+                      status: { not: LeadStatus.COMPLETED },
+                    },
                   },
                 },
-              },
-              orderBy: { updatedAt: 'desc' },
-            });
+                orderBy: { updatedAt: 'desc' },
+              });
 
         if (handedOffConversation) {
           return { conversation: handedOffConversation, created: false };
@@ -156,6 +160,17 @@ export class ConversationsService {
     if (activeConversation) {
       return activeConversation;
     }
+
+    const latest = await this.prisma.conversation.findFirst({
+      where: { accountId, customerId },
+      orderBy: { createdAt: 'desc' },
+      select: { currentState: true, status: true },
+    });
+    if (
+      latest?.status === ConversationStatus.COMPLETED &&
+      latest.currentState === ConversationState.INVALID_REFERENCE
+    )
+      return null;
 
     return this.prisma.conversation.findFirst({
       where: {

@@ -17,6 +17,7 @@ const REVIEW_LABELS: Record<string, string> = {
   BODY_CONTEXT_SCALE: 'Las medidas se estimaron mediante anatomía',
   INSUFFICIENT_SCALE: 'La referencia no ofrece escala física suficiente',
   MISSING_REFERENCE_MEASUREMENTS: 'Faltan medidas de la referencia',
+  MISSING_COMPOSITION_GEOMETRY: 'No se pudo estimar la geometría de la composición',
   INVALID_TARGET_MEASUREMENTS: 'No fue posible calcular medidas objetivo válidas',
   STYLE_UNKNOWN: 'El estilo no pudo identificarse',
   STYLE_NOT_ENABLED: 'El estilo no está habilitado para tu cuenta',

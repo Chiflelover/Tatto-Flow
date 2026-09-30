@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { Server } from 'node:http';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -15,6 +15,9 @@ import { CalibrationService } from '../src/modules/calibration/calibration.servi
 import { ALGORITHM_VERSION, buildModel } from '../src/modules/calibration/model-interpolation.js';
 import { NitaBusinessHoursService } from '../src/modules/chatbot/nita-business-hours.service.js';
 import { NitaV2CompletionService } from '../src/modules/chatbot/nita-v2-completion.service.js';
+import { QuoteV2Service } from '../src/modules/pricing/quote-v2.service.js';
+import { ImageManagementService } from '../src/modules/image-management/image-management.service.js';
+import { V2_INVALID_REFERENCE_MESSAGE } from '../src/modules/chatbot/domain/nita-v2-messages.js';
 import { prepareV2Case } from '../src/modules/chatbot/domain/nita-v2-decision.js';
 import { ImageAnalysisService } from '../src/modules/image-analysis/image-analysis.service.js';
 import { ImageAmbiguityLevel } from '../src/modules/image-analysis/domain/image-analysis.types.js';
@@ -30,6 +33,7 @@ import { WhatsAppJobDispatcher } from '../src/modules/whatsapp/whatsapp-job-disp
 import { WhatsAppJobProcessor } from '../src/modules/whatsapp/whatsapp-job-processor.service.js';
 import { AIProviderError } from '../src/modules/image-analysis/ai-provider.error.js';
 import { WhatsAppAdapter } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
+import type { WhatsAppOutboundMessage } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
 
 describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
   'Durable WhatsApp V2 jobs with development DB (e2e)',
@@ -163,6 +167,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         });
     }, 30_000);
     beforeEach(async () => {
+      app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', 'V1');
       analyzeV2.mockReset().mockResolvedValue(result());
       analyzeV1.mockClear();
       cloud.sendMessage.mockReset().mockResolvedValue(undefined);
@@ -334,6 +339,305 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         where: { id },
         data: { status: 'RETRYABLE', claimId: null, leaseUntil: null, availableAt: new Date(0) },
       });
+
+    it.each(['AFTER_COMPLETION', 'ALREADY_QUEUED'])(
+      'completes INVALID_REFERENCE without pricing or reviews, preserves the image and starts a clean V2 on the next message (%s)',
+      async (timing) => {
+        app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', 'V2');
+        const invalid = result();
+        Object.assign(invalid.observations, {
+          validTattooReference: false,
+          referenceValidationConfidence: 0.99,
+          extensiveBodyCoverage: true,
+          referenceEssentiallyBlack: true,
+          overallConfidence: 0.01,
+        });
+        analyzeV2.mockResolvedValue(invalid);
+        const pricing = vi.spyOn(app.get(QuoteV2Service), 'getOrCreate');
+        const f = await seed();
+        await prisma.conversation.update({
+          where: { id: f.id },
+          data: { sameSizeAsReference: false, targetSizeCm: 10 },
+        });
+        const firstId = randomUUID();
+        const secondId = randomUUID();
+        await inbound(0, 'Brazo', firstId);
+        if (timing === 'ALREADY_QUEUED') await inbound(0, 'hola', secondId);
+        expect(await work()).toMatchObject({ status: 'COMPLETED' });
+        const history = await read(f.leadId);
+        expect(history).toMatchObject({
+          status: 'COMPLETED',
+          quote: null,
+          conversation: { status: 'COMPLETED', currentState: 'INVALID_REFERENCE' },
+          v2Preparation: {
+            decision: 'INVALID_REFERENCE',
+            targetAreaCm2: null,
+            targetMainDimensionCm: null,
+            reviewReasons: [],
+            specialReviewTypes: [],
+          },
+          aiAnalysis: {
+            validTattooReference: false,
+            referenceValidationConfidence: 0.99,
+            schemaVersion: 'VISION_V2_4',
+          },
+        });
+        expect(pricing).not.toHaveBeenCalled();
+        expect(history.deliveries).toHaveLength(1);
+        expect(history.deliveries[0]).toMatchObject({
+          kind: 'INVALID_REFERENCE',
+          payload: { type: 'text', text: V2_INVALID_REFERENCE_MESSAGE },
+        });
+        expect(history.deliveries[0].sentAt).not.toBeNull();
+        expect(await storage.exists(f.path)).toBe(true);
+        expect(await prisma.leadImage.count({ where: { leadId: f.leadId, deletedAt: null } })).toBe(
+          1,
+        );
+        const adminImages = await new ImageManagementService(prisma, storage).listAll({
+          accountId: accounts[0],
+          page: 1,
+          pageSize: 50,
+        });
+        expect(adminImages.images).toHaveLength(1);
+        expect(adminImages.images[0]).toMatchObject({
+          leadId: f.leadId,
+        });
+        expect(typeof adminImages.images[0].previewUrl).toBe('string');
+        await inbound(0, 'Brazo', firstId);
+        expect((await jobFor(firstId)).status).toBe('COMPLETED');
+        if (timing === 'AFTER_COMPLETION') expect((await work()).processed).toBe(false);
+        await inbound(0, 'hola', secondId);
+        expect(await work()).toMatchObject({ status: 'COMPLETED' });
+        await inbound(0, 'hola', secondId);
+        expect((await work()).processed).toBe(false);
+        const fresh = await prisma.conversation.findFirstOrThrow({
+          where: { accountId: accounts[0], status: 'ACTIVE' },
+          include: { lead: true },
+        });
+        expect(fresh.id).not.toBe(f.id);
+        expect(fresh).toMatchObject({
+          flowVersion: 'V2',
+          currentState: 'ASK_FIRST_TATTOO',
+          firstTattoo: null,
+          sameSizeAsReference: null,
+          targetSizeCm: null,
+          colorDeclaration: null,
+          bodyPart: null,
+          lead: null,
+        });
+        expect(await read(f.leadId)).toEqual(history);
+        expect(await prisma.conversation.count({ where: { accountId: accounts[0] } })).toBe(2);
+        expect(await prisma.lead.count({ where: { accountId: accounts[0] } })).toBe(1);
+        expect(analyzeV2).toHaveBeenCalledOnce();
+        expect(pricing).not.toHaveBeenCalled();
+        expect(await storage.exists(f.path)).toBe(true);
+      },
+    );
+
+    it('blocks automatic retries of an ambiguous invalid final delivery', async () => {
+      const invalid = result();
+      invalid.observations.validTattooReference = false;
+      analyzeV2.mockResolvedValue(invalid);
+      const f = await seed();
+      cloud.sendMessage.mockImplementation((_id, _phone, payload: WhatsAppOutboundMessage) =>
+        payload.type === 'text' && payload.text === V2_INVALID_REFERENCE_MESSAGE
+          ? Promise.reject(new Error('Unknown acceptance'))
+          : Promise.resolve(),
+      );
+      const messageId = randomUUID();
+      await inbound(0, 'Brazo', messageId);
+      expect(await work()).toMatchObject({ status: 'UNKNOWN' });
+      const calls = cloud.sendMessage.mock.calls.length;
+      const history = await read(f.leadId);
+      expect(history.conversation).toMatchObject({
+        status: 'COMPLETED',
+        currentState: 'INVALID_REFERENCE',
+      });
+      expect(history.deliveries[0].lastErrorCode).toBe('DELIVERY_UNKNOWN');
+      await inbound(0, 'Brazo', messageId);
+      expect((await work()).processed).toBe(false);
+      await makeRetryable((await jobFor(messageId)).id);
+      expect(await work()).toMatchObject({ status: 'UNKNOWN' });
+      expect(cloud.sendMessage).toHaveBeenCalledTimes(calls);
+      expect((await read(f.leadId)).quote).toBeNull();
+      expect(analyzeV2).toHaveBeenCalledOnce();
+    });
+
+    it('recovers only the invalid final delivery after a confirmed send failure without reopening or reanalyzing', async () => {
+      const invalid = result();
+      invalid.observations.validTattooReference = false;
+      analyzeV2.mockResolvedValue(invalid);
+      const f = await seed();
+      cloud.sendMessage.mockImplementation((_id, _phone, payload: WhatsAppOutboundMessage) => {
+        if (payload.type === 'text' && payload.text === V2_INVALID_REFERENCE_MESSAGE)
+          return Promise.reject(new WhatsAppSendNotAcceptedError());
+        return Promise.resolve();
+      });
+      const messageId = randomUUID();
+      await inbound(0, 'Brazo', messageId);
+      expect(await work()).toMatchObject({ status: 'RETRYABLE' });
+      const history = await read(f.leadId);
+      expect(history.conversation?.status).toBe('COMPLETED');
+      expect(history.deliveries[0].lastErrorCode).toBe('DELIVERY_FAILED');
+      cloud.sendMessage.mockReset().mockResolvedValue(undefined);
+      await makeRetryable((await jobFor(messageId)).id);
+      expect(await work()).toMatchObject({ status: 'COMPLETED' });
+      expect(cloud.sendMessage).toHaveBeenCalledOnce();
+      expect(cloud.sendMessage.mock.calls[0][2]).toEqual({
+        type: 'text',
+        text: V2_INVALID_REFERENCE_MESSAGE,
+      });
+      expect(analyzeV2).toHaveBeenCalledOnce();
+      const recovered = await read(f.leadId);
+      expect(recovered.quote).toBeNull();
+      expect(recovered.aiAnalysis).toEqual(history.aiAnalysis);
+      expect(recovered.conversation?.currentState).toBe('INVALID_REFERENCE');
+      expect(recovered.deliveries).toHaveLength(1);
+      expect(recovered.deliveries[0].sentAt).not.toBeNull();
+    });
+
+    it.each(['NONE', 'BODY_CONTEXT'] as const)(
+      'asks once for SAME_SIZE with %s and quotes after client size without rerunning Vision',
+      async (scaleReferenceType) => {
+        const observation = result();
+        Object.assign(observation.observations, {
+          scaleReferenceType,
+          referenceMainDimensionCm: scaleReferenceType === 'NONE' ? null : 10,
+          referenceAreaCm2: scaleReferenceType === 'NONE' ? null : 50,
+          compositionAspectRatio: 0.4,
+          compositionFillRatio: 0.7,
+        });
+        analyzeV2.mockResolvedValue(observation);
+        const f = await seed();
+        const firstId = randomUUID();
+        await inbound(0, 'Brazo', firstId);
+        expect(await work()).toMatchObject({ status: 'COMPLETED' });
+        const waiting = await read(f.leadId);
+        expect(waiting.conversation?.currentState).toBe('ASK_TARGET_SIZE_AFTER_ANALYSIS');
+        expect(waiting.quote).toBeNull();
+        const question = waiting.deliveries.find((delivery) => delivery.kind === 'TARGET_SIZE')!;
+        expect(question.sentAt).not.toBeNull();
+        expect(question.payload).toMatchObject({
+          type: 'text',
+          text: 'No puedo saber el tamaño real de la referencia con suficiente precisión. ¿Aproximadamente de cuántos cm quieres que sea el tatuaje?',
+        });
+        await inbound(0, 'Brazo', firstId);
+        expect((await work()).processed).toBe(false);
+        expect(cloud.sendMessage).toHaveBeenCalledTimes(2);
+        const secondId = randomUUID();
+        await inbound(0, '10 cm', secondId);
+        expect(await work()).toMatchObject({ status: 'COMPLETED' });
+        const quoted = await read(f.leadId);
+        expect(quoted.conversation).toMatchObject({
+          currentState: 'ASK_ADVANCE_INTENT',
+          sameSizeAsReference: true,
+          targetSizeCm: 10,
+          bodyPart: 'Brazo',
+          colorDeclaration: 'MOSTLY_COLOR',
+        });
+        expect(quoted).toMatchObject({
+          targetSizeCm: 10,
+          v2Preparation: { targetAreaCm2: '28', scaleFactor: null },
+        });
+        expect(quoted.aiAnalysis).toEqual(waiting.aiAnalysis);
+        expect(quoted.quote).not.toBeNull();
+        expect(analyzeV2).toHaveBeenCalledOnce();
+        await inbound(0, '10 cm', secondId);
+        expect((await work()).processed).toBe(false);
+        expect((await read(f.leadId)).quote).toEqual(quoted.quote);
+        expect(await prisma.quote.count({ where: { leadId: f.leadId } })).toBe(1);
+        expect(
+          quoted.deliveries.filter((delivery) => delivery.kind === 'TARGET_SIZE'),
+        ).toHaveLength(1);
+        expect(
+          await prisma.pricingModelVersion.findUniqueOrThrow({ where: { id: modelIds[0] } }),
+        ).toMatchObject({
+          status: 'ACTIVE',
+          adjustmentPercent: new Prisma.Decimal(10),
+          algorithmVersion: ALGORITHM_VERSION,
+        });
+      },
+    );
+    it('continues DIFFERENT_SIZE with NONE and reviews absent geometry without inventing area', async () => {
+      const observation = result();
+      Object.assign(observation.observations, {
+        scaleReferenceType: 'NONE',
+        referenceMainDimensionCm: null,
+        referenceAreaCm2: null,
+        compositionAspectRatio: 0.4,
+        compositionFillRatio: 0.7,
+      });
+      analyzeV2.mockResolvedValue(observation);
+      const f = await seed();
+      await prisma.conversation.update({
+        where: { id: f.id },
+        data: { sameSizeAsReference: false, targetSizeCm: 10 },
+      });
+      await inbound();
+      expect(await work()).toMatchObject({ status: 'COMPLETED' });
+      expect(await read(f.leadId)).toMatchObject({
+        v2Preparation: { targetAreaCm2: '28' },
+        conversation: { currentState: 'ASK_ADVANCE_INTENT' },
+      });
+      const invalid = await seed({ index: 1 });
+      observation.observations.compositionFillRatio = null;
+      await inbound(1);
+      expect(await work(1)).toMatchObject({ status: 'COMPLETED' });
+      expect(await read(invalid.leadId)).toMatchObject({
+        quote: null,
+        v2Preparation: {
+          decision: 'HUMAN_REVIEW',
+          targetAreaCm2: null,
+          reviewReasons: ['MISSING_COMPOSITION_GEOMETRY'],
+        },
+      });
+    });
+    it.each(['CONFIRMED_FAILURE', 'UNKNOWN', 'PERSISTENCE_FAILURE'] as const)(
+      'recovers the size question safely after %s without repeating analysis',
+      async (scenario) => {
+        const observation = result();
+        observation.observations.scaleReferenceType = 'BODY_CONTEXT';
+        analyzeV2.mockResolvedValue(observation);
+        const f = await seed();
+        const id = randomUUID();
+        await inbound(0, 'Brazo', id);
+        cloud.sendMessage.mockImplementation(
+          (_channel, _phone, payload: WhatsAppOutboundMessage) => {
+            if (payload.type !== 'text' || !payload.text.startsWith('No puedo saber'))
+              return Promise.resolve();
+            if (scenario === 'CONFIRMED_FAILURE')
+              return Promise.reject(new WhatsAppSendNotAcceptedError());
+            if (scenario === 'UNKNOWN') return Promise.reject(new Error('Network outcome unknown'));
+            vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('sentAt lost'));
+            return Promise.resolve();
+          },
+        );
+        expect(await work()).toMatchObject({
+          status: scenario === 'CONFIRMED_FAILURE' ? 'RETRYABLE' : 'UNKNOWN',
+        });
+        const waiting = await read(f.leadId);
+        expect(waiting.conversation?.currentState).toBe('ASK_TARGET_SIZE_AFTER_ANALYSIS');
+        expect(waiting.quote).toBeNull();
+        const question = waiting.deliveries.find((delivery) => delivery.kind === 'TARGET_SIZE')!;
+        expect(question.lastErrorCode).toBe(
+          scenario === 'CONFIRMED_FAILURE' ? 'DELIVERY_FAILED' : 'DELIVERY_UNKNOWN',
+        );
+        cloud.sendMessage.mockReset().mockResolvedValue(undefined);
+        await inbound(0, 'Brazo', id);
+        if (scenario === 'CONFIRMED_FAILURE') {
+          await makeRetryable((await jobFor(id)).id);
+          expect(await work()).toMatchObject({ status: 'COMPLETED' });
+          expect(cloud.sendMessage).toHaveBeenCalledOnce();
+        } else {
+          expect((await work()).processed).toBe(false);
+          expect(cloud.sendMessage).not.toHaveBeenCalled();
+        }
+        expect(analyzeV2).toHaveBeenCalledOnce();
+        expect(
+          await prisma.whatsAppDelivery.count({ where: { leadId: f.leadId, kind: 'TARGET_SIZE' } }),
+        ).toBe(1);
+      },
+    );
 
     it('ACKs duplicate image events before download and persists one job and one reference', async () => {
       const f = await seed();

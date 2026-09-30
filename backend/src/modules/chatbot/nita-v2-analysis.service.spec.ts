@@ -55,6 +55,11 @@ async function fixture(overrides: Partial<Conversation> = {}) {
   };
   let stored: AiAnalysis | null = null;
   let preparation: Prisma.InputJsonValue | null = null;
+  let sizeDelivery: Prisma.InputJsonValue | null = null;
+  const enqueueSize = vi.fn(({ create }: { create: { payload: Prisma.InputJsonValue } }) => {
+    sizeDelivery ??= create.payload;
+    return Promise.resolve({});
+  });
   const storage = new InMemoryStorageService();
   await storage.upload({
     path: image.storagePath,
@@ -122,6 +127,7 @@ async function fixture(overrides: Partial<Conversation> = {}) {
       update: updateLead,
     },
     aiAnalysis: { upsert: upsertAnalysis },
+    whatsAppDelivery: { upsert: enqueueSize },
     tattooStyle: { findUnique: styleLookup },
   };
   // Emulate the row lock and transaction rollback; provider work runs outside the transaction.
@@ -135,11 +141,11 @@ async function fixture(overrides: Partial<Conversation> = {}) {
       unlock = resolve;
     });
     await previous;
-    const before = { conversation, stored, preparation };
+    const before = { conversation, stored, preparation, sizeDelivery };
     try {
       return await callback(tx as unknown as Prisma.TransactionClient);
     } catch (error) {
-      ({ conversation, stored, preparation } = before);
+      ({ conversation, stored, preparation, sizeDelivery } = before);
       throw error;
     } finally {
       unlock();
@@ -161,10 +167,11 @@ async function fixture(overrides: Partial<Conversation> = {}) {
     analyzeTattooImageV2,
     upsertAnalysis,
     updateLead,
+    enqueueSize,
     styleLookup,
     storage,
     image,
-    current: () => ({ conversation, stored, preparation }),
+    current: () => ({ conversation, stored, preparation, sizeDelivery }),
     change: (changes: Partial<Conversation>) => {
       conversation = { ...conversation, ...changes };
     },
@@ -175,6 +182,95 @@ async function fixture(overrides: Partial<Conversation> = {}) {
 }
 
 describe('Nita V2 analysis ownership and persistence', () => {
+  it('atomically completes an invalid reference and stores one final delivery without review or area', async () => {
+    const f = await fixture({
+      sameSizeAsReference: false,
+      targetSizeCm: 10,
+      colorDeclaration: 'MOSTLY_COLOR',
+    });
+    const result = visionResult();
+    Object.assign(result.observations, {
+      validTattooReference: false,
+      referenceValidationConfidence: 0.99,
+      extensiveBodyCoverage: true,
+      referenceEssentiallyBlack: true,
+    });
+    f.analyzeTattooImageV2.mockResolvedValue(result);
+    expect(await f.service.process(f.accountId, f.conversationId)).toMatchObject({
+      status: 'COMPLETED',
+      currentState: 'INVALID_REFERENCE',
+    });
+    expect(f.updateLead.mock.calls[0][0].data).toMatchObject({ status: 'COMPLETED' });
+    expect(f.current().preparation).toMatchObject({
+      decision: 'INVALID_REFERENCE',
+      targetAreaCm2: null,
+      reviewReasons: [],
+      specialReviewTypes: [],
+    });
+    expect(f.enqueueSize.mock.calls[0][0].create).toMatchObject({ kind: 'INVALID_REFERENCE' });
+    expect(f.styleLookup).not.toHaveBeenCalled();
+    expect(f.current().stored).toMatchObject({
+      validTattooReference: false,
+      referenceValidationConfidence: 0.99,
+    });
+    await f.service.process(f.accountId, f.conversationId);
+    expect(f.analyzeTattooImageV2).toHaveBeenCalledOnce();
+    expect(f.enqueueSize).toHaveBeenCalledOnce();
+    expect(await f.storage.exists(f.image.storagePath)).toBe(true);
+  });
+  it.each(['BODY_CONTEXT', 'NONE'] as const)(
+    'persists one size question with %s and resumes using the same analysis',
+    async (scaleReferenceType) => {
+      const f = await fixture();
+      const result = visionResult();
+      Object.assign(result.observations, {
+        scaleReferenceType,
+        compositionAspectRatio: 0.4,
+        compositionFillRatio: 0.7,
+      });
+      f.analyzeTattooImageV2.mockResolvedValue(result);
+      expect((await f.service.process(f.accountId, f.conversationId)).currentState).toBe(
+        'ASK_TARGET_SIZE_AFTER_ANALYSIS',
+      );
+      const stored = f.current().stored;
+      expect(f.current().sizeDelivery).toMatchObject({
+        type: 'text',
+        text: 'No puedo saber el tamaño real de la referencia con suficiente precisión. ¿Aproximadamente de cuántos cm quieres que sea el tatuaje?',
+      });
+      await f.service.process(f.accountId, f.conversationId);
+      expect(f.enqueueSize).toHaveBeenCalledOnce();
+      f.change({ currentState: 'READY_FOR_ANALYSIS', targetSizeCm: 10 });
+      expect((await f.service.process(f.accountId, f.conversationId)).currentState).toBe(
+        'READY_FOR_PRICING',
+      );
+      expect(f.current().preparation).toMatchObject({ targetAreaCm2: '28', scaleFactor: null });
+      expect(f.current().stored).toEqual(stored);
+      expect(f.analyzeTattooImageV2).toHaveBeenCalledOnce();
+      expect(f.upsertAnalysis).toHaveBeenCalledOnce();
+      expect(f.enqueueSize).toHaveBeenCalledOnce();
+      expect(await f.storage.exists(f.image.storagePath)).toBe(true);
+    },
+  );
+  it('rolls back analysis, state and question together if persisting the size delivery fails', async () => {
+    const f = await fixture();
+    const result = visionResult();
+    result.observations.scaleReferenceType = 'NONE';
+    f.analyzeTattooImageV2.mockResolvedValue(result);
+    f.enqueueSize.mockRejectedValueOnce(new Error('Delivery persistence failed'));
+    await expect(f.service.process(f.accountId, f.conversationId)).rejects.toThrow(
+      'Delivery persistence failed',
+    );
+    expect(f.current()).toMatchObject({
+      stored: null,
+      preparation: null,
+      sizeDelivery: null,
+      conversation: { currentState: 'ANALYZING', v2AnalysisClaimId: null },
+    });
+    expect((await f.service.process(f.accountId, f.conversationId)).currentState).toBe(
+      'ASK_TARGET_SIZE_AFTER_ANALYSIS',
+    );
+    expect(f.current().sizeDelivery).not.toBeNull();
+  });
   it('scopes pending retry lookup to V2 and the channel account without creating intake', async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: 'pending-conversation' });
     const service = new NitaV2AnalysisService(
@@ -232,7 +328,7 @@ describe('Nita V2 analysis ownership and persistence', () => {
       ...visionResult().observations,
       provider: 'gemini',
       model: 'gemini-test-model',
-      schemaVersion: 'VISION_V2_2',
+      schemaVersion: 'VISION_V2_4',
       rawResponse: visionResult().rawResponse,
     });
     expect(finished.preparation).toMatchObject({

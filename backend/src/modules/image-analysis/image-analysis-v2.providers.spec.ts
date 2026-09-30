@@ -47,15 +47,15 @@ describe('AI Vision V2 providers', () => {
     expect(gemini).toMatchObject({
       provider: 'gemini',
       model: 'gemini-server-version',
-      promptVersion: 2,
-      schemaVersion: 'VISION_V2_2',
+      promptVersion: 4,
+      schemaVersion: 'VISION_V2_4',
       rawResponse: { response: f.geminiRaw, outputText: f.geminiRaw.text },
     });
     expect(openai).toMatchObject({
       provider: 'openai',
       model: 'openai-server-version',
-      promptVersion: 2,
-      schemaVersion: 'VISION_V2_2',
+      promptVersion: 4,
+      schemaVersion: 'VISION_V2_4',
       rawResponse: { response: f.openaiRaw, outputText: f.openaiRaw.output_text },
     });
     const g = f.generateContent.mock.calls[0]?.[0] as Record<string, unknown>;

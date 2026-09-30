@@ -14,6 +14,96 @@ const enabled = { exists: true, enabled: true };
 const observe = (changes: Partial<AiAnalysis> = {}) => ({ ...persistedVision(), ...changes });
 
 describe('Nita V2 backend preparation', () => {
+  it('closes an invalid reference before area, confidence, style, color or any review rule', () => {
+    const result = prepareV2Case(
+      { ...intake, firstTattoo: null, targetSizeCm: 10, colorDeclaration: 'MOSTLY_COLOR' },
+      observe({
+        validTattooReference: false,
+        referenceValidationConfidence: 0.01,
+        extensiveBodyCoverage: true,
+        referenceEssentiallyBlack: true,
+        overallConfidence: 0.01,
+      }),
+      { exists: false, enabled: false },
+    );
+    expect(result).toMatchObject({
+      decision: 'INVALID_REFERENCE',
+      targetMainDimensionCm: null,
+      targetAreaCm2: null,
+      scaleFactor: null,
+      targetColorCoverage: null,
+      reviewReasons: [],
+      specialReviewTypes: [],
+      clientReferenceMatch: 'UNKNOWN',
+    });
+  });
+  it('does not reinterpret historical unknown validation as an invalid reference', () => {
+    const analysis = observe({ validTattooReference: null, referenceValidationConfidence: null });
+    expect(prepareV2Case(intake, analysis, enabled).decision).toBe('HUMAN_REVIEW');
+    expect(analysis.validTattooReference).toBeNull();
+  });
+  it.each(['NONE', 'BODY_CONTEXT'] as const)(
+    'uses client size after SAME_SIZE analysis with %s',
+    (scaleReferenceType) => {
+      expect(
+        prepareV2Case(
+          { ...intake, targetSizeCm: 10 },
+          observe({ scaleReferenceType, compositionAspectRatio: 0.4, compositionFillRatio: 0.7 }),
+          enabled,
+        ),
+      ).toMatchObject({
+        decision: 'READY_FOR_PRICING',
+        targetAreaCm2: '28',
+        scaleFactor: null,
+        reviewReasons: [],
+      });
+    },
+  );
+  it.each(['compositionAspectRatio', 'compositionFillRatio'] as const)(
+    'reviews missing %s without fabricating geometry',
+    (field) => {
+      for (const sameSizeAsReference of [true, false]) {
+        const result = prepareV2Case(
+          { ...intake, sameSizeAsReference, targetSizeCm: sameSizeAsReference ? null : 10 },
+          observe({ scaleReferenceType: 'NONE', [field]: null }),
+          enabled,
+        );
+        expect(result).toMatchObject({ decision: 'HUMAN_REVIEW', targetAreaCm2: null });
+        expect(result.reviewReasons).toContain('MISSING_COMPOSITION_GEOMETRY');
+      }
+    },
+  );
+  it('reviews DIFFERENT_SIZE without a client dimension', () => {
+    expect(
+      prepareV2Case(
+        { ...intake, sameSizeAsReference: false },
+        observe({ scaleReferenceType: 'NONE' }),
+        enabled,
+      ),
+    ).toMatchObject({ decision: 'HUMAN_REVIEW', targetAreaCm2: null });
+  });
+  it('keeps historical explicit-scale analyses valid without newly observed geometry', () => {
+    expect(
+      prepareV2Case(
+        intake,
+        observe({
+          schemaVersion: 'VISION_V2_2',
+          compositionAspectRatio: null,
+          compositionFillRatio: null,
+        }),
+        enabled,
+      ),
+    ).toMatchObject({ decision: 'READY_FOR_PRICING', targetAreaCm2: '54' });
+  });
+  it.each(['compositionAspectRatio', 'compositionFillRatio'] as const)(
+    'rejects impossible %s',
+    (field) => {
+      for (const value of [0, -1, 1.01, Number.NaN])
+        expect(
+          prepareV2Case({ ...intake, targetSizeCm: 10 }, observe({ [field]: value }), enabled),
+        ).toMatchObject({ decision: 'HUMAN_REVIEW', targetAreaCm2: null });
+    },
+  );
   it('keeps SAME_SIZE with explicit scale and the original observations', () => {
     const analysis = observe();
     const before = { ...analysis };
@@ -30,29 +120,30 @@ describe('Nita V2 backend preparation', () => {
     expect(analysis).toEqual(before);
   });
   it.each(['BODY_CONTEXT', 'NONE'] as const)(
-    'never permits SAME_SIZE automatic pricing with %s',
+    'asks for client size instead of relying on %s for SAME_SIZE',
     (scaleReferenceType) => {
       const result = prepareV2Case(intake, observe({ scaleReferenceType }), enabled);
-      expect(result.decision).toBe('HUMAN_REVIEW');
+      expect(result.decision).toBe('ASK_TARGET_SIZE_AFTER_ANALYSIS');
       expect(result.specialReviewTypes).toEqual([]);
-      expect(result.targetAreaCm2).toBe(scaleReferenceType === 'NONE' ? null : '54');
+      expect(result.targetAreaCm2).toBeNull();
+      expect(result.reviewReasons).toEqual([]);
     },
   );
-  it('scales DIFFERENT_SIZE composition quadratically using Decimal precision', () => {
+  it('calculates DIFFERENT_SIZE using relative geometry and Decimal precision', () => {
     const result = prepareV2Case(
-      { ...intake, sameSizeAsReference: false, targetSizeCm: 22 },
-      observe({ referenceMainDimensionCm: 10, referenceAreaCm2: 42 }),
+      { ...intake, sameSizeAsReference: false, targetSizeCm: 10 },
+      observe({ compositionAspectRatio: 0.4, compositionFillRatio: 0.7 }),
       enabled,
     );
     expect(result).toMatchObject({
       decision: 'READY_FOR_PRICING',
-      targetMainDimensionCm: '22',
-      scaleFactor: '2.2',
-      targetAreaCm2: '203.28',
+      targetMainDimensionCm: '10',
+      scaleFactor: null,
+      targetAreaCm2: '28',
     });
   });
   it.each(['BODY_CONTEXT', 'NONE'] as const)(
-    'never permits DIFFERENT_SIZE automatic pricing with %s',
+    'permits DIFFERENT_SIZE with client dimensions independently of %s',
     (scaleReferenceType) => {
       const result = prepareV2Case(
         { ...intake, sameSizeAsReference: false, targetSizeCm: 22 },
@@ -60,11 +151,13 @@ describe('Nita V2 backend preparation', () => {
         enabled,
       );
       expect(result).toMatchObject({
-        decision: 'HUMAN_REVIEW',
+        decision: 'READY_FOR_PRICING',
         targetMainDimensionCm: '22',
         specialReviewTypes: [],
       });
-      expect(result.targetAreaCm2).toBe(scaleReferenceType === 'NONE' ? null : '203.28');
+      expect(result.targetAreaCm2).toBe('181.5');
+      expect(result.reviewReasons).toEqual([]);
+      expect(result.scaleFactor).toBeNull();
     },
   );
   it.each([0.9, 0.899999999, 0.899])(

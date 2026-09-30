@@ -6,6 +6,10 @@ export interface VisionStyle {
 }
 
 export interface ImageAnalysisV2Observation {
+  validTattooReference: boolean;
+  referenceValidationConfidence: number;
+  compositionAspectRatio: number | null;
+  compositionFillRatio: number | null;
   style: string | null;
   styleConfidence: number;
   scaleReferenceType: ScaleReferenceType;

@@ -1,4 +1,5 @@
 import { ColorDeclaration, ConversationState } from '../../../generated/prisma/client.js';
+import { V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION } from './nita-v2-messages.js';
 import type {
   ChatbotDecision,
   ChatbotInput,
@@ -32,6 +33,7 @@ const PROMPTS: Partial<Record<ConversationState, string>> = {
   WAITING_IMAGE: IMAGE_QUESTION,
   ASK_SAME_SIZE: SAME_SIZE_QUESTION,
   ASK_DESIRED_SIZE_CM: SIZE_QUESTION,
+  ASK_TARGET_SIZE_AFTER_ANALYSIS: V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION,
   ASK_COLOR: COLOR_QUESTION,
   ASK_BODY_PART: PLACEMENT_QUESTION,
 };
@@ -149,16 +151,23 @@ export class NitaV2StateMachine {
           update: { currentState: ConversationState.ASK_SAME_SIZE },
           response: this.response(ConversationState.ASK_SAME_SIZE, [SAME_SIZE_QUESTION]),
         };
-      case ConversationState.ASK_DESIRED_SIZE_CM: {
+      case ConversationState.ASK_DESIRED_SIZE_CM:
+      case ConversationState.ASK_TARGET_SIZE_AFTER_ANALYSIS: {
         const size = input.type === 'text' ? parseTargetSizeCm(input.value) : null;
         if (size === null)
           return this.retry(
             context,
             'Indícame una medida aproximada en centímetros, por ejemplo: 8 cm.',
           );
+        const afterAnalysis = state === ConversationState.ASK_TARGET_SIZE_AFTER_ANALYSIS;
+        const next = afterAnalysis
+          ? ConversationState.READY_FOR_ANALYSIS
+          : ConversationState.ASK_COLOR;
         return {
-          update: { targetSizeCm: size, currentState: ConversationState.ASK_COLOR },
-          response: this.response(ConversationState.ASK_COLOR, [COLOR_QUESTION]),
+          update: { targetSizeCm: size, currentState: next },
+          response: this.response(next, [
+            afterAnalysis ? 'Gracias. Guardé el tamaño que deseas.' : COLOR_QUESTION,
+          ]),
         };
       }
       case ConversationState.ASK_COLOR: {
