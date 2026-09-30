@@ -4,6 +4,7 @@ import type { AiFallbackProvider } from '../../config/environment.validation.js'
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { AIProviderError, toUnknownProviderError } from './ai-provider.error.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 import { GeminiImageAnalysisService } from './gemini-image-analysis.service.js';
 import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysis.service.js';
 import { OpenAIImageAnalysisService } from './openai-image-analysis.service.js';
@@ -39,6 +40,30 @@ export class ResilientImageAnalysisService extends ImageAnalysisService {
     image: TattooImageInput,
     context: ImageAnalysisContext = {},
   ): Promise<ImageAnalysisResult> {
+    return this.analyzeWithFallback(
+      () => this.geminiService.analyzeTattooImage(image),
+      () => this.openAIService.analyzeTattooImage(image),
+      context,
+    );
+  }
+
+  async analyzeTattooImageV2(
+    image: TattooImageInput,
+    styles: readonly VisionStyle[],
+    context: ImageAnalysisContext = {},
+  ): Promise<ImageAnalysisV2Result> {
+    return this.analyzeWithFallback(
+      () => this.geminiService.analyzeTattooImageV2(image, styles),
+      () => this.openAIService.analyzeTattooImageV2(image, styles),
+      context,
+    );
+  }
+
+  private async analyzeWithFallback<T>(
+    primary: () => Promise<T>,
+    fallback: () => Promise<T>,
+    context: ImageAnalysisContext,
+  ): Promise<T> {
     let lastError: AIProviderError | undefined;
     let attemptsMade = 0;
 
@@ -48,7 +73,7 @@ export class ResilientImageAnalysisService extends ImageAnalysisService {
       this.logProviderStarted('gemini', this.geminiModel, attempt, context.leadId);
 
       try {
-        const result = await this.geminiService.analyzeTattooImage(image);
+        const result = await primary();
         this.logProviderCompleted('gemini', this.geminiModel, attempt, context.leadId, startedAt);
         return result;
       } catch (error: unknown) {
@@ -92,13 +117,13 @@ export class ResilientImageAnalysisService extends ImageAnalysisService {
       throw lastError;
     }
 
-    return this.runOpenAIFallback(image, context);
+    return this.runOpenAIFallback(fallback, context);
   }
 
-  private async runOpenAIFallback(
-    image: TattooImageInput,
+  private async runOpenAIFallback<T>(
+    fallback: () => Promise<T>,
     context: ImageAnalysisContext,
-  ): Promise<ImageAnalysisResult> {
+  ): Promise<T> {
     const attempt = 1;
     const startedAt = Date.now();
     this.logger.warn('ai.fallback.started', {
@@ -111,7 +136,7 @@ export class ResilientImageAnalysisService extends ImageAnalysisService {
     this.logProviderStarted('openai', this.openAIModel, attempt, context.leadId);
 
     try {
-      const result = await this.openAIService.analyzeTattooImage(image);
+      const result = await fallback();
       this.logProviderCompleted('openai', this.openAIModel, attempt, context.leadId, startedAt);
       this.logger.info('ai.fallback.completed', {
         fromProvider: 'gemini',

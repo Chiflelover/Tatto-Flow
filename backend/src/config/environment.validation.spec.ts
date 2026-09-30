@@ -6,6 +6,23 @@ const BASE_ENVIRONMENT = {
 };
 
 describe('AI environment validation', () => {
+  it('selects mock without requiring provider credentials, while real remains the default', () => {
+    expect(
+      validateEnvironment({
+        AI_MODE: 'mock',
+        STORAGE_MODE: 'memory',
+        AI_FALLBACK_PROVIDER: 'openai',
+      }).AI_MODE,
+    ).toBe('mock');
+    expect(validateEnvironment(BASE_ENVIRONMENT).AI_MODE).toBe('real');
+    expect(() => validateEnvironment({ ...BASE_ENVIRONMENT, AI_MODE: 'invalid' })).toThrow(
+      'AI_MODE',
+    );
+  });
+  it('accepts the legacy gemini mode as real without changing the active provider', () => {
+    expect(validateEnvironment({ ...BASE_ENVIRONMENT, AI_MODE: 'gemini' }).AI_MODE).toBe('real');
+  });
+
   it('requires Gemini credentials because Gemini is always the primary provider', () => {
     expect(() => validateEnvironment({ STORAGE_MODE: 'memory' })).toThrow(
       'GEMINI_API_KEY es obligatorio. Gemini es el proveedor principal obligatorio.',

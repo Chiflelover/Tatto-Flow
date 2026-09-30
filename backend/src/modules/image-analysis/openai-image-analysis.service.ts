@@ -4,6 +4,17 @@ import OpenAI from 'openai';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
 import { AIProviderError, type AIProviderErrorCategory } from './ai-provider.error.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
+import {
+  createImageAnalysisV2Schema,
+  IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
+  parseImageAnalysisV2Response,
+  serializeProviderResponse,
+} from './image-analysis-v2.contract.js';
+import {
+  createImageAnalysisV2Prompt,
+  IMAGE_ANALYSIS_V2_PROMPT_VERSION,
+} from './image-analysis-v2.prompt.js';
 import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.prompt.js';
 import {
   InvalidImageAnalysisResponseError,
@@ -27,6 +38,45 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
   }
 
   async analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
+    return (
+      await this.requestAnalysis(
+        image,
+        IMAGE_ANALYSIS_PROMPT,
+        IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+        'tattoo_image_analysis',
+        parseImageAnalysisResponse,
+      )
+    ).result;
+  }
+
+  async analyzeTattooImageV2(
+    image: TattooImageInput,
+    styles: readonly VisionStyle[],
+  ): Promise<ImageAnalysisV2Result> {
+    const { result, rawResponse, model } = await this.requestAnalysis(
+      image,
+      createImageAnalysisV2Prompt(styles),
+      createImageAnalysisV2Schema(styles, 'openai'),
+      'tattoo_image_analysis_v2',
+      (text) => parseImageAnalysisV2Response(text, styles),
+    );
+    return {
+      observations: result,
+      provider: 'openai',
+      model,
+      promptVersion: IMAGE_ANALYSIS_V2_PROMPT_VERSION,
+      schemaVersion: IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
+      rawResponse,
+    };
+  }
+
+  private async requestAnalysis<T>(
+    image: TattooImageInput,
+    prompt: string,
+    schema: Record<string, unknown>,
+    schemaName: string,
+    parse: (text: string | undefined) => T,
+  ) {
     let contentType: 'image/jpeg' | 'image/png' | 'image/webp';
 
     try {
@@ -55,12 +105,12 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
         {
           model: this.configService.getOrThrow<string>('OPENAI_MODEL'),
           store: false,
-          max_output_tokens: 512,
+          max_output_tokens: schemaName === 'tattoo_image_analysis' ? 512 : 1024,
           input: [
             {
               role: 'user',
               content: [
-                { type: 'input_text', text: IMAGE_ANALYSIS_PROMPT },
+                { type: 'input_text', text: prompt },
                 {
                   type: 'input_image',
                   detail: 'high',
@@ -72,10 +122,10 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
           text: {
             format: {
               type: 'json_schema',
-              name: 'tattoo_image_analysis',
+              name: schemaName,
               description: 'Observaciones visuales normalizadas de una referencia de tatuaje.',
               strict: true,
-              schema: IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+              schema,
             },
           },
         },
@@ -109,7 +159,11 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
         });
       }
 
-      return parseImageAnalysisResponse(response.output_text);
+      return {
+        result: parse(response.output_text),
+        model: response.model || this.configService.getOrThrow<string>('OPENAI_MODEL'),
+        rawResponse: serializeProviderResponse(response, response.output_text),
+      };
     } catch (error: unknown) {
       if (error instanceof AIProviderError) {
         throw error;

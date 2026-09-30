@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
-import type { AiFallbackProvider } from '../../config/environment.validation.js';
+import type { AiFallbackProvider, AiMode } from '../../config/environment.validation.js';
 import { LeadScoringModule } from '../lead-scoring/lead-scoring.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { ValidationModule } from '../validation/validation.module.js';
@@ -12,6 +12,8 @@ import {
   type GeminiClient,
 } from './gemini-image-analysis.service.js';
 import { ImageAnalysisWorkflowService } from './image-analysis-workflow.service.js';
+import { ImageAnalysisV2Service } from './image-analysis-v2.service.js';
+import { MockImageAnalysisService } from './mock-image-analysis.service.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
 import {
   OPENAI_CLIENT,
@@ -33,21 +35,28 @@ import {
     OpenAIImageAnalysisService,
     ResilientImageAnalysisService,
     ImageAnalysisWorkflowService,
+    ImageAnalysisV2Service,
+    MockImageAnalysisService,
     { provide: AI_RETRY_SLEEP, useValue: productionRetrySleep },
     { provide: AI_RETRY_RANDOM, useValue: productionRetryRandom },
     {
       provide: GEMINI_CLIENT,
       inject: [ConfigService],
-      useFactory: (configService: ConfigService): GeminiClient =>
-        new GoogleGenAI({
-          apiKey: configService.getOrThrow<string>('GEMINI_API_KEY'),
-        }),
+      useFactory: (configService: ConfigService): GeminiClient | null =>
+        configService.get<AiMode>('AI_MODE') === 'mock'
+          ? null
+          : new GoogleGenAI({
+              apiKey: configService.getOrThrow<string>('GEMINI_API_KEY'),
+            }),
     },
     {
       provide: OPENAI_CLIENT,
       inject: [ConfigService],
       useFactory: (configService: ConfigService): OpenAI | null => {
-        if (configService.getOrThrow<AiFallbackProvider>('AI_FALLBACK_PROVIDER') !== 'openai') {
+        if (
+          configService.get<AiMode>('AI_MODE') === 'mock' ||
+          configService.getOrThrow<AiFallbackProvider>('AI_FALLBACK_PROVIDER') !== 'openai'
+        ) {
           return null;
         }
 
@@ -60,9 +69,14 @@ import {
     },
     {
       provide: ImageAnalysisService,
-      useExisting: ResilientImageAnalysisService,
+      inject: [ConfigService, MockImageAnalysisService, ResilientImageAnalysisService],
+      useFactory: (
+        config: ConfigService,
+        mock: MockImageAnalysisService,
+        real: ResilientImageAnalysisService,
+      ): ImageAnalysisService => (config.get<AiMode>('AI_MODE') === 'mock' ? mock : real),
     },
   ],
-  exports: [ImageAnalysisWorkflowService],
+  exports: [ImageAnalysisWorkflowService, ImageAnalysisV2Service, ImageAnalysisService],
 })
 export class ImageAnalysisModule {}

@@ -1,7 +1,9 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
+  AnalysisVersion,
   ConversationState,
   ConversationStatus,
+  FlowVersion,
   LeadStatus,
   Prisma,
   ReviewReason,
@@ -67,6 +69,8 @@ export class ImageAnalysisWorkflowService {
     if (!conversation) {
       throw new ConflictException('La conversación ya no está disponible.');
     }
+    if (conversation.flowVersion !== FlowVersion.V1)
+      throw new ConflictException('Este workflow solo procesa conversaciones V1.');
 
     const finalizedResult = await this.findFinalizedResult(conversation);
 
@@ -77,11 +81,9 @@ export class ImageAnalysisWorkflowService {
     const storedAnalysis = await this.findPendingStoredAnalysis(conversation);
 
     if (storedAnalysis) {
-      return this.persistAnalysisAndFinalize(
-        conversation,
-        storedAnalysis.leadId,
-        toImageAnalysisResult(storedAnalysis),
-      );
+      const storedResult = toImageAnalysisResult(storedAnalysis);
+      if (!storedResult) throw new ConflictException('El análisis no pertenece al contrato V1.');
+      return this.persistAnalysisAndFinalize(conversation, storedAnalysis.leadId, storedResult);
     }
 
     if (
@@ -195,6 +197,7 @@ export class ImageAnalysisWorkflowService {
         update: {},
         create: {
           leadId,
+          analysisVersion: AnalysisVersion.V1,
           detectedSize: result.detectedSize,
           sizeConfidence: result.sizeConfidence,
           detectedDetail: result.detectedDetail,
@@ -219,6 +222,8 @@ export class ImageAnalysisWorkflowService {
       });
 
       const persistedAnalysis = toImageAnalysisResult(analysis);
+      if (!persistedAnalysis)
+        throw new ConflictException('El análisis no pertenece al contrato V1.');
       const evaluation = await this.leadScoringService.evaluateAndPersist(
         leadId,
         {

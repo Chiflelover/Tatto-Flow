@@ -144,6 +144,23 @@ function createFixture(options: FixtureOptions = {}) {
   const upsertAnalysis = vi.fn((arguments_: AnalysisUpsertArguments) => {
     if (!analysis) {
       analysis = {
+        analysisVersion: 'V1',
+        style: null,
+        styleConfidence: null,
+        scaleReferenceType: null,
+        scaleConfidence: null,
+        referenceMainDimensionCm: null,
+        referenceAreaCm2: null,
+        areaConfidence: null,
+        colorCoverage: null,
+        colorConfidence: null,
+        overallConfidence: null,
+        referenceEssentiallyBlack: null,
+        extensiveBodyCoverage: null,
+        promptVersion: null,
+        schemaVersion: null,
+        provider: null,
+        model: null,
         id: 'c29080d9-49de-4d6e-bea2-6017cbe109f8',
         leadId: arguments_.create.leadId,
         detectedSize: arguments_.create.detectedSize,
@@ -244,6 +261,7 @@ function createFixture(options: FixtureOptions = {}) {
   const provider = {
     providerName: 'mock',
     analyzeTattooImage,
+    analyzeTattooImageV2: vi.fn(),
   } as ImageAnalysisService;
   const ensureStored = vi.fn().mockResolvedValue({ id: 'stored-image' });
   const service = new ImageAnalysisWorkflowService(
@@ -305,6 +323,21 @@ const TEST_IMAGE = {
 describe('ImageAnalysisWorkflowService quotation finalization', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('rejects V2 conversations before running the V1 workflow', async () => {
+    const fixture = createFixture();
+    fixture.getConversation().flowVersion = 'V2';
+
+    await expect(
+      fixture.service.analyzeConversationImage(CONVERSATION_ID, TEST_IMAGE),
+    ).rejects.toThrow('Este workflow solo procesa conversaciones V1.');
+
+    expect(fixture.analyzeTattooImage).not.toHaveBeenCalled();
+    expect(fixture.upsertLead).not.toHaveBeenCalled();
+    expect(fixture.ensureStored).not.toHaveBeenCalled();
+    expect(fixture.upsertAnalysis).not.toHaveBeenCalled();
+    expect(fixture.findPricingRule).not.toHaveBeenCalled();
   });
 
   it('persists the complete lead and its AI analysis once', async () => {

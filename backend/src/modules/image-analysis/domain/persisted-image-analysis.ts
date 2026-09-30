@@ -1,7 +1,16 @@
-import { Prisma, type AiAnalysis } from '../../../generated/prisma/client.js';
+import { AnalysisVersion, Prisma, type AiAnalysis } from '../../../generated/prisma/client.js';
 import { ImageAmbiguityLevel, type ImageAnalysisResult } from './image-analysis.types.js';
+import type { ImageAnalysisV2Observation } from './image-analysis-v2.types.js';
 
-export function toImageAnalysisResult(analysis: AiAnalysis): ImageAnalysisResult {
+export function toImageAnalysisResult(analysis: AiAnalysis): ImageAnalysisResult | null {
+  if (
+    analysis.analysisVersion !== AnalysisVersion.V1 ||
+    !analysis.detectedSize ||
+    !analysis.sizeConfidence ||
+    !analysis.detectedDetail ||
+    !analysis.detailConfidence
+  )
+    return null;
   const rawResponse = asRawResponse(analysis.rawResponse);
 
   return {
@@ -17,6 +26,37 @@ export function toImageAnalysisResult(analysis: AiAnalysis): ImageAnalysisResult
         : true,
     analyzabilityConfidence: toConfidence(rawResponse?.analyzabilityConfidence),
     ambiguityLevel: toAmbiguityLevel(rawResponse?.ambiguityLevel),
+  };
+}
+
+export function toImageAnalysisV2Observation(
+  analysis: AiAnalysis,
+): ImageAnalysisV2Observation | null {
+  if (
+    analysis.analysisVersion !== AnalysisVersion.V2 ||
+    analysis.styleConfidence === null ||
+    analysis.scaleReferenceType === null ||
+    analysis.scaleConfidence === null ||
+    analysis.areaConfidence === null ||
+    analysis.colorConfidence === null ||
+    analysis.overallConfidence === null ||
+    analysis.referenceEssentiallyBlack === null ||
+    analysis.extensiveBodyCoverage === null
+  )
+    return null;
+  return {
+    style: analysis.style,
+    styleConfidence: analysis.styleConfidence,
+    scaleReferenceType: analysis.scaleReferenceType,
+    scaleConfidence: analysis.scaleConfidence,
+    referenceMainDimensionCm: analysis.referenceMainDimensionCm,
+    referenceAreaCm2: analysis.referenceAreaCm2,
+    areaConfidence: analysis.areaConfidence,
+    colorCoverage: analysis.colorCoverage,
+    colorConfidence: analysis.colorConfidence,
+    overallConfidence: analysis.overallConfidence,
+    referenceEssentiallyBlack: analysis.referenceEssentiallyBlack,
+    extensiveBodyCoverage: analysis.extensiveBodyCoverage,
   };
 }
 

@@ -18,6 +18,7 @@ import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { DashboardService } from './dashboard.service.js';
 import type { LeadListQueryDto } from './dto/dashboard.dto.js';
+import { persistedVision } from '../../../test/fixtures/vision-v2.js';
 
 type DashboardLead = Lead & {
   customer: { phoneNumber: string };
@@ -53,6 +54,23 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     updatedAt: now,
     customer: { phoneNumber: '+51 999999999' },
     aiAnalysis: {
+      analysisVersion: 'V1',
+      style: null,
+      styleConfidence: null,
+      scaleReferenceType: null,
+      scaleConfidence: null,
+      referenceMainDimensionCm: null,
+      referenceAreaCm2: null,
+      areaConfidence: null,
+      colorCoverage: null,
+      colorConfidence: null,
+      overallConfidence: null,
+      referenceEssentiallyBlack: null,
+      extensiveBodyCoverage: null,
+      promptVersion: null,
+      schemaVersion: null,
+      provider: null,
+      model: null,
       id: 'c29080d9-49de-4d6e-bea2-6017cbe109f8',
       leadId: LEAD_ID,
       detectedSize: TattooSize.MEDIUM,
@@ -100,6 +118,13 @@ function serviceWith(prismaShape: object, pricingShape: object = {}, storageShap
 }
 
 describe('DashboardService', () => {
+  it('does not display V2 observations as V1 size, detail or their confidences', async () => {
+    const findFirst = vi.fn().mockResolvedValue(makeLead({ aiAnalysis: persistedVision() }));
+    const { service } = serviceWith({ lead: { findFirst } });
+    const result = await service.getLead(ACCOUNT_ID, LEAD_ID);
+    expect(result.analysis).toBeNull();
+    expect(result.confidence).toBeNull();
+  });
   it('counts only complete Lead records and returns recent orders', async () => {
     const count = vi
       .fn()
@@ -142,7 +167,7 @@ describe('DashboardService', () => {
         customer: { select: { phoneNumber: true } },
         evaluation: true,
         aiAnalysis: {
-          select: { sizeConfidence: true, detailConfidence: true },
+          select: { analysisVersion: true, sizeConfidence: true, detailConfidence: true },
         },
       },
       orderBy: [

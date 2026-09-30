@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  AnalysisVersion,
   ConversationStatus,
   LeadStatus,
   Prisma,
@@ -16,6 +17,7 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { PricingService, type PricingRulePriceUpdate } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
+import { toImageAnalysisResult } from '../image-analysis/domain/persisted-image-analysis.js';
 import {
   buildWhatsappUrl,
   detailLabel,
@@ -37,6 +39,7 @@ const SUMMARY_INCLUDE = {
   evaluation: true,
   aiAnalysis: {
     select: {
+      analysisVersion: true,
       sizeConfidence: true,
       detailConfidence: true,
     },
@@ -423,26 +426,30 @@ export class DashboardService {
             rulesVersion: lead.evaluation.rulesVersion,
           }
         : null,
-      confidence: lead.aiAnalysis
-        ? {
-            size: lead.aiAnalysis.sizeConfidence.toNumber(),
-            detail: lead.aiAnalysis.detailConfidence.toNumber(),
-          }
-        : null,
+      confidence:
+        lead.aiAnalysis?.analysisVersion === AnalysisVersion.V1 &&
+        lead.aiAnalysis.sizeConfidence &&
+        lead.aiAnalysis.detailConfidence
+          ? {
+              size: lead.aiAnalysis.sizeConfidence.toNumber(),
+              detail: lead.aiAnalysis.detailConfidence.toNumber(),
+            }
+          : null,
     };
   }
 
   private toDetail(lead: DetailLead) {
+    const analysis = lead.aiAnalysis ? toImageAnalysisResult(lead.aiAnalysis) : null;
     return {
       ...this.toSummary(lead),
-      analysis: lead.aiAnalysis
+      analysis: analysis
         ? {
-            detectedSize: lead.aiAnalysis.detectedSize,
-            detectedSizeLabel: sizeLabel(lead.aiAnalysis.detectedSize),
-            sizeConfidence: lead.aiAnalysis.sizeConfidence.toNumber(),
-            detectedDetail: lead.aiAnalysis.detectedDetail,
-            detectedDetailLabel: detailLabel(lead.aiAnalysis.detectedDetail),
-            detailConfidence: lead.aiAnalysis.detailConfidence.toNumber(),
+            detectedSize: analysis.detectedSize,
+            detectedSizeLabel: sizeLabel(analysis.detectedSize),
+            sizeConfidence: analysis.sizeConfidence,
+            detectedDetail: analysis.detectedDetail,
+            detectedDetailLabel: detailLabel(analysis.detectedDetail),
+            detailConfidence: analysis.detailConfidence,
           }
         : null,
       reviewMessages: lead.reviewReasons.map((reason: ReviewReason) => reviewReasonMessage(reason)),

@@ -1,4 +1,5 @@
 export type AiFallbackProvider = 'none' | 'openai';
+export type AiMode = 'real' | 'mock';
 export type StorageMode = 'memory' | 'supabase';
 
 const DEFAULT_AI_FALLBACK_PROVIDER: AiFallbackProvider = 'none';
@@ -7,6 +8,14 @@ const DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna';
 const DEFAULT_SESSION_TTL_HOURS = 168;
 const DEFAULT_STORAGE_MODE: StorageMode = 'supabase';
 const DEFAULT_STORAGE_BUCKET = 'tattoo-references';
+
+function parseAiMode(value: unknown): AiMode {
+  const mode = parseString('AI_MODE', value, 'real').toLowerCase();
+  // Preserve the legacy local setting while keeping provider selection independent of mock mode.
+  if (mode === 'gemini') return 'real';
+  if (mode !== 'real' && mode !== 'mock') throw new Error('AI_MODE debe ser "real" o "mock".');
+  return mode;
+}
 
 function parseString(name: string, value: unknown, defaultValue: string): string {
   const parsedValue = value ?? defaultValue;
@@ -87,18 +96,23 @@ function parsePositiveInteger(name: string, value: unknown, defaultValue: number
 export function validateEnvironment(environment: Record<string, unknown>): Record<string, unknown> {
   const aiFallbackProvider = parseAiFallbackProvider(environment.AI_FALLBACK_PROVIDER);
   const storageMode = parseStorageMode(environment.STORAGE_MODE);
+  const aiMode = parseAiMode(environment.AI_MODE);
 
   return {
     ...environment,
+    AI_MODE: aiMode,
     AI_FALLBACK_PROVIDER: aiFallbackProvider,
-    GEMINI_API_KEY: parseRequiredProviderString(
-      'GEMINI_API_KEY',
-      environment.GEMINI_API_KEY,
-      'Gemini es el proveedor principal obligatorio.',
-    ),
+    GEMINI_API_KEY:
+      aiMode === 'mock'
+        ? undefined
+        : parseRequiredProviderString(
+            'GEMINI_API_KEY',
+            environment.GEMINI_API_KEY,
+            'Gemini es el proveedor principal obligatorio.',
+          ),
     GEMINI_MODEL: parseString('GEMINI_MODEL', environment.GEMINI_MODEL, DEFAULT_GEMINI_MODEL),
     OPENAI_MODEL: parseString('OPENAI_MODEL', environment.OPENAI_MODEL, DEFAULT_OPENAI_MODEL),
-    ...(aiFallbackProvider === 'openai'
+    ...(aiMode === 'real' && aiFallbackProvider === 'openai'
       ? {
           OPENAI_API_KEY: parseRequiredProviderString(
             'OPENAI_API_KEY',

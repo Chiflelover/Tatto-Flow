@@ -22,6 +22,21 @@ enum FlowVersion {
   @@map("flow_version")
 }
 
+enum AnalysisVersion {
+  V1
+  V2
+
+  @@map("analysis_version")
+}
+
+enum ScaleReferenceType {
+  EXPLICIT_REFERENCE
+  BODY_CONTEXT
+  NONE
+
+  @@map("scale_reference_type")
+}
+
 enum CalibrationCaseType {
   AREA
   COLOR
@@ -347,15 +362,32 @@ model LeadImage {
 }
 
 model AiAnalysis {
-  id               String      @id @default(uuid()) @db.Uuid
-  leadId           String      @unique @map("lead_id") @db.Uuid
-  detectedSize     TattooSize  @map("detected_size")
-  sizeConfidence   Decimal     @map("size_confidence") @db.Decimal(4, 3)
-  detectedDetail   DetailLevel @map("detected_detail")
-  detailConfidence Decimal     @map("detail_confidence") @db.Decimal(4, 3)
-  rawResponse      Json?       @map("raw_response") @db.JsonB
-  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  lead             Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id                        String              @id @default(uuid()) @db.Uuid
+  leadId                    String              @unique @map("lead_id") @db.Uuid
+  analysisVersion           AnalysisVersion     @default(V1) @map("analysis_version")
+  detectedSize              TattooSize?         @map("detected_size")
+  sizeConfidence            Decimal?            @map("size_confidence") @db.Decimal(4, 3)
+  detectedDetail            DetailLevel?        @map("detected_detail")
+  detailConfidence          Decimal?            @map("detail_confidence") @db.Decimal(4, 3)
+  style                     String?             @db.VarChar(64)
+  styleConfidence           Float?              @map("style_confidence") @db.DoublePrecision
+  scaleReferenceType        ScaleReferenceType? @map("scale_reference_type")
+  scaleConfidence           Float?              @map("scale_confidence") @db.DoublePrecision
+  referenceMainDimensionCm  Float?              @map("reference_main_dimension_cm") @db.DoublePrecision
+  referenceAreaCm2          Float?              @map("reference_area_cm2") @db.DoublePrecision
+  areaConfidence            Float?              @map("area_confidence") @db.DoublePrecision
+  colorCoverage             Float?              @map("color_coverage") @db.DoublePrecision
+  colorConfidence           Float?              @map("color_confidence") @db.DoublePrecision
+  overallConfidence         Float?              @map("overall_confidence") @db.DoublePrecision
+  referenceEssentiallyBlack Boolean?            @map("reference_essentially_black")
+  extensiveBodyCoverage     Boolean?            @map("extensive_body_coverage")
+  promptVersion             Int?                @map("prompt_version")
+  schemaVersion             String?             @map("schema_version") @db.VarChar(64)
+  provider                  String?             @db.VarChar(64)
+  model                     String?             @db.VarChar(128)
+  rawResponse               Json?               @map("raw_response") @db.JsonB
+  createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  lead                      Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("ai_analyses")
 }

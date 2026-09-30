@@ -4,6 +4,17 @@ import { ApiError, type GenerateContentParameters } from '@google/genai';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
 import { AIProviderError, type AIProviderErrorCategory } from './ai-provider.error.js';
 import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
+import {
+  createImageAnalysisV2Schema,
+  IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
+  parseImageAnalysisV2Response,
+  serializeProviderResponse,
+} from './image-analysis-v2.contract.js';
+import {
+  createImageAnalysisV2Prompt,
+  IMAGE_ANALYSIS_V2_PROMPT_VERSION,
+} from './image-analysis-v2.prompt.js';
 import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.prompt.js';
 import {
   InvalidImageAnalysisResponseError,
@@ -30,6 +41,7 @@ export interface GeminiClient {
       readonly text?: string;
       readonly candidates?: readonly GeminiCandidate[];
       readonly promptFeedback?: GeminiPromptFeedback;
+      readonly modelVersion?: string;
     }>;
   };
 }
@@ -40,12 +52,48 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
 
   constructor(
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(GEMINI_CLIENT) private readonly client: GeminiClient,
+    @Inject(GEMINI_CLIENT) private readonly client: GeminiClient | null,
   ) {
     super();
   }
 
   async analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
+    return (
+      await this.requestAnalysis(
+        image,
+        IMAGE_ANALYSIS_PROMPT,
+        IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+        parseImageAnalysisResponse,
+      )
+    ).result;
+  }
+
+  async analyzeTattooImageV2(
+    image: TattooImageInput,
+    styles: readonly VisionStyle[],
+  ): Promise<ImageAnalysisV2Result> {
+    const { result, rawResponse, model } = await this.requestAnalysis(
+      image,
+      createImageAnalysisV2Prompt(styles),
+      createImageAnalysisV2Schema(styles, 'gemini'),
+      (text) => parseImageAnalysisV2Response(text, styles),
+    );
+    return {
+      observations: result,
+      provider: 'gemini',
+      model,
+      promptVersion: IMAGE_ANALYSIS_V2_PROMPT_VERSION,
+      schemaVersion: IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
+      rawResponse,
+    };
+  }
+
+  private async requestAnalysis<T>(
+    image: TattooImageInput,
+    prompt: string,
+    schema: Record<string, unknown>,
+    parse: (text: string | undefined) => T,
+  ) {
     let contentType: 'image/jpeg' | 'image/png' | 'image/webp';
 
     try {
@@ -60,13 +108,21 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       });
     }
 
+    if (!this.client)
+      throw new AIProviderError({
+        provider: 'gemini',
+        category: 'AUTHENTICATION',
+        retryable: false,
+        fallbackEligible: false,
+      });
+
     const parameters: GenerateContentParameters = {
       model: this.configService.getOrThrow<string>('GEMINI_MODEL'),
       contents: [
         {
           role: 'user',
           parts: [
-            { text: IMAGE_ANALYSIS_PROMPT },
+            { text: prompt },
             {
               inlineData: {
                 mimeType: contentType,
@@ -78,9 +134,9 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       ],
       config: {
         temperature: 0,
-        maxOutputTokens: 512,
+        maxOutputTokens: schema === IMAGE_ANALYSIS_RESPONSE_SCHEMA ? 512 : 1024,
         responseMimeType: 'application/json',
-        responseJsonSchema: IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+        responseJsonSchema: schema,
         httpOptions: {
           timeout: GEMINI_TIMEOUT_MS,
           retryOptions: {
@@ -102,7 +158,11 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
         });
       }
 
-      return parseImageAnalysisResponse(response.text);
+      return {
+        result: parse(response.text),
+        model: response.modelVersion || parameters.model,
+        rawResponse: serializeProviderResponse(response, response.text),
+      };
     } catch (error: unknown) {
       if (error instanceof AIProviderError) {
         throw error;

@@ -89,9 +89,17 @@ El horario normal se evalúa siempre en `America/Lima`: desde las 06:00 inclusiv
 
 Gemini es el proveedor principal. Ante un fallo técnico elegible, el backend puede realizar un único intento con OpenAI si `AI_FALLBACK_PROVIDER=openai` y sus credenciales están configuradas. Una respuesta válida con baja confianza o discrepancias no activa el fallback.
 
-Ambos proveedores devuelven el mismo contrato estructurado, que incluye tamaño y detalle detectados, confidencias, presencia del tatuaje sobre piel, analizabilidad y ambigüedad. La IA no calcula el score, no clasifica el lead y no calcula precios.
+Ambos proveedores mantienen el contrato V1 para las conversaciones actuales: tamaño y detalle detectados, confidencias, presencia del tatuaje sobre piel, analizabilidad y ambigüedad. La IA no calcula el score, no clasifica el lead y no calcula precios.
 
-El runtime ya no usa `AI_MODE`, variables `AI_MOCK_*` ni un proveedor mock seleccionable por configuración. Los dobles de prueba permanecen únicamente dentro de los tests.
+La fase 3 agrega el contrato visual V2, independiente de las respuestas del cliente: estilo del catálogo activo o `null`, dimensión y área compositiva de referencia o `null`, cobertura cromática o `null`, cinco confidencias y observaciones de referencia esencialmente negra y cobertura corporal extensa. Las medidas requieren escala suficiente. No hay decisiones comerciales V2 en esta fase.
+
+El contrato `VISION_V2_2` (prompt 2) identifica el origen de escala: `EXPLICIT_REFERENCE`, `BODY_CONTEXT` o `NONE`. La anatomía es una referencia aproximada, no una escala física validada. `scaleConfidence` solo expresa confianza en la conversión a medidas físicas. Con `NONE`, el backend normaliza obligatoriamente dimensión y área a `null`, conservando la respuesta original del proveedor. No se aplica un umbral adicional ni se decide todavía si una estimación anatómica puede cotizarse.
+
+`ImageAnalysisV2Service.analyzeReference` es una entrada interna para pruebas controladas; no persiste ni envía mensajes. `analyzeAndPersistLeadReference` exige un lead de la cuenta indicada con conversación V2 y conserva cualquier análisis histórico V1. No existe un endpoint público V2 y las conversaciones nuevas siguen siendo V1.
+
+Los análisis V2 conservan `analysisVersion`, proveedor/modelo efectivo, versiones de prompt/schema y respuesta original del proveedor. Los datos históricos V1 no se reinterpretan como V2.
+
+`AI_MODE=mock` permite probar ambos contratos sin API keys ni consumo de IA. El mock V2 devuelve observaciones insuficientes con medidas, estilo y cobertura `null`, confidencias cero y booleanos falsos. No estima realmente la imagen. El modo por defecto es `real`; el valor heredado `gemini` se normaliza a `real`. No se utilizan variables `AI_MOCK_*`.
 
 ## Scoring y estados
 
@@ -185,8 +193,9 @@ Base de datos:
 
 IA:
 
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
+- `AI_MODE`: `real` (por defecto) o `mock`.
+- `GEMINI_API_KEY`: requerida en modo `real`.
+- `GEMINI_MODEL`: modelo del proveedor real; tiene un valor por defecto.
 - `AI_FALLBACK_PROVIDER`: `none` u `openai`.
 - `OPENAI_API_KEY`: requerida solo cuando el fallback es `openai`.
 - `OPENAI_MODEL`: requerida para el fallback de OpenAI.
@@ -212,7 +221,7 @@ Operación:
 
 - `BUSINESS_HOURS_TEST_PHONE`: bypass horario opcional y temporal para un único número autorizado.
 
-No deben configurarse `AI_MODE` ni variables `AI_MOCK_*`: fueron retiradas del runtime.
+En modo `mock` no se crean clientes Gemini/OpenAI ni se requieren sus credenciales. Storage y WhatsApp mantienen su configuración independiente.
 
 ### Frontend
 
