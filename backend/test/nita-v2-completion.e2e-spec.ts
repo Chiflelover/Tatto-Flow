@@ -320,33 +320,40 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       });
     const dashboard = () => new DashboardService(prisma, storage);
 
-    it('completes intake through Vision, creates the exact quote and sends one price plus the intent question', async () => {
-      const f = await seed();
-      const id = randomUUID();
-      expect((await inbound(0, 'Brazo', id)).status).toBe(200);
-      const lead = await read(f.leadId);
-      expect(lead.quote?.amount.toFixed(2)).toBe('825.00');
-      expect(lead.quote?.pricingModelVersionId).toBe(modelIds[0]);
-      expect(lead.quote?.targetAreaCm2?.toString()).toBe('50');
-      expect(lead.quote?.targetColorCoverage.toString()).toBe('0.5');
-      expect(lead.status).toBe('AUTO_QUOTED');
-      expect(lead.conversation?.currentState).toBe('ASK_ADVANCE_INTENT');
-      expect(lead.bookingIntent).toBeNull();
+    it.each([0.75, 0.88, 0.91])(
+      'completes intake at Vision confidence %s, creates the exact quote and sends one price plus the intent question',
+      async (overallConfidence) => {
+        const observation = result();
+        observation.observations.overallConfidence = overallConfidence;
+        analyzeV2.mockResolvedValue(observation);
+        const f = await seed();
+        const id = randomUUID();
+        expect((await inbound(0, 'Brazo', id)).status).toBe(200);
+        const lead = await read(f.leadId);
+        expect(lead.quote?.amount.toFixed(2)).toBe('825.00');
+        expect(lead.quote?.pricingModelVersionId).toBe(modelIds[0]);
+        expect(lead.quote?.targetAreaCm2?.toString()).toBe('50');
+        expect(lead.quote?.targetColorCoverage.toString()).toBe('0.5');
+        expect(lead.status).toBe('AUTO_QUOTED');
+        expect(lead.conversation?.currentState).toBe('ASK_ADVANCE_INTENT');
+        expect(lead.bookingIntent).toBeNull();
 
-      expect(lead.manualFinalPrice).toBeNull();
-      expect(analyzeV2).toHaveBeenCalledOnce();
-      expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_5');
-      const messages = cloud.sendMessage.mock.calls
-        .map((call) => JSON.stringify(call[2]))
-        .join('\n');
-      expect(messages.match(/S\/ 825\.00/g)).toHaveLength(1);
-      expect(messages).toContain('¿Deseas coordinar para separar una cita?');
-      expect(messages).not.toMatch(/cm²|confidence|AREA_COLOR|scaleFactor/);
-      const count = cloud.sendMessage.mock.calls.length;
-      expect((await inbound(0, 'Brazo', id)).status).toBe(200);
-      expect(cloud.sendMessage).toHaveBeenCalledTimes(count);
-      expect(await prisma.quote.count({ where: { leadId: f.leadId } })).toBe(1);
-    });
+        expect(lead.manualFinalPrice).toBeNull();
+        expect(analyzeV2).toHaveBeenCalledOnce();
+        expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_5');
+        expect(lead.aiAnalysis?.overallConfidence).toBe(overallConfidence);
+        const messages = cloud.sendMessage.mock.calls
+          .map((call) => JSON.stringify(call[2]))
+          .join('\n');
+        expect(messages.match(/S\/ 825\.00/g)).toHaveLength(1);
+        expect(messages).toContain('¿Deseas coordinar para separar una cita?');
+        expect(messages).not.toMatch(/cm²|confidence|AREA_COLOR|scaleFactor/);
+        const count = cloud.sendMessage.mock.calls.length;
+        expect((await inbound(0, 'Brazo', id)).status).toBe(200);
+        expect(cloud.sendMessage).toHaveBeenCalledTimes(count);
+        expect(await prisma.quote.count({ where: { leadId: f.leadId } })).toBe(1);
+      },
+    );
     it.each(['DIRECT_BOOKING', 'ARTIST_CONTACT'] as const)(
       'records %s once and hands off without reserving an appointment',
       async (intent) => {
@@ -441,7 +448,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       'delivers existing %s results without pricing or booking',
       async (decision) => {
         const observation = result();
-        if (decision === 'HUMAN_REVIEW') observation.observations.overallConfidence = 0.89;
+        if (decision === 'HUMAN_REVIEW') observation.observations.overallConfidence = 0.749999999;
         else
           Object.assign(observation.observations, {
             referenceEssentiallyBlack: true,

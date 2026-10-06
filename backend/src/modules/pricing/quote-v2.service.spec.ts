@@ -214,6 +214,48 @@ describe('Quote V2 catalog A/B dispatch', () => {
     f.lead.v2Preparation.targetColorCoverage = 0.5;
     return { ...f, catalogModel: model };
   }
+  it.each([
+    [0.75, true],
+    [0.749999999, false],
+    [0.88, true],
+  ] as const)(
+    'applies Vision confidence %s before quoting an interpolated Fine Line input',
+    async (overallConfidence, applicable) => {
+      const f = catalogFixture();
+      f.lead.colorDeclaration = 'LOW_COLOR';
+      f.lead.aiAnalysis.overallConfidence = overallConfidence;
+      f.lead.aiAnalysis.estimatedDensity = 73;
+      f.lead.v2Preparation = prepareV2Case(
+        {
+          firstTattoo: true,
+          sameSizeAsReference: true,
+          targetSizeCm: 9,
+          colorDeclaration: 'LOW_COLOR',
+          bodyPart: 'Brazo',
+        },
+        f.lead.aiAnalysis,
+        { exists: true, enabled: true, pricingAlgorithmVersion: CATALOG_AB_ALGORITHM_VERSION },
+      );
+      const result = await f.service.getOrCreate(f.tx, f.accountId, f.leadId);
+      expect(result.applicable).toBe(applicable);
+      if (result.applicable) {
+        expect(result.quote.amount.toFixed(2)).toBe('318.77');
+        expect(result.quote.snapshot).toMatchObject({
+          targetSizeCm: 9,
+          targetColorCoverage: '0.25',
+          estimatedDensity: 73,
+          calculation: { basePricePen: '242.5', densityFactor: '1.195' },
+        });
+        expect(f.create).toHaveBeenCalledOnce();
+      } else {
+        expect(f.lead.v2Preparation).toMatchObject({
+          decision: 'HUMAN_REVIEW',
+          reviewReasons: ['LOW_OVERALL_CONFIDENCE'],
+        });
+        expect(f.create).not.toHaveBeenCalled();
+      }
+    },
+  );
   it('quotes from declared size/color/density and persists the complete computation without requiring area', async () => {
     const f = catalogFixture();
     const result = await f.service.getOrCreate(f.tx, f.accountId, f.leadId);

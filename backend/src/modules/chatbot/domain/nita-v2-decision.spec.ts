@@ -216,11 +216,20 @@ describe('Nita V2 backend preparation', () => {
       expect(result.scaleFactor).toBeNull();
     },
   );
-  it.each([0.9, 0.899999999, 0.899])(
+  it.each([
+    [0.75, 'READY_FOR_PRICING'],
+    [0.749999999, 'HUMAN_REVIEW'],
+    [0.749, 'HUMAN_REVIEW'],
+    [0.750000001, 'READY_FOR_PRICING'],
+    [0.88, 'READY_FOR_PRICING'],
+    [1, 'READY_FOR_PRICING'],
+  ] as const)(
     'uses overall confidence exactly, without rounding %s',
-    (overallConfidence) => {
-      expect(prepareV2Case(intake, observe({ overallConfidence }), enabled).decision).toBe(
-        overallConfidence >= 0.9 ? 'READY_FOR_PRICING' : 'HUMAN_REVIEW',
+    (overallConfidence, decision) => {
+      const result = prepareV2Case(intake, observe({ overallConfidence }), enabled);
+      expect(result.decision).toBe(decision);
+      expect(result.reviewReasons).toEqual(
+        decision === 'HUMAN_REVIEW' ? ['LOW_OVERALL_CONFIDENCE'] : [],
       );
     },
   );
@@ -233,7 +242,7 @@ describe('Nita V2 backend preparation', () => {
           areaConfidence: 0,
           colorConfidence: 0,
           scaleConfidence: 0,
-          overallConfidence: 0.9,
+          overallConfidence: 0.75,
         }),
         enabled,
       ).decision,

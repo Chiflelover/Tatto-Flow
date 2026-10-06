@@ -35,6 +35,33 @@ describe('catalog A/B calibrated pricing', () => {
       calculation: { densityFactor: '1.15' },
     });
   });
+  it('interpolates 9 cm, 0.25 color and density 73 without requiring an exact catalog case', () => {
+    expect(interpolateCatalogABPrice(model, 9, 0.25, 73, 0)).toMatchObject({
+      applicable: true,
+      pricePen: '289.79',
+      calculation: {
+        basePricePen: '242.5',
+        densityPricePen: '262.9',
+        densityFactor: '1.195',
+        unadjustedPricePen: '289.7875',
+      },
+    });
+  });
+  it.each([
+    [4, 0, 20, '50.00'],
+    [4, 0, 100, '160.00'],
+    [4, 1, 20, '110.00'],
+    [4, 1, 100, '352.00'],
+    [30, 0, 20, '300.00'],
+    [30, 0, 100, '960.00'],
+    [30, 1, 20, '630.00'],
+    [30, 1, 100, '2016.00'],
+  ] as const)('accepts exact calibrated boundaries %s/%s/%s', (size, color, density, pricePen) => {
+    expect(interpolateCatalogABPrice(model, size, color, density, 0)).toMatchObject({
+      applicable: true,
+      pricePen,
+    });
+  });
   it('uses bilinear weights, learned density and general adjustment, rounding only once to cents', () => {
     expect(interpolateCatalogABPrice(model, 9, 0.375, 70, 10)).toMatchObject({
       pricePen: '346.29',

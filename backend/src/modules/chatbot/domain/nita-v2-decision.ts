@@ -5,6 +5,7 @@ import {
   type V2Intake,
 } from '../../conversations/conversation-v2-intake.js';
 import type { ImageAnalysisV2Observation } from '../../image-analysis/domain/image-analysis-v2.types.js';
+import { MINIMUM_AUTOMATIC_QUOTE_CONFIDENCE } from '../../image-analysis/domain/image-analysis.constants.js';
 import { CATALOG_AB_ALGORITHM_VERSION } from '../../calibration/catalog-ab-interpolation.js';
 import { declaredTargetColorCoverage } from './nita-v2-color.js';
 
@@ -190,7 +191,10 @@ export function prepareV2Case(
   }
 
   if (!isValidV2Analysis(analysis)) result.reviewReasons.push('INVALID_ANALYSIS');
-  if (fraction(analysis.overallConfidence) && analysis.overallConfidence < 0.9)
+  if (
+    fraction(analysis.overallConfidence) &&
+    analysis.overallConfidence < MINIMUM_AUTOMATIC_QUOTE_CONFIDENCE
+  )
     result.reviewReasons.push('LOW_OVERALL_CONFIDENCE');
   let needsClientSize = false;
   if (positive(intake.targetSizeCm)) {
