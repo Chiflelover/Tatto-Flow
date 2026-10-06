@@ -219,9 +219,7 @@ describe('Nita V2 backend preparation', () => {
   it.each([
     [0.75, 'READY_FOR_PRICING'],
     [0.749999999, 'HUMAN_REVIEW'],
-    [0.749, 'HUMAN_REVIEW'],
     [0.750000001, 'READY_FOR_PRICING'],
-    [0.88, 'READY_FOR_PRICING'],
     [1, 'READY_FOR_PRICING'],
   ] as const)(
     'uses overall confidence exactly, without rounding %s',

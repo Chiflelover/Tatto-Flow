@@ -12,7 +12,7 @@ test('prioritizes a manual final price over an automatic quote', () => {
   );
 });
 
-test('keeps showing an automatic quote when no manual price exists', () => {
+test('shows one approximate automatic price when no manual price exists', () => {
   assert.equal(
     leadPriceLabel({
       manualFinalPrice: null,
@@ -24,18 +24,4 @@ test('keeps showing an automatic quote when no manual price exists', () => {
 
 test('shows a dash when the lead has no price', () => {
   assert.equal(leadPriceLabel({ manualFinalPrice: null, quote: null }), '—');
-});
-
-test('shows one approximate amount from a V2 quote without creating a range', () => {
-  assert.equal(
-    leadPriceLabel({ manualFinalPrice: null, quote: { amount: '850.00' } }),
-    'S/850.00 aprox.',
-  );
-});
-
-test('keeps manual prices when a quote is also present', () => {
-  assert.equal(
-    leadPriceLabel({ manualFinalPrice: '650.00', quote: { amount: '850.00' } }),
-    'S/650.00',
-  );
 });

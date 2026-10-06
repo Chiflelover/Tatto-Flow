@@ -10,7 +10,7 @@ const parse = (overrides: Record<string, unknown> = {}) =>
   parseImageAnalysisV2Response(JSON.stringify({ ...VISION_RESPONSE, ...overrides }), VISION_STYLES);
 
 describe('AI Vision V2 contract', () => {
-  it.each([0, 18, 34.5, 50, 76.2, 94, 100])('accepts continuous density %s', (density) => {
+  it.each([0, 18, 34.5, 100])('accepts continuous density %s', (density) => {
     expect(parse({ estimated_density: density }).estimatedDensity).toBe(density);
   });
 

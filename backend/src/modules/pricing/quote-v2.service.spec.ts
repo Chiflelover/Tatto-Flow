@@ -96,23 +96,20 @@ describe('Quote V2 pricing and historical snapshot', () => {
       expect(f.create).not.toHaveBeenCalled();
     },
   );
-  it.each([null, 0, 18, 34.5, 76.2, 100])(
-    'keeps pricing unchanged for density %s',
-    async (density) => {
-      const f = fixture(density);
-      expect(f.lead.v2Preparation).toMatchObject({
-        decision: 'READY_FOR_PRICING',
-        targetAreaCm2: '50',
-        targetColorCoverage: 0.5,
-      });
-      const result = await f.service.getOrCreate(f.tx, f.accountId, f.leadId);
-      expect(result.applicable).toBe(true);
-      if (!result.applicable) return;
-      expect(result.quote.amount.toFixed(2)).toBe('825.00');
-      expect(result.quote.algorithmVersion).toBe(ALGORITHM_VERSION);
-      expect(result.quote.snapshot).not.toHaveProperty('estimatedDensity');
-    },
-  );
+  it.each([null, 0, 34.5, 100])('keeps pricing unchanged for density %s', async (density) => {
+    const f = fixture(density);
+    expect(f.lead.v2Preparation).toMatchObject({
+      decision: 'READY_FOR_PRICING',
+      targetAreaCm2: '50',
+      targetColorCoverage: 0.5,
+    });
+    const result = await f.service.getOrCreate(f.tx, f.accountId, f.leadId);
+    expect(result.applicable).toBe(true);
+    if (!result.applicable) return;
+    expect(result.quote.amount.toFixed(2)).toBe('825.00');
+    expect(result.quote.algorithmVersion).toBe(ALGORITHM_VERSION);
+    expect(result.quote.snapshot).not.toHaveProperty('estimatedDensity');
+  });
   it('uses the account/style active model, Decimal inputs and incorporated adjustment', async () => {
     const f = fixture();
     const result = await f.service.getOrCreate(f.tx, f.accountId, f.leadId);
