@@ -44,6 +44,8 @@ export class ConversationAbandonmentService {
       const update = await transaction.conversation.updateMany({
         where: {
           id: conversation.id,
+          accountId: conversation.accountId,
+          customerId: conversation.customerId,
           status: ConversationStatus.ACTIVE,
           lastActivityAt: { lte: cutoff },
         },

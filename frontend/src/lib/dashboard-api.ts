@@ -369,10 +369,6 @@ export function setCalibrationStyle(styleId: string, enabled: boolean): Promise<
   });
 }
 
-export function getCalibrationDraft(styleId: string): Promise<CalibrationDraftView | null> {
-  return dashboardRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`);
-}
-
 export function startCalibrationDraft(
   styleId: string,
   catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR',

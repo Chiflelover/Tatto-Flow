@@ -14,13 +14,6 @@ export function statusLabel(status: LeadStatus): string {
   return STATUS_LABELS[status];
 }
 
-export function formatMoney(value: { toFixed(decimalPlaces: number): string }): string {
-  return value
-    .toFixed(2)
-    .replace(/\.00$/, '')
-    .replace(/(\.\d)0$/, '$1');
-}
-
 export function buildWhatsappUrl(phoneNumber: string): string | null {
   const digits = phoneNumber.replace(/\D/g, '');
 

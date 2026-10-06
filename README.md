@@ -74,9 +74,9 @@ tamaño objetivo en centímetros (tanto con YES como con NO), color y ubicación
 `targetSizeCm` es siempre el tamaño declarado por el cliente; la medida de referencia
 es contexto y nunca lo sustituye ni se promedia con él.
 
-La conversación incompleta se conserva durante dos horas de actividad efectiva. Al completarse el procesamiento, la conversación pasa a `COMPLETED` y `HANDOFF_TO_TATTOO_ARTIST`; Nita deja de responder automáticamente mientras el lead siga en atención.
+Una conversación incompleta pasa a `ABANDONED` tras dos horas reales desde `lastActivityAt`, conservando su historial. El barrido periódico la marca en su siguiente ejecución; también se comprueba el vencimiento cuando el cliente vuelve a escribir. Al completarse el procesamiento, la conversación pasa a `COMPLETED` y `HANDOFF_TO_TATTOO_ARTIST`; Nita deja de responder automáticamente mientras el lead siga en atención.
 
-El horario normal se evalúa siempre en `America/Lima`: desde las 06:00 inclusive hasta las 22:00 exclusivo. El tiempo fuera de horario no hace expirar el progreso de una conversación.
+El horario normal se evalúa siempre en `America/Lima`: desde las 06:00 inclusive hasta las 22:00 exclusivo. Esta restricción de atención no pausa el contador de inactividad; el abandono también se ejecuta durante la noche.
 
 `BUSINESS_HOURS_TEST_PHONE` es una variable opcional y temporal de testing. Si contiene un número y coincide exactamente con el remitente, solo omite la restricción horaria para ese número. Vacía o ausente, no cambia el comportamiento normal. No debe hardcodearse ningún teléfono en el código.
 
@@ -453,7 +453,17 @@ El `vercel.json` de la raíz configura un único proyecto con dos Services:
 - `/api/*`: se dirige al backend;
 - el resto de rutas: se dirige al frontend;
 
-El backend es ESM nativo y ejecuta el artefacto compilado. No depende de procesos persistentes ni del filesystem local. Las conversaciones vencen al recibir una nueva interacción.
+El backend es ESM nativo y ejecuta el artefacto compilado. No depende de procesos persistentes ni del filesystem local. Las conversaciones vencen mediante el barrido periódico y, como segunda defensa, al recibir una nueva interacción.
+
+### Abandono automático de conversaciones
+
+El proyecto actual usa Vercel Hobby, cuyo cron nativo permite solo una ejecución diaria. El workflow `.github/workflows/abandon-inactive-conversations.yml` programa una petición cada cinco minutos desde GitHub Actions a `GET /api/conversations/abandon-inactive` del dominio de producción. No requiere una instancia Nest residente ni modifica la recuperación de jobs de WhatsApp.
+
+La ruta requiere `Authorization: Bearer <CRON_SECRET>` con un secreto privado de al menos 32 caracteres y comparación de tiempo constante. Sin configurar el secreto devuelve 503; sin autorización válida devuelve 401. Devuelve únicamente `{ abandonedCount }` y `Cache-Control: no-store`.
+
+Antes de activar el workflow, configurar el mismo `CRON_SECRET` en el backend de Vercel y en los secrets del repositorio GitHub, fuera de Git, y publicar/desplegar primero el endpoint. El workflow solo se ejecuta en `main` del repositorio original, no hace checkout de código, no usa acciones externas ni permisos de `GITHUB_TOKEN`, y admite ejecución manual desde Actions. Los reintentos son seguros porque el servicio vuelve a verificar estado y última actividad dentro de la transacción.
+
+GitHub puede retrasar o descartar ejecuciones programadas; la marca de abandono ocurre en el siguiente barrido exitoso, nunca antes de las dos horas. En repositorios públicos GitHub desactiva los workflows programados tras 60 días sin actividad: hay que mantenerlo habilitado y revisar sus ejecuciones. Si se necesita una latencia garantizada, se requiere un scheduler con esa garantía.
 
 Antes de desplegar:
 

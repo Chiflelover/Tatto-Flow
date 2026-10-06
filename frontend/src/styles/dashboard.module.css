@@ -694,7 +694,6 @@
   font: inherit;
 }
 
-.pricingInputWrap input,
 .leadFilters select,
 .phoneSearch input {
   width: 100%;
@@ -707,7 +706,6 @@
     box-shadow 150ms ease;
 }
 
-.pricingInputWrap input:focus,
 .leadFilters select:focus,
 .phoneSearch input:focus {
   border-color: var(--ink);
@@ -794,12 +792,6 @@
   color: var(--muted-strong);
   font-size: 0.7rem;
   line-height: 1.55;
-}
-
-.pricingActions .primaryButton {
-  border-color: var(--sidebar-text);
-  color: var(--sidebar-bg);
-  background: var(--sidebar-text);
 }
 
 .leadTabs {
@@ -1679,8 +1671,7 @@
     0 0 0 2px var(--brush-visible);
 }
 
-.manualPriceInput input,
-.pricingInputWrap input {
+.manualPriceInput input {
   appearance: textfield;
   color: var(--foreground);
   background-color: transparent !important;
@@ -1690,19 +1681,14 @@
 }
 
 .manualPriceInput input::-webkit-inner-spin-button,
-.manualPriceInput input::-webkit-outer-spin-button,
-.pricingInputWrap input::-webkit-inner-spin-button,
-.pricingInputWrap input::-webkit-outer-spin-button {
+.manualPriceInput input::-webkit-outer-spin-button {
   margin: 0;
   appearance: none;
 }
 
 .manualPriceInput input:-webkit-autofill,
 .manualPriceInput input:-webkit-autofill:hover,
-.manualPriceInput input:-webkit-autofill:focus,
-.pricingInputWrap input:-webkit-autofill,
-.pricingInputWrap input:-webkit-autofill:hover,
-.pricingInputWrap input:-webkit-autofill:focus {
+.manualPriceInput input:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--foreground);
   box-shadow: 0 0 0 1000px var(--input-background) inset !important;
   caret-color: var(--foreground);
@@ -1740,7 +1726,6 @@
 
 .detailBlockers,
 .inlineError,
-.pricingSaveError,
 .errorState,
 .confirmation {
   position: relative;
@@ -1804,8 +1789,7 @@
 }
 
 .leadFilters select,
-.phoneSearch input,
-.pricingInputWrap input {
+.phoneSearch input {
   border-radius: var(--radius-sm);
   background: var(--input-background);
 }
@@ -1849,9 +1833,7 @@
 }
 
 .mobileLeadRow,
-.confirmationModal,
-.pricingActions,
-.pricingRow {
+.confirmationModal {
   border-radius: var(--radius-md) var(--radius-lg) var(--radius-sm) var(--radius-md);
 }
 

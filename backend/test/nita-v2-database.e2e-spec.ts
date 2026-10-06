@@ -67,6 +67,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
 
                   WHATSAPP_BUSINESS_ACCOUNT_ID: 'test-business',
                   META_APP_SECRET: appSecret,
+                  CRON_SECRET: appSecret.repeat(3),
                 }),
             ],
           }),
@@ -387,6 +388,37 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(abandoned.lead?.images[0]?.deletedAt).toBeNull();
     });
 
+    it('sweeps only expired intake while preserving another account with the same phone', async () => {
+      await inbound('text', 'Hola', phoneA);
+      await inbound('text', 'Hola', phoneB);
+      const original = await current(accountA);
+      const anotherAccount = await current(accountB);
+      expect(original.customerId).not.toBe(anotherAccount.customerId);
+      await prisma.conversation.update({
+        where: { id: original.id },
+        data: { lastActivityAt: new Date(Date.now() - 2 * 60 * 60 * 1_000 - 1) },
+      });
+
+      await request(app.getHttpServer()).get('/api/conversations/abandon-inactive').expect(401);
+      expect((await current(accountA)).status).toBe('ACTIVE');
+      const sweeps = await Promise.all(
+        [0, 1].map(() =>
+          request(app.getHttpServer())
+            .get('/api/conversations/abandon-inactive')
+            .set('Authorization', `Bearer ${appSecret.repeat(3)}`)
+            .expect(200),
+        ),
+      );
+      expect(
+        sweeps.map(({ body }) => (body as { abandonedCount: number }).abandonedCount).sort(),
+      ).toEqual([0, 1]);
+      const history = await current(accountA);
+      expect(history.status).toBe('ABANDONED');
+      expect(history.lead).toMatchObject({ accountId: accountA, customerId: original.customerId });
+      expect(await current(accountB)).toEqual(anotherAccount);
+      expect(await prisma.lead.count({ where: { accountId: accountB } })).toBe(0);
+    });
+
     it('restarts abandoned intake from zero, retains its ADMIN image and ignores retries', async () => {
       await reference(false);
       await inbound('text', '12.5 cm');
@@ -396,10 +428,16 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(original.currentState).toBe('READY_FOR_ANALYSIS');
       expect(original.lead?.images).toHaveLength(1);
       const retainedImage = original.lead!.images[0];
-      const later = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const abandonment = app.get(ConversationAbandonmentService);
-      expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(1);
-      expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(0);
+      await prisma.conversation.update({
+        where: { id: original.id },
+        data: { lastActivityAt: new Date(Date.now() - 2 * 60 * 60 * 1_000 - 1) },
+      });
+      for (const abandonedCount of [1, 0]) {
+        await request(app.getHttpServer())
+          .get('/api/conversations/abandon-inactive')
+          .set('Authorization', `Bearer ${appSecret.repeat(3)}`)
+          .expect(200, { abandonedCount });
+      }
       const history = await prisma.conversation.findUniqueOrThrow({
         where: { id: original.id },
         include: { lead: { include: { images: true } } },
