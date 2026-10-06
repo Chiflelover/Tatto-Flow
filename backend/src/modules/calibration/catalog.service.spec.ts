@@ -7,6 +7,24 @@ import { CreateCaseDto } from './calibration.dto.js';
 import { CatalogService } from './catalog.service.js';
 
 describe('CatalogService', () => {
+  it('rejects recreating AREA/COLOR cases for Fine Line', async () => {
+    const create = vi.fn();
+    const service = new CatalogService({
+      tattooStyle: { findUnique: vi.fn().mockResolvedValue({ code: 'FINE_LINE' }) },
+      calibrationCase: { create },
+    } as unknown as PrismaService);
+    await expect(
+      service.createCase('fine-line', {
+        imageUrl: 'https://example.com/old.png',
+        type: 'AREA',
+        areaCm2: 25,
+        colorCoverage: 0,
+        displayOrder: 1,
+      }),
+    ).rejects.toThrow(/catálogo A\/B/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('accepts a new stable style code without changing a Prisma enum', async () => {
     const create = vi.fn().mockResolvedValue({ code: 'MICRO_REALISM', name: 'Micro Realism' });
     const service = new CatalogService({ tattooStyle: { create } } as unknown as PrismaService);

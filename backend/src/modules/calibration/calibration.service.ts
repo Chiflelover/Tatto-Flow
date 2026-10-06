@@ -16,6 +16,7 @@ import {
   readCaseSnapshot as snapshot,
   snapshotCatalog,
   type AreaColorSnapshot,
+  type CaseSnapshot,
   type CalibrationCatalog,
   type PhasedCaseSnapshot,
 } from './calibration-snapshot.js';
@@ -48,7 +49,7 @@ export class CalibrationService {
       code: style.code,
       name: style.name,
       enabled: style.artistStyles[0]?.isEnabled ?? false,
-      caseCount: style.cases.filter((item) => !item.phase).length,
+      caseCount: style.code === 'FINE_LINE' ? 0 : style.cases.filter((item) => !item.phase).length,
       catalogCaseCount: style.cases.filter((item) => !!item.phase).length,
       activeVersion: style.modelVersions[0]?.version ?? null,
     }));
@@ -68,6 +69,7 @@ export class CalibrationService {
 
   async listCases(accountId: string, styleId: string, catalog: CalibrationCatalog = 'AREA_COLOR') {
     const style = await this.requireEnabledStyle(this.prisma, accountId, styleId);
+    catalog = this.currentCatalog(style.code, catalog);
     const cases = await this.prisma.calibrationCase.findMany({
       where: { styleId, isActive: true, phase: catalog === 'PHASED' ? { not: null } : null },
       orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
@@ -75,15 +77,25 @@ export class CalibrationService {
     return cases.map((item) => freezeCase(item, style.code));
   }
 
-  async startDraft(accountId: string, styleId: string, catalog: CalibrationCatalog = 'AREA_COLOR') {
+  async startDraft(
+    accountId: string,
+    styleId: string,
+    catalog: CalibrationCatalog = 'AREA_COLOR',
+    restart = false,
+  ) {
     const id = await this.prisma.$transaction(async (tx) => {
       await this.lockAccount(tx, accountId);
       const style = await this.requireEnabledStyle(tx, accountId, styleId);
+      catalog = this.currentCatalog(style.code, catalog);
       const existing = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
         include: { answers: { select: { caseId: true, pricePen: true } } },
       });
-      if (existing) {
+      const retiredDraft =
+        existing &&
+        style.code === 'FINE_LINE' &&
+        snapshotCatalog(snapshot(existing.caseSnapshot)) !== 'PHASED';
+      if (existing && !restart && !retiredDraft) {
         const frozen = snapshot(existing.caseSnapshot);
         if (snapshotCatalog(frozen) !== catalog)
           throw new ConflictException('Ya existe un borrador de otro catálogo para este estilo.');
@@ -116,6 +128,11 @@ export class CalibrationService {
       });
       if (!cases.length)
         throw new ConflictException('Todavía no hay imágenes de calibración para este estilo.');
+      if (existing)
+        await tx.pricingModelVersion.update({
+          where: { id: existing.id },
+          data: { status: PricingModelStatus.SUPERSEDED },
+        });
       const latest = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId },
         orderBy: { version: 'desc' },
@@ -145,7 +162,7 @@ export class CalibrationService {
       where: { accountId, styleId, status: PricingModelStatus.DRAFT, ...(id ? { id } : {}) },
       include: {
         answers: { select: { caseId: true, pricePen: true } },
-        style: { select: { name: true } },
+        style: { select: { name: true, code: true } },
       },
     });
     if (!draft) return null;
@@ -153,6 +170,7 @@ export class CalibrationService {
       draft.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
     );
     const cases = snapshot(draft.caseSnapshot);
+    if (draft.style.code === 'FINE_LINE' && snapshotCatalog(cases) !== 'PHASED') return null;
     let phasedParameters: CatalogABModelParameters | null = null;
     if (snapshotCatalog(cases) === 'PHASED' && answers.size === cases.length) {
       try {
@@ -187,12 +205,13 @@ export class CalibrationService {
       throw new ConflictException('Ingresa un precio válido en PEN.');
     await this.prisma.$transaction(async (tx) => {
       await this.lockAccount(tx, accountId);
-      await this.requireEnabledStyle(tx, accountId, styleId);
+      const style = await this.requireEnabledStyle(tx, accountId, styleId);
       const draft = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
         include: { answers: { select: { caseId: true, pricePen: true } } },
       });
       if (!draft) throw new NotFoundException('Inicia la calibración de este estilo.');
+      this.requireCurrentCatalog(style.code, snapshot(draft.caseSnapshot));
       if (!snapshot(draft.caseSnapshot).some((item) => item.id === caseId))
         throw new NotFoundException('Caso no pertenece a esta calibración.');
       const saved = await tx.calibrationAnswer.upsert({
@@ -231,13 +250,14 @@ export class CalibrationService {
   async activate(accountId: string, styleId: string) {
     return this.prisma.$transaction(async (tx) => {
       const account = await this.lockAccount(tx, accountId);
-      await this.requireEnabledStyle(tx, accountId, styleId);
+      const style = await this.requireEnabledStyle(tx, accountId, styleId);
       const draft = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
         include: { answers: true },
       });
       if (!draft) throw new NotFoundException('No hay calibración pendiente.');
       const frozen = snapshot(draft.caseSnapshot);
+      this.requireCurrentCatalog(style.code, frozen);
       const prices = new Map(
         draft.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
       );
@@ -408,6 +428,17 @@ export class CalibrationService {
     if (parameters.styleId !== styleId)
       throw new Error('Las referencias no pertenecen a este estilo.');
     return parameters;
+  }
+
+  private currentCatalog(styleCode: string, catalog: CalibrationCatalog): CalibrationCatalog {
+    return styleCode === 'FINE_LINE' ? 'PHASED' : catalog;
+  }
+
+  private requireCurrentCatalog(styleCode: string, cases: CaseSnapshot[]) {
+    if (styleCode === 'FINE_LINE' && snapshotCatalog(cases) !== 'PHASED')
+      throw new ConflictException(
+        'Fine Line usa las referencias actuales. Inicia una nueva calibración.',
+      );
   }
 
   private async lockAccount(tx: Prisma.TransactionClient, accountId: string) {

@@ -376,9 +376,11 @@ export function getCalibrationDraft(styleId: string): Promise<CalibrationDraftVi
 export function startCalibrationDraft(
   styleId: string,
   catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR',
+  restart = false,
 ): Promise<CalibrationDraftView> {
   return jsonRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`, 'POST', {
     catalog,
+    restart,
   });
 }
 

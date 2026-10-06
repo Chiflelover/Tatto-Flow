@@ -40,6 +40,42 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       historicalModelId = randomUUID(),
       historicalDraftId = randomUUID();
     const idwModelId = randomUUID();
+    const retiredFineLineModelId = randomUUID();
+    const retiredFineLineDraftId = randomUUID();
+    const retiredFineLineQuoteId = randomUUID();
+    const retiredFineLineCases = [
+      ...[25, 50, 100, 150, 220].map((areaCm2, index) => ({
+        id: randomUUID(),
+        imageUrl: `https://catalog.test.invalid/retired-fine-area-${index}.png`,
+        type: 'AREA' as const,
+        areaCm2,
+        colorCoverage: 0,
+        displayOrder: index + 1,
+      })),
+      ...[0.2, 0.4, 0.7, 1].map((colorCoverage, index) => ({
+        id: randomUUID(),
+        imageUrl: `https://catalog.test.invalid/retired-fine-color-${index}.png`,
+        type: 'COLOR' as const,
+        areaCm2: 50,
+        colorCoverage,
+        displayOrder: index + 6,
+      })),
+    ];
+    const retiredFineLinePrices = ['100', '150', '200', '300', '400', '180', '200', '250', '300'];
+    const retiredFineLineParameters = buildModel(
+      retiredFineLineCases.map((item, index) => ({
+        ...item,
+        caseId: item.id,
+        pricePen: retiredFineLinePrices[index],
+      })),
+    );
+    const retiredFineLineQuoteSnapshot = {
+      version: 2,
+      calibrationCases: retiredFineLineCases,
+      modelParameters: retiredFineLineParameters,
+      targetAreaCm2: '25',
+      targetColorCoverage: 0,
+    };
     let fineLineId: string;
     let fineLineRoute: string;
     const legacyCases = [
@@ -85,6 +121,70 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
 
     beforeAll(async () => {
       database = await isolatedDatabase(async (name, client) => {
+        if (name === '20261006210000_retire_fine_line_area_color_catalog') {
+          fineLineId = (
+            await client.query<{ id: string }>(
+              "SELECT id FROM tattoo_styles WHERE code = 'FINE_LINE'",
+            )
+          ).rows[0].id;
+          for (const item of retiredFineLineCases)
+            await client.query(
+              'INSERT INTO calibration_cases (id, style_id, image_url, type, area_cm2, color_coverage, display_order) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+              [
+                item.id,
+                fineLineId,
+                item.imageUrl,
+                item.type,
+                item.areaCm2,
+                item.colorCoverage,
+                item.displayOrder,
+              ],
+            );
+          for (const [id, version, status, modelParameters] of [
+            [retiredFineLineModelId, 1, 'ACTIVE', retiredFineLineParameters],
+            [retiredFineLineDraftId, 2, 'DRAFT', null],
+          ] as const)
+            await client.query(
+              'INSERT INTO pricing_model_versions (id, account_id, style_id, version, status, case_snapshot, model_parameters) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+              [
+                id,
+                accountA,
+                fineLineId,
+                version,
+                status,
+                JSON.stringify(retiredFineLineCases),
+                modelParameters ? JSON.stringify(modelParameters) : null,
+              ],
+            );
+          for (const [index, item] of retiredFineLineCases.entries())
+            await client.query(
+              'INSERT INTO calibration_answers (id, model_version_id, case_id, price_pen) VALUES ($1,$2,$3,$4)',
+              [randomUUID(), retiredFineLineModelId, item.id, retiredFineLinePrices[index]],
+            );
+          const customerId = randomUUID(),
+            leadId = randomUUID();
+          await client.query(
+            'INSERT INTO customers (id, account_id, phone_number, updated_at) VALUES ($1,$2,$3,now())',
+            [customerId, accountA, '51900000888'],
+          );
+          await client.query(
+            'INSERT INTO leads (id, account_id, customer_id, updated_at) VALUES ($1,$2,$3,now())',
+            [leadId, accountA, customerId],
+          );
+          await client.query(
+            'INSERT INTO quotes (id, lead_id, account_id, pricing_model_version_id, amount, target_area_cm2, target_color_coverage, detected_style, general_adjustment_percent, algorithm_version, snapshot) VALUES ($1,$2,$3,$4,100,25,0,$5,0,$6,$7)',
+            [
+              retiredFineLineQuoteId,
+              leadId,
+              accountA,
+              retiredFineLineModelId,
+              'FINE_LINE',
+              'AREA_COLOR_SEPARABLE_V1',
+              JSON.stringify(retiredFineLineQuoteSnapshot),
+            ],
+          );
+          return;
+        }
         if (name === '20261006190000_add_explicit_color_levels') {
           for (const [index, item] of historicalColors.entries()) {
             await client.query(
@@ -231,7 +331,7 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       expect(idw.algorithmVersion).toBe('IDW_CONVEX_HULL_V1');
       expect(idw.caseSnapshot).toEqual(legacyCases);
       expect(idw.modelParameters).toEqual(idwParameters);
-      expect(await database.prisma.calibrationAnswer.count()).toBe(9);
+      expect(await database.prisma.calibrationAnswer.count()).toBe(18);
       for (const item of historicalColors) {
         expect(
           await database.prisma.conversation.findUniqueOrThrow({
@@ -247,6 +347,48 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
           colorDeclaration: item.colorDeclaration,
         });
       }
+    });
+
+    it('retires only Fine Line live cases and preserves every historical price and snapshot', async () => {
+      expect(await database.prisma.calibrationCase.count({ where: { styleId: fineLineId } })).toBe(
+        0,
+      );
+      expect(await database.prisma.calibrationCase.count({ where: { styleId } })).toBe(3);
+      const previous = await database.prisma.pricingModelVersion.findUniqueOrThrow({
+        where: { id: retiredFineLineModelId },
+        include: { answers: true },
+      });
+      expect(previous.status).toBe('ACTIVE');
+      expect(previous.caseSnapshot).toEqual(retiredFineLineCases);
+      expect(previous.modelParameters).toEqual(retiredFineLineParameters);
+      for (const [index, item] of retiredFineLineCases.entries())
+        expect(
+          previous.answers.find((answer) => answer.caseId === item.id)!.pricePen.toFixed(2),
+        ).toBe(Number(retiredFineLinePrices[index]).toFixed(2));
+      expect(
+        await database.prisma.pricingModelVersion.findUniqueOrThrow({
+          where: { id: retiredFineLineDraftId },
+        }),
+      ).toMatchObject({ status: 'SUPERSEDED', caseSnapshot: retiredFineLineCases });
+      expect(
+        await database.prisma.quote.findUniqueOrThrow({ where: { id: retiredFineLineQuoteId } }),
+      ).toMatchObject({ amount: new Prisma.Decimal(100), snapshot: retiredFineLineQuoteSnapshot });
+      const answer = previous.answers[0];
+      await database.prisma.calibrationAnswer.update({
+        where: { id: answer.id },
+        data: { caseId: answer.caseId },
+      });
+      await expect(
+        database.prisma.calibrationAnswer.update({
+          where: { id: answer.id },
+          data: { caseId: randomUUID() },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        database.prisma.calibrationCase.create({
+          data: { styleId: fineLineId, ...retiredFineLineCases[0] },
+        }),
+      ).rejects.toThrow();
     });
 
     it('reads and activates an existing AREA/COLOR draft and keeps current pricing', async () => {
@@ -562,7 +704,7 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       const a = await api()
         .post(`${fineLineRoute}/draft`)
         .set('Cookie', 'tatto_flow_session=A')
-        .send({ catalog: 'PHASED' })
+        .send({})
         .expect(201);
       const b = await api()
         .post(`${fineLineRoute}/draft`)
@@ -838,6 +980,101 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
           estimatedDensity: 70,
         }),
       ).toMatchObject({ pricePen: '701.50' });
+    }, 120_000);
+
+    it('recalibrates Fine Line from zero with the same 25 references and supersedes only its account and style', async () => {
+      const previous = await database.prisma.pricingModelVersion.findFirstOrThrow({
+        where: { accountId: accountA, styleId: fineLineId, status: 'ACTIVE' },
+      });
+      const untouched = await database.prisma.pricingModelVersion.findMany({
+        where: { status: 'ACTIVE', NOT: { accountId: accountA, styleId: fineLineId } },
+        orderBy: { id: 'asc' },
+      });
+      const historicalQuotes = await database.prisma.quote.findMany({ orderBy: { id: 'asc' } });
+      const partial = (await service.startDraft(accountA, fineLineId))!;
+      await service.saveAnswer(accountA, fineLineId, partial.cases[0].id, 333);
+      expect(await service.startDraft(accountA, fineLineId)).toMatchObject({
+        id: partial.id,
+        answeredCount: 1,
+      });
+      const response = await api()
+        .post(`${fineLineRoute}/draft`)
+        .set('Cookie', 'tatto_flow_session=A')
+        .send({ catalog: 'AREA_COLOR', restart: true })
+        .expect(201);
+      expect(response.body).toMatchObject({
+        catalogFormat: 'PHASED',
+        totalCount: 25,
+        answeredCount: 0,
+        canActivate: false,
+      });
+      expect(response.body.id).not.toBe(partial.id);
+      expect(
+        (response.body.cases as { pricePen: string | null }[]).every(
+          (item) => item.pricePen === null,
+        ),
+      ).toBe(true);
+      const draft = await database.prisma.pricingModelVersion.findUniqueOrThrow({
+        where: { id: response.body.id as string },
+      });
+      expect(draft.caseSnapshot).toEqual(previous.caseSnapshot);
+      expect(draft.algorithmVersion).toBe('CATALOG_AB_PENDING');
+      expect(draft.modelParameters).toBeNull();
+      expect(
+        await database.prisma.pricingModelVersion.findUniqueOrThrow({ where: { id: partial.id } }),
+      ).toMatchObject({ status: 'SUPERSEDED' });
+      expect(
+        await database.prisma.calibrationAnswer.findUniqueOrThrow({
+          where: {
+            modelVersionId_caseId: { modelVersionId: partial.id, caseId: partial.cases[0].id },
+          },
+        }),
+      ).toMatchObject({ pricePen: new Prisma.Decimal(333) });
+      await api()
+        .post(`${fineLineRoute}/draft/activate`)
+        .set('Cookie', 'tatto_flow_session=A')
+        .expect(409);
+      const prices = catalogABPricingFixture(fineLineId, 3);
+      await database.prisma.calibrationAnswer.createMany({
+        data: partial.cases.map((item, index) => ({
+          modelVersionId: draft.id,
+          caseId: item.id,
+          pricePen: prices[index].pricePen,
+        })),
+      });
+      const ready = await api()
+        .put(`${fineLineRoute}/draft/answers/${partial.cases[24].id}`)
+        .set('Cookie', 'tatto_flow_session=A')
+        .send({ price: Number(prices[24].pricePen) })
+        .expect(200);
+      expect(ready.body).toMatchObject({ totalCount: 25, answeredCount: 25, canActivate: true });
+      const activated = await api()
+        .post(`${fineLineRoute}/draft/activate`)
+        .set('Cookie', 'tatto_flow_session=A')
+        .expect(201);
+      expect(activated.body).toMatchObject({
+        id: draft.id,
+        status: 'ACTIVE',
+        algorithmVersion: CATALOG_AB_ALGORITHM_VERSION,
+        sourceVersionId: previous.id,
+      });
+      expect(activated.body.version).toBeGreaterThan(previous.version);
+      expect(
+        await database.prisma.pricingModelVersion.findUniqueOrThrow({ where: { id: previous.id } }),
+      ).toMatchObject({
+        status: 'SUPERSEDED',
+        caseSnapshot: previous.caseSnapshot,
+        modelParameters: previous.modelParameters,
+      });
+      expect(
+        await database.prisma.pricingModelVersion.findMany({
+          where: { id: { in: untouched.map((item) => item.id) } },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(untouched);
+      expect(await database.prisma.quote.findMany({ orderBy: { id: 'asc' } })).toEqual(
+        historicalQuotes,
+      );
     }, 120_000);
 
     it('refuses uncalibrated inputs and invalid references without creating a quote', async () => {

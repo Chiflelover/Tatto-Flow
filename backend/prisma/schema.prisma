@@ -185,7 +185,6 @@ model CalibrationCase {
   baseCase        CalibrationCase?     @relation("DensityVariants", fields: [baseCaseKey], references: [caseKey], onDelete: Restrict, onUpdate: Restrict)
   densityVariants CalibrationCase[]    @relation("DensityVariants")
   style           TattooStyle          @relation(fields: [styleId], references: [id], onDelete: Restrict)
-  answers         CalibrationAnswer[]
 
   @@index([styleId, isActive, displayOrder])
   @@map("calibration_cases")
@@ -218,12 +217,12 @@ model PricingModelVersion {
 }
 
 model CalibrationAnswer {
-  id              String              @id @default(uuid()) @db.Uuid
-  modelVersionId  String              @map("model_version_id") @db.Uuid
-  caseId          String              @map("case_id") @db.Uuid
-  pricePen        Decimal             @map("price_pen") @db.Decimal(12, 2)
-  modelVersion    PricingModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
-  calibrationCase CalibrationCase     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  id             String              @id @default(uuid()) @db.Uuid
+  modelVersionId String              @map("model_version_id") @db.Uuid
+  /// Case identity in the model's frozen snapshot, validated by a database trigger.
+  caseId         String              @map("case_id") @db.Uuid
+  pricePen       Decimal             @map("price_pen") @db.Decimal(12, 2)
+  modelVersion   PricingModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
 
   @@unique([modelVersionId, caseId])
   @@map("calibration_answers")

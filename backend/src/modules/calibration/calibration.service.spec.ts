@@ -78,7 +78,8 @@ function mockDatabase() {
       findUnique: vi.fn().mockResolvedValue({ id: styleId, isActive: true }),
       findMany: vi.fn(),
     },
-    artistStyle: { upsert: vi.fn() },
+    artistStyle: { upsert: vi.fn(), findUnique: tx.artistStyle.findUnique },
+    calibrationCase: tx.calibrationCase,
     tattooArtistAccount: { findUniqueOrThrow: vi.fn() },
     pricingModelVersion: { findFirst: vi.fn(), findMany: vi.fn() },
   };
@@ -86,6 +87,151 @@ function mockDatabase() {
 }
 
 describe('CalibrationService', () => {
+  function fineLineDatabase() {
+    const f = mockDatabase();
+    f.tx.artistStyle.findUnique.mockResolvedValue({
+      isEnabled: true,
+      style: { id: styleId, code: 'FINE_LINE', isActive: true },
+    });
+    const points = catalogABPricingFixture(styleId);
+    f.tx.calibrationCase.findMany.mockResolvedValue(points);
+    f.tx.pricingModelVersion.create.mockResolvedValue({ id: 'new-draft' });
+    f.prisma.pricingModelVersion.findFirst.mockResolvedValue({
+      id: 'new-draft',
+      version: 1,
+      caseSnapshot: points,
+      answers: [],
+      style: { name: 'Fine Line', code: 'FINE_LINE' },
+    });
+    return { ...f, points };
+  }
+
+  it('counts only the A/B references for Fine Line while preserving other style catalogs', async () => {
+    const { prisma, service } = mockDatabase();
+    prisma.tattooStyle.findMany.mockResolvedValue([
+      {
+        id: styleId,
+        code: 'FINE_LINE',
+        name: 'Fine Line',
+        artistStyles: [],
+        modelVersions: [],
+        cases: [
+          ...Array.from({ length: 9 }, () => ({ phase: null })),
+          ...catalogABPricingFixture(),
+        ],
+      },
+      {
+        id: 'blackwork',
+        code: 'BLACKWORK',
+        name: 'Blackwork',
+        artistStyles: [],
+        modelVersions: [],
+        cases: [{ phase: null }],
+      },
+    ]);
+    const styles = await service.listStyles(accountA);
+    expect(styles[0]).toMatchObject({ caseCount: 0, catalogCaseCount: 25 });
+    expect(styles[1]).toMatchObject({ caseCount: 1, catalogCaseCount: 0 });
+  });
+
+  it('selects A/B for Fine Line even when the request omits the catalog or asks for AREA_COLOR', async () => {
+    const { tx, service } = fineLineDatabase();
+    tx.pricingModelVersion.findFirst.mockResolvedValue(null);
+    for (const catalog of [undefined, 'AREA_COLOR'] as const) {
+      expect(await service.startDraft(accountA, styleId, catalog)).toMatchObject({
+        totalCount: 25,
+        answeredCount: 0,
+        catalogFormat: 'PHASED',
+      });
+    }
+    expect(tx.calibrationCase.findMany).toHaveBeenCalledWith({
+      where: { styleId, isActive: true, phase: { not: null } },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+    });
+    expect(tx.pricingModelVersion.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ algorithmVersion: 'CATALOG_AB_PENDING' }),
+    });
+    expect(await service.listCases(accountA, styleId)).toHaveLength(25);
+  });
+
+  it('archives an obsolete Fine Line draft and starts a fresh A/B version without changing the active model', async () => {
+    const { tx, service } = fineLineDatabase();
+    const existing = { id: 'old-draft', version: 3, caseSnapshot: cases, answers };
+    tx.pricingModelVersion.findFirst.mockImplementation(({ where, orderBy }) =>
+      orderBy ? existing : where.status === 'DRAFT' ? existing : { id: 'active-ab', version: 2 },
+    );
+    const next = await service.startDraft(accountA, styleId);
+    expect(next).toMatchObject({ totalCount: 25, answeredCount: 0 });
+    expect(next!.cases.every((item) => item.pricePen === null)).toBe(true);
+    expect(tx.pricingModelVersion.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: existing.id },
+      data: { status: 'SUPERSEDED' },
+    });
+    expect(tx.pricingModelVersion.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        accountId: accountA,
+        styleId,
+        version: 4,
+        sourceVersionId: 'active-ab',
+        algorithmVersion: 'CATALOG_AB_PENDING',
+      }),
+    });
+    expect(tx.pricingModelVersion.create.mock.calls[0][0].data.answers).toBeUndefined();
+  });
+
+  it('recalibrates A/B from zero while reopening the existing draft preserves its answers', async () => {
+    const { tx, prisma, service, points } = fineLineDatabase();
+    const existing = {
+      id: 'partial',
+      version: 3,
+      algorithmVersion: 'CATALOG_AB_PENDING',
+      caseSnapshot: points,
+      answers: [{ caseId: points[0].id, pricePen: new Prisma.Decimal(123) }],
+      style: { name: 'Fine Line', code: 'FINE_LINE' },
+    };
+    tx.pricingModelVersion.findFirst.mockImplementation(({ where, orderBy }) =>
+      orderBy ? existing : where.status === 'DRAFT' ? existing : { id: 'active', version: 2 },
+    );
+    prisma.pricingModelVersion.findFirst.mockResolvedValueOnce(existing);
+    expect(await service.startDraft(accountA, styleId, 'PHASED')).toMatchObject({
+      id: existing.id,
+      answeredCount: 1,
+    });
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
+    expect(await service.startDraft(accountA, styleId, 'PHASED', true)).toMatchObject({
+      id: 'new-draft',
+      totalCount: 25,
+      answeredCount: 0,
+    });
+    expect(tx.pricingModelVersion.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: existing.id },
+      data: { status: 'SUPERSEDED' },
+    });
+  });
+
+  it('does not discard a previous draft when no current A/B catalog is available', async () => {
+    const { tx, service } = fineLineDatabase();
+    tx.pricingModelVersion.findFirst.mockResolvedValue({ id: 'old-draft', caseSnapshot: cases });
+    tx.calibrationCase.findMany.mockResolvedValue([]);
+    await expect(service.startDraft(accountA, styleId)).rejects.toThrow(/no hay imágenes/);
+    expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
+  });
+
+  it('never exposes, prices or activates a retired Fine Line draft', async () => {
+    const { tx, prisma, service } = fineLineDatabase();
+    const obsolete = { id: 'old', caseSnapshot: cases, answers, style: { code: 'FINE_LINE' } };
+    prisma.pricingModelVersion.findFirst.mockResolvedValue(obsolete);
+    tx.pricingModelVersion.findFirst.mockResolvedValue(obsolete);
+    expect(await service.getDraft(accountA, styleId)).toBeNull();
+    await expect(service.saveAnswer(accountA, styleId, 'a', 100)).rejects.toThrow(
+      /referencias actuales/,
+    );
+    await expect(service.activate(accountA, styleId)).rejects.toThrow(/referencias actuales/);
+    expect(tx.calibrationAnswer.upsert).not.toHaveBeenCalled();
+    expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
+  });
+
   it('enables and disables styles only for the authenticated account', async () => {
     const { prisma, service } = mockDatabase();
     await service.setStyle(accountA, styleId, true);

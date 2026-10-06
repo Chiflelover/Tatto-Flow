@@ -20,6 +20,7 @@ import {
   CalibrationAnswerDto,
   CalibrationCatalogDto,
   EnableStyleDto,
+  StartCalibrationDraftDto,
 } from './calibration.dto.js';
 import { CalibrationService } from './calibration.service.js';
 
@@ -54,9 +55,14 @@ export class CalibrationController {
   startDraft(
     @Req() req: AuthenticatedRequest,
     @Param('styleId', new ParseUUIDPipe({ version: '4' })) styleId: string,
-    @Body() dto: CalibrationCatalogDto,
+    @Body() dto: StartCalibrationDraftDto,
   ) {
-    return this.calibration.startDraft(req.tattooArtist.accountId!, styleId, dto.catalog);
+    return this.calibration.startDraft(
+      req.tattooArtist.accountId!,
+      styleId,
+      dto.catalog,
+      dto.restart,
+    );
   }
 
   @Get('styles/:styleId/cases')

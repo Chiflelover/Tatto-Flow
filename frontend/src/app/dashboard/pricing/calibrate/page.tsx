@@ -87,12 +87,16 @@ export default function CalibratePage() {
     }
   }
 
-  async function selectStyle(styleId: string, catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR') {
+  async function selectStyle(
+    styleId: string,
+    catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR',
+    restart = false,
+  ) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const next = await startCalibrationDraft(styleId, catalog);
+      const next = await startCalibrationDraft(styleId, catalog, restart);
       setSelectedStyleId(styleId);
       setDraft(next);
       const first = next.cases.findIndex((item) => item.pricePen === null);
@@ -219,13 +223,30 @@ export default function CalibratePage() {
                       {style.activeVersion
                         ? `Modelo activo v${style.activeVersion}`
                         : 'Sin modelo activo'}{' '}
-                      · {style.caseCount + style.catalogCaseCount} referencias disponibles
+                      ·{' '}
+                      {style.code === 'FINE_LINE'
+                        ? style.catalogCaseCount
+                        : style.caseCount + style.catalogCaseCount}{' '}
+                      referencias disponibles
                     </small>
-                    {(style.caseCount > 0 || style.catalogCaseCount === 0) && (
+                    {(style.code === 'FINE_LINE' ||
+                      style.caseCount > 0 ||
+                      style.catalogCaseCount === 0) && (
                       <button
                         type="button"
-                        disabled={busy || style.caseCount === 0}
-                        onClick={() => void selectStyle(style.id)}
+                        disabled={
+                          busy ||
+                          (style.code === 'FINE_LINE'
+                            ? style.catalogCaseCount === 0
+                            : style.caseCount === 0)
+                        }
+                        onClick={() =>
+                          void selectStyle(
+                            style.id,
+                            style.code === 'FINE_LINE' ? 'PHASED' : 'AREA_COLOR',
+                            style.code === 'FINE_LINE' && style.activeVersion !== null,
+                          )
+                        }
                       >
                         {style.activeVersion ? 'Recalibrar' : 'Calibrar'}
                       </button>

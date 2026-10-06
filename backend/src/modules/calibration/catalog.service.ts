@@ -49,7 +49,9 @@ export class CatalogService {
   }
 
   async createCase(styleId: string, dto: CreateCaseDto) {
-    await this.requireStyle(styleId);
+    const style = await this.requireStyle(styleId);
+    if (style.code === 'FINE_LINE')
+      throw new ConflictException('Fine Line se gestiona mediante el catálogo A/B versionado.');
     return this.prisma.calibrationCase.create({ data: { styleId, ...dto } });
   }
 

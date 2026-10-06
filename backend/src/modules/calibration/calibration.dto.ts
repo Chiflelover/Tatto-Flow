@@ -21,6 +21,12 @@ export class CalibrationCatalogDto {
   catalog: CalibrationCatalog = 'AREA_COLOR';
 }
 
+export class StartCalibrationDraftDto extends CalibrationCatalogDto {
+  @IsOptional()
+  @IsBoolean()
+  restart: boolean = false;
+}
+
 export class CreateStyleDto {
   @IsString()
   @Matches(/^[A-Z][A-Z0-9_]{1,63}$/)
