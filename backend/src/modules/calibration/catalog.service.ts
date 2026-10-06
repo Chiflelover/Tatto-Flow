@@ -56,6 +56,13 @@ export class CatalogService {
   async updateCase(id: string, dto: UpdateCaseDto) {
     const existing = await this.prisma.calibrationCase.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Caso no encontrado.');
+    if (
+      existing.phase &&
+      Object.keys(dto).some((key) => key !== 'isActive' && key !== 'displayOrder')
+    )
+      throw new ConflictException(
+        'La metadata de un caso A/B se actualiza con un manifest versionado.',
+      );
     return this.prisma.calibrationCase.update({ where: { id }, data: dto });
   }
 

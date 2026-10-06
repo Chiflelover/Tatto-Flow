@@ -10,6 +10,85 @@ const parse = (overrides: Record<string, unknown> = {}) =>
   parseImageAnalysisV2Response(JSON.stringify({ ...VISION_RESPONSE, ...overrides }), VISION_STYLES);
 
 describe('AI Vision V2 contract', () => {
+  it.each([0, 18, 34.5, 50, 76.2, 94, 100])('accepts continuous density %s', (density) => {
+    expect(parse({ estimated_density: density }).estimatedDensity).toBe(density);
+  });
+
+  it.each([-0.01, 100.01, null, '34.5', undefined, Infinity, Number.NaN])(
+    'rejects missing or invalid V2_5 density %s',
+    (density) => {
+      expect(() => parse({ estimated_density: density })).toThrow(
+        InvalidImageAnalysisResponseError,
+      );
+    },
+  );
+
+  it('requires bounded numeric density in the shared Gemini and OpenAI schemas', () => {
+    for (const provider of ['gemini', 'openai'] as const) {
+      const schema = createImageAnalysisV2Schema(VISION_STYLES, provider);
+      expect(schema.required).toContain('estimated_density');
+      expect(schema.properties.estimated_density).toEqual({
+        type: 'number',
+        minimum: 0,
+        maximum: 100,
+      });
+    }
+  });
+
+  it('preserves the V2_4 contract and reads missing density as null only with that version', () => {
+    const historical: Record<string, unknown> = { ...VISION_RESPONSE };
+    delete historical.estimated_density;
+    const text = JSON.stringify(historical);
+    expect(parseImageAnalysisV2Response(text, VISION_STYLES, 'VISION_V2_4')).toMatchObject({
+      estimatedDensity: null,
+      colorCoverage: 0.02,
+    });
+    expect(() => parseImageAnalysisV2Response(text, VISION_STYLES)).toThrow();
+    expect(
+      createImageAnalysisV2Schema(VISION_STYLES, 'gemini', 'VISION_V2_4').required,
+    ).not.toContain('estimated_density');
+    expect(createImageAnalysisV2Prompt(VISION_STYLES, 'VISION_V2_4')).not.toContain(
+      'estimated_density',
+    );
+  });
+
+  it('preserves density independently of color, style and reference dimensions', () => {
+    for (const style of ['FINE_LINE', 'BLACKWORK', null])
+      for (const color_coverage of [0, 0.5, 1, null])
+        expect(
+          parse({
+            style,
+            color_coverage,
+            estimated_density: 76.2,
+            reference_main_dimension_cm: 30,
+          }),
+        ).toMatchObject({ estimatedDensity: 76.2, colorCoverage: color_coverage, style });
+  });
+
+  it('defines the visual density factors and conceptual distinctions in the new prompt', () => {
+    const prompt = createImageAnalysisV2Prompt(VISION_STYLES);
+    for (const instruction of [
+      'único valor continuo entre 0 y 100, incluidos decimales',
+      'Complejidad de formas y líneas',
+      'Concentración de información visual',
+      'Microdetalle',
+      'Proximidad e intersección de líneas',
+      'Textura y patrones',
+      'Sombreado y transiciones tonales',
+      'Repetición y precisión',
+      'Relación entre zonas trabajadas y espacio negativo',
+      'independiente del estilo, del color y del tamaño físico',
+      'No deriva de color_coverage',
+      'Fine Line simple puede tener densidad baja',
+      'Fine Line con mucho microdetalle',
+      'Pocos elementos muy complejos',
+      'Muchos elementos simples y separados',
+      'Mucho negro sólido no implica automáticamente densidad alta',
+      'Mucho espacio negativo puede coexistir con densidad media o alta',
+      'No devuelvas categorías',
+    ])
+      expect(prompt).toContain(instruction);
+  });
   it('requires a simple reference observation in both provider schemas', () => {
     for (const valid_tattoo_reference of [true, false])
       expect(parse({ valid_tattoo_reference }).validTattooReference).toBe(valid_tattoo_reference);

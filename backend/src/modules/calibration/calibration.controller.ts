@@ -8,13 +8,19 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { TattooArtistGuard } from '../auth/role.guard.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
-import { AdjustmentDto, CalibrationAnswerDto, EnableStyleDto } from './calibration.dto.js';
+import {
+  AdjustmentDto,
+  CalibrationAnswerDto,
+  CalibrationCatalogDto,
+  EnableStyleDto,
+} from './calibration.dto.js';
 import { CalibrationService } from './calibration.service.js';
 
 @Controller('dashboard/calibration')
@@ -48,8 +54,18 @@ export class CalibrationController {
   startDraft(
     @Req() req: AuthenticatedRequest,
     @Param('styleId', new ParseUUIDPipe({ version: '4' })) styleId: string,
+    @Body() dto: CalibrationCatalogDto,
   ) {
-    return this.calibration.startDraft(req.tattooArtist.accountId!, styleId);
+    return this.calibration.startDraft(req.tattooArtist.accountId!, styleId, dto.catalog);
+  }
+
+  @Get('styles/:styleId/cases')
+  listCases(
+    @Req() req: AuthenticatedRequest,
+    @Param('styleId', new ParseUUIDPipe({ version: '4' })) styleId: string,
+    @Query() dto: CalibrationCatalogDto,
+  ) {
+    return this.calibration.listCases(req.tattooArtist.accountId!, styleId, dto.catalog);
   }
 
   @Put('styles/:styleId/draft/answers/:caseId')

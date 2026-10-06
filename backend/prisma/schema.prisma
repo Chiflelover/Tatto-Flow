@@ -15,20 +15,6 @@ enum UserRole {
   @@map("user_role")
 }
 
-enum FlowVersion {
-  V1
-  V2
-
-  @@map("flow_version")
-}
-
-enum AnalysisVersion {
-  V1
-  V2
-
-  @@map("analysis_version")
-}
-
 enum ScaleReferenceType {
   EXPLICIT_REFERENCE
   BODY_CONTEXT
@@ -44,28 +30,19 @@ enum CalibrationCaseType {
   @@map("calibration_case_type")
 }
 
+enum CalibrationPhase {
+  A
+  B
+
+  @@map("calibration_phase")
+}
+
 enum PricingModelStatus {
   DRAFT
   ACTIVE
   SUPERSEDED
 
   @@map("pricing_model_status")
-}
-
-enum TattooSize {
-  SMALL
-  MEDIUM
-  LARGE
-
-  @@map("tattoo_size")
-}
-
-enum DetailLevel {
-  LIGHT
-  MEDIUM
-  DETAILED
-
-  @@map("detail_level")
 }
 
 enum ConversationStatus {
@@ -78,12 +55,9 @@ enum ConversationStatus {
 
 enum ConversationState {
   START
-  ASK_SIZE
-  ASK_DETAIL
   ASK_BODY_PART
   WAITING_IMAGE
   ANALYZING
-  VALIDATING
   HANDOFF_TO_TATTOO_ARTIST
   ASK_FIRST_TATTOO
   ASK_SAME_SIZE
@@ -103,6 +77,10 @@ enum ConversationState {
 
 enum ColorDeclaration {
   BLACK_ONLY
+  LOW_COLOR
+  MEDIUM_COLOR
+  FULL_COLOR
+  // Retained declarations from conversations before explicit color levels.
   BLACK_WITH_SOME_COLOR
   MOSTLY_COLOR
 
@@ -111,7 +89,6 @@ enum ColorDeclaration {
 
 enum LeadStatus {
   ANALYZING
-  VERIFIED
   REQUIRES_REVIEW
   HANDOFF_TO_TATTOO_ARTIST
   COMPLETED
@@ -129,38 +106,17 @@ enum BookingIntent {
   @@map("booking_intent")
 }
 
-enum ReadinessStatus {
-  LISTO
-  REVISAR
-  INCOMPLETO
-
-  @@map("readiness_status")
-}
-
-enum ReviewReason {
-  SIZE_MISMATCH
-  DETAIL_MISMATCH
-  LOW_SIZE_CONFIDENCE
-  LOW_DETAIL_CONFIDENCE
-  AI_ERROR
-  PRICING_RULE_NOT_FOUND
-  NOT_ON_SKIN
-
-  @@map("review_reason")
-}
-
 model User {
-  id             String               @id @default(uuid()) @db.Uuid
-  email          String               @unique @db.VarChar(320)
-  passwordHash   String               @map("password_hash") @db.VarChar(255)
-  role           UserRole             @default(TATTOO_ARTIST)
-  accountId      String?              @unique @map("account_id") @db.Uuid
-  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
-  pricingChanges PricingRuleHistory[]
-  sessions       AuthSession[]
-  deletedImages  LeadImage[]          @relation("DeletedLeadImages")
-  account        TattooArtistAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  id            String               @id @default(uuid()) @db.Uuid
+  email         String               @unique @db.VarChar(320)
+  passwordHash  String               @map("password_hash") @db.VarChar(255)
+  role          UserRole             @default(TATTOO_ARTIST)
+  accountId     String?              @unique @map("account_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions      AuthSession[]
+  deletedImages LeadImage[]          @relation("DeletedLeadImages")
+  account       TattooArtistAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@map("users")
 }
@@ -176,7 +132,6 @@ model TattooArtistAccount {
   customers         Customer[]
   conversations     Conversation[]
   leads             Lead[]
-  pricingRules      PricingRule[]
   artistStyles      ArtistStyle[]
   modelVersions     PricingModelVersion[]
   adjustmentPercent Decimal               @default(0) @map("adjustment_percent") @db.Decimal(7, 2)
@@ -210,16 +165,27 @@ model ArtistStyle {
 }
 
 model CalibrationCase {
-  id            String              @id @default(uuid()) @db.Uuid
-  styleId       String              @map("style_id") @db.Uuid
-  imageUrl      String              @map("image_url") @db.Text
-  type          CalibrationCaseType
-  areaCm2       Decimal             @map("area_cm2") @db.Decimal(12, 2)
-  colorCoverage Decimal             @map("color_coverage") @db.Decimal(4, 3)
-  displayOrder  Int                 @map("display_order")
-  isActive      Boolean             @default(true) @map("is_active")
-  style         TattooStyle         @relation(fields: [styleId], references: [id], onDelete: Restrict)
-  answers       CalibrationAnswer[]
+  id              String               @id @default(uuid()) @db.Uuid
+  styleId         String               @map("style_id") @db.Uuid
+  imageUrl        String               @map("image_url") @db.Text
+  type            CalibrationCaseType?
+  areaCm2         Decimal?             @map("area_cm2") @db.Decimal(12, 2)
+  colorCoverage   Decimal              @map("color_coverage") @db.Decimal(4, 3)
+  displayOrder    Int                  @map("display_order")
+  isActive        Boolean              @default(true) @map("is_active")
+  caseKey         String?              @unique @map("case_key") @db.VarChar(64)
+  phase           CalibrationPhase?
+  imageKey        String?              @unique @map("image_key") @db.Text
+  sizeCm          Float?               @map("size_cm") @db.DoublePrecision
+  density         Float?               @db.DoublePrecision
+  colorMetadata   Json?                @map("color_metadata") @db.JsonB
+  densityMetadata Json?                @map("density_metadata") @db.JsonB
+  catalogVersion  String?              @map("catalog_version") @db.VarChar(64)
+  baseCaseKey     String?              @map("base_case_key") @db.VarChar(64)
+  baseCase        CalibrationCase?     @relation("DensityVariants", fields: [baseCaseKey], references: [caseKey], onDelete: Restrict, onUpdate: Restrict)
+  densityVariants CalibrationCase[]    @relation("DensityVariants")
+  style           TattooStyle          @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  answers         CalibrationAnswer[]
 
   @@index([styleId, isActive, displayOrder])
   @@map("calibration_cases")
@@ -311,12 +277,8 @@ model Conversation {
   id                   String              @id @default(uuid()) @db.Uuid
   accountId            String              @map("account_id") @db.Uuid
   customerId           String              @map("customer_id") @db.Uuid
-  flowVersion          FlowVersion         @default(V1) @map("flow_version")
   currentState         ConversationState   @default(START) @map("current_state")
   status               ConversationStatus  @default(ACTIVE)
-  selectedSize         TattooSize?         @map("selected_size")
-  selectedDetail       DetailLevel?        @map("selected_detail")
-  /// Placement in V2; reuse the existing field rather than duplicate it.
   bodyPart             String?             @map("body_part") @db.VarChar(120)
   firstTattoo          Boolean?            @map("first_tattoo")
   sameSizeAsReference  Boolean?            @map("same_size_as_reference")
@@ -338,14 +300,12 @@ model Conversation {
 }
 
 /// Represents a quotation candidate. Incomplete candidates are preserved when
-/// their conversation is abandoned. Only V1 candidates use LeadEvaluation so far.
+/// their conversation is abandoned.
 model Lead {
   id                  String              @id @default(uuid()) @db.Uuid
   accountId           String              @map("account_id") @db.Uuid
   customerId          String              @map("customer_id") @db.Uuid
   conversationId      String?             @unique @map("conversation_id") @db.Uuid
-  selectedSize        TattooSize?         @map("selected_size")
-  selectedDetail      DetailLevel?        @map("selected_detail")
   /// Consolidated placement from the conversation intake.
   bodyPart            String?             @map("body_part") @db.VarChar(120)
   firstTattoo         Boolean?            @map("first_tattoo")
@@ -356,22 +316,14 @@ model Lead {
   v2Preparation       Json?               @map("v2_preparation") @db.JsonB
   bookingIntent       BookingIntent?      @map("booking_intent")
   status              LeadStatus          @default(ANALYZING)
-  reviewReasons       ReviewReason[]      @default([]) @map("review_reasons")
   manualFinalPrice    Decimal?            @map("manual_final_price") @db.Decimal(10, 2)
-  calculatedMinPrice  Decimal?            @map("calculated_min_price") @db.Decimal(10, 2)
-  calculatedMaxPrice  Decimal?            @map("calculated_max_price") @db.Decimal(10, 2)
-  pricingRuleId       String?             @map("pricing_rule_id") @db.Uuid
-  pricingRuleVersion  Int?                @map("pricing_rule_version")
-  priceSentAt         DateTime?           @map("price_sent_at") @db.Timestamptz(3)
   archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(3)
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
   conversation        Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  pricingRule         PricingRule?        @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
   images              LeadImage[]
   aiAnalysis          AiAnalysis?
-  evaluation          LeadEvaluation?
   account             TattooArtistAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
   quote               Quote?
   deliveries          WhatsAppDelivery[]
@@ -380,7 +332,6 @@ model Lead {
   @@index([accountId, status, createdAt])
   @@index([customerId])
   @@index([status, createdAt])
-  @@index([pricingRuleId])
   @@index([archivedAt])
   @@map("leads")
 }
@@ -393,7 +344,7 @@ model Quote {
   pricingModelVersionId    String              @map("pricing_model_version_id") @db.Uuid
   amount                   Decimal             @db.Decimal(12, 2)
   currency                 String              @default("PEN") @db.VarChar(3)
-  targetAreaCm2            Decimal             @map("target_area_cm2") @db.Decimal(65, 30)
+  targetAreaCm2            Decimal?            @map("target_area_cm2") @db.Decimal(65, 30)
   targetColorCoverage      Decimal             @map("target_color_coverage") @db.Decimal(24, 20)
   detectedStyle            String              @map("detected_style") @db.VarChar(64)
   generalAdjustmentPercent Decimal             @map("general_adjustment_percent") @db.Decimal(7, 2)
@@ -434,23 +385,6 @@ model WhatsAppDelivery {
   @@map("whatsapp_deliveries")
 }
 
-model LeadEvaluation {
-  id               String          @id @default(uuid()) @db.Uuid
-  leadId           String          @unique @map("lead_id") @db.Uuid
-  rawScore         Int             @map("raw_score")
-  maxPositiveScore Int             @map("max_positive_score")
-  readinessScore   Decimal         @map("readiness_score") @db.Decimal(5, 2)
-  readinessStatus  ReadinessStatus @map("readiness_status")
-  rulesVersion     Int             @map("rules_version")
-  contributions    Json            @db.JsonB
-  blockers         Json            @db.JsonB
-  evaluatedAt      DateTime        @default(now()) @map("evaluated_at") @db.Timestamptz(3)
-  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  lead             Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
-
-  @@map("lead_evaluations")
-}
-
 model LeadImage {
   id              String    @id @default(uuid()) @db.Uuid
   leadId          String    @map("lead_id") @db.Uuid
@@ -469,11 +403,6 @@ model LeadImage {
 model AiAnalysis {
   id                            String              @id @default(uuid()) @db.Uuid
   leadId                        String              @unique @map("lead_id") @db.Uuid
-  analysisVersion               AnalysisVersion     @default(V1) @map("analysis_version")
-  detectedSize                  TattooSize?         @map("detected_size")
-  sizeConfidence                Decimal?            @map("size_confidence") @db.Decimal(4, 3)
-  detectedDetail                DetailLevel?        @map("detected_detail")
-  detailConfidence              Decimal?            @map("detail_confidence") @db.Decimal(4, 3)
   style                         String?             @db.VarChar(64)
   styleConfidence               Float?              @map("style_confidence") @db.DoublePrecision
   scaleReferenceType            ScaleReferenceType? @map("scale_reference_type")
@@ -482,6 +411,7 @@ model AiAnalysis {
   validTattooReference          Boolean?            @map("valid_tattoo_reference")
   referenceValidationConfidence Float?              @map("reference_validation_confidence") @db.DoublePrecision
   compositionFillRatio          Float?              @map("composition_fill_ratio") @db.DoublePrecision
+  estimatedDensity              Float?              @map("estimated_density") @db.DoublePrecision
   referenceMainDimensionCm      Float?              @map("reference_main_dimension_cm") @db.DoublePrecision
   referenceAreaCm2              Float?              @map("reference_area_cm2") @db.DoublePrecision
   areaConfidence                Float?              @map("area_confidence") @db.DoublePrecision
@@ -499,42 +429,6 @@ model AiAnalysis {
   lead                          Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("ai_analyses")
-}
-
-model PricingRule {
-  id        String               @id @default(uuid()) @db.Uuid
-  accountId String               @map("account_id") @db.Uuid
-  size      TattooSize
-  detail    DetailLevel
-  minPrice  Decimal              @map("min_price") @db.Decimal(10, 2)
-  maxPrice  Decimal              @map("max_price") @db.Decimal(10, 2)
-  isActive  Boolean              @default(true) @map("is_active")
-  version   Int                  @default(1)
-  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
-  leads     Lead[]
-  history   PricingRuleHistory[]
-  account   TattooArtistAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict)
-
-  @@unique([accountId, size, detail])
-  @@index([isActive])
-  @@map("pricing_rules")
-}
-
-model PricingRuleHistory {
-  id              String      @id @default(uuid()) @db.Uuid
-  pricingRuleId   String      @map("pricing_rule_id") @db.Uuid
-  oldMinPrice     Decimal     @map("old_min_price") @db.Decimal(10, 2)
-  oldMaxPrice     Decimal     @map("old_max_price") @db.Decimal(10, 2)
-  newMinPrice     Decimal     @map("new_min_price") @db.Decimal(10, 2)
-  newMaxPrice     Decimal     @map("new_max_price") @db.Decimal(10, 2)
-  changedByUserId String      @map("changed_by_user_id") @db.Uuid
-  changedAt       DateTime    @default(now()) @map("changed_at") @db.Timestamptz(3)
-  pricingRule     PricingRule @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
-  changedByUser   User        @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
-
-  @@index([pricingRuleId, changedAt])
-  @@index([changedByUserId])
-  @@map("pricing_rule_history")
 }
 
 model WhatsAppInboundMessage {
@@ -565,7 +459,6 @@ model WhatsAppJob {
   channelId        String                 @map("channel_id") @db.Uuid
   customerId       String                 @map("customer_id") @db.Uuid
   phoneNumberId    String                 @map("phone_number_id") @db.VarChar(64)
-  flowVersion      FlowVersion            @default(V2) @map("flow_version")
   conversationId   String?                @map("conversation_id") @db.Uuid
   leadId           String?                @map("lead_id") @db.Uuid
   imageId          String?                @map("image_id") @db.Uuid

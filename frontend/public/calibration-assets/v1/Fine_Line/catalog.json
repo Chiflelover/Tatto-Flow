@@ -1,0 +1,556 @@
+{
+  "catalogVersion": "1.0",
+  "imageBaseUrl": "/calibration-assets/v1/Fine_Line/",
+  "cases": [
+    {
+      "caseId": "FL_A_01",
+      "image": "FL_A_01.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 4.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 1,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_02",
+      "image": "FL_A_02.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 4.0,
+      "color": {
+        "coverage": 0.25,
+        "metadata": {
+          "label": "Poco color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 2,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_03",
+      "image": "FL_A_03.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 4.0,
+      "color": {
+        "coverage": 0.5,
+        "metadata": {
+          "label": "Color medio"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 3,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_04",
+      "image": "FL_A_04.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 4.0,
+      "color": {
+        "coverage": 1.0,
+        "metadata": {
+          "label": "Full color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 4,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_05",
+      "image": "FL_A_05.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 7.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 5,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_06",
+      "image": "FL_A_06.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 7.0,
+      "color": {
+        "coverage": 0.25,
+        "metadata": {
+          "label": "Poco color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 6,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_07",
+      "image": "FL_A_07.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 7.0,
+      "color": {
+        "coverage": 0.5,
+        "metadata": {
+          "label": "Color medio"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 7,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_08",
+      "image": "FL_A_08.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 7.0,
+      "color": {
+        "coverage": 1.0,
+        "metadata": {
+          "label": "Full color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 8,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_09",
+      "image": "FL_A_09.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 9,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_10",
+      "image": "FL_A_10.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.25,
+        "metadata": {
+          "label": "Poco color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 10,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_11",
+      "image": "FL_A_11.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.5,
+        "metadata": {
+          "label": "Color medio"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 11,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_12",
+      "image": "FL_A_12.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 1.0,
+        "metadata": {
+          "label": "Full color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 12,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_13",
+      "image": "FL_A_13.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 18.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 13,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_14",
+      "image": "FL_A_14.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 18.0,
+      "color": {
+        "coverage": 0.25,
+        "metadata": {
+          "label": "Poco color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 14,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_15",
+      "image": "FL_A_15.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 18.0,
+      "color": {
+        "coverage": 0.5,
+        "metadata": {
+          "label": "Color medio"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 15,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_16",
+      "image": "FL_A_16.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 18.0,
+      "color": {
+        "coverage": 1.0,
+        "metadata": {
+          "label": "Full color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 16,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_17",
+      "image": "FL_A_17.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 30.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 17,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_18",
+      "image": "FL_A_18.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 30.0,
+      "color": {
+        "coverage": 0.25,
+        "metadata": {
+          "label": "Poco color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 18,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_19",
+      "image": "FL_A_19.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 30.0,
+      "color": {
+        "coverage": 0.5,
+        "metadata": {
+          "label": "Color medio"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 19,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_A_20",
+      "image": "FL_A_20.jpg",
+      "style": "FINE_LINE",
+      "phase": "A",
+      "sizeCm": 30.0,
+      "color": {
+        "coverage": 1.0,
+        "metadata": {
+          "label": "Full color"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 20,
+      "active": true,
+      "baseCaseId": null
+    },
+    {
+      "caseId": "FL_B_01",
+      "image": "FL_B_01.jpg",
+      "style": "FINE_LINE",
+      "phase": "B",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 20,
+        "metadata": {
+          "label": "Baja"
+        }
+      },
+      "sortOrder": 21,
+      "active": true,
+      "baseCaseId": "FL_A_09"
+    },
+    {
+      "caseId": "FL_B_02",
+      "image": "FL_B_02.jpg",
+      "style": "FINE_LINE",
+      "phase": "B",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 40,
+        "metadata": {
+          "label": "Baja-Media"
+        }
+      },
+      "sortOrder": 22,
+      "active": true,
+      "baseCaseId": "FL_A_09"
+    },
+    {
+      "caseId": "FL_B_03",
+      "image": "FL_B_03.jpg",
+      "style": "FINE_LINE",
+      "phase": "B",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 60,
+        "metadata": {
+          "label": "Media"
+        }
+      },
+      "sortOrder": 23,
+      "active": true,
+      "baseCaseId": "FL_A_09"
+    },
+    {
+      "caseId": "FL_B_04",
+      "image": "FL_B_04.jpg",
+      "style": "FINE_LINE",
+      "phase": "B",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 80,
+        "metadata": {
+          "label": "Media-Alta"
+        }
+      },
+      "sortOrder": 24,
+      "active": true,
+      "baseCaseId": "FL_A_09"
+    },
+    {
+      "caseId": "FL_B_05",
+      "image": "FL_B_05.jpg",
+      "style": "FINE_LINE",
+      "phase": "B",
+      "sizeCm": 11.0,
+      "color": {
+        "coverage": 0.0,
+        "metadata": {
+          "label": "Negro"
+        }
+      },
+      "density": {
+        "value": 100,
+        "metadata": {
+          "label": "Alta"
+        }
+      },
+      "sortOrder": 25,
+      "active": true,
+      "baseCaseId": "FL_A_09"
+    }
+  ]
+}

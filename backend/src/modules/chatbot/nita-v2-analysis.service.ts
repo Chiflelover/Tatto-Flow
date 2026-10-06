@@ -63,7 +63,7 @@ export class NitaV2AnalysisService {
     const pending = await this.prisma.conversation.findFirst({
       where: {
         accountId,
-        flowVersion: 'V2',
+
         status: 'ACTIVE',
         currentState: { in: ['READY_FOR_ANALYSIS', 'ANALYZING'] },
         customer: { phoneNumber },
@@ -105,7 +105,7 @@ export class NitaV2AnalysisService {
               this.vision.analyzeReference(image, { leadId: claim.conversation.lead!.id }),
               V2_ANALYSIS_TIMEOUT_MS,
             );
-            if (!isValidV2Analysis({ analysisVersion: 'V2', ...result.observations })) {
+            if (!isValidV2Analysis(result.observations)) {
               result = undefined;
               failure = 'INVALID_ANALYSIS';
             }
@@ -136,7 +136,7 @@ export class NitaV2AnalysisService {
           where: {
             id: conversationId,
             accountId,
-            flowVersion: 'V2',
+
             status: 'ACTIVE',
             currentState: 'ANALYZING',
             v2AnalysisClaimId: attemptId,
@@ -158,8 +158,6 @@ export class NitaV2AnalysisService {
       );
       if (!conversation)
         throw new NotFoundException('Conversación no disponible para esta cuenta.');
-      if (conversation.flowVersion !== 'V2')
-        throw new ConflictException('El workflow solo admite V2.');
       if (
         conversation.lead &&
         (conversation.lead.accountId !== accountId ||
@@ -208,7 +206,6 @@ export class NitaV2AnalysisService {
       if (!conversation)
         throw new NotFoundException('Conversación no disponible para esta cuenta.');
       if (
-        conversation.flowVersion !== 'V2' ||
         conversation.status !== 'ACTIVE' ||
         conversation.currentState !== 'ANALYZING' ||
         conversation.v2AnalysisClaimId !== attemptId
@@ -239,6 +236,10 @@ export class NitaV2AnalysisService {
                   where: { accountId, isEnabled: true },
                   select: { accountId: true },
                 },
+                modelVersions: {
+                  where: { accountId, status: 'ACTIVE' },
+                  select: { algorithmVersion: true },
+                },
               },
             })
           : null;
@@ -248,6 +249,7 @@ export class NitaV2AnalysisService {
         {
           exists: !!style,
           enabled: (style?.artistStyles.length ?? 0) > 0,
+          pricingAlgorithmVersion: style?.modelVersions?.[0]?.algorithmVersion,
         },
         failure,
       );

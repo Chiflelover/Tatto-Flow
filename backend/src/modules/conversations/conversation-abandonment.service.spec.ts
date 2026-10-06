@@ -3,13 +3,9 @@ import {
   ConversationState,
   ConversationStatus,
   Prisma,
-  ReadinessStatus,
-  TattooSize,
   type Conversation,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { LEAD_SCORING_CONFIG_V1 } from '../lead-scoring/lead-scoring.config.js';
-import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { CONVERSATION_ABANDONMENT_TIMEOUT_MS } from './conversation-abandonment.constants.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
 
@@ -26,7 +22,6 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: crypto.randomUUID(),
     accountId: ACCOUNT_ID,
-    flowVersion: 'V1',
     v2AnalysisClaimId: null,
     v2AnalysisLeaseUntil: null,
     firstTattoo: null,
@@ -34,10 +29,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     targetSizeCm: null,
     colorDeclaration: null,
     customerId: CUSTOMER_A,
-    currentState: ConversationState.ASK_SIZE,
+    currentState: ConversationState.ASK_FIRST_TATTOO,
     status: ConversationStatus.ACTIVE,
-    selectedSize: null,
-    selectedDetail: null,
     bodyPart: null,
     lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS),
     createdAt,
@@ -49,7 +42,6 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
 function createFixture(initialConversations: Conversation[]) {
   const conversations = structuredClone(initialConversations);
   const leads = new Map<string, Record<string, unknown>>();
-  const evaluations = new Map<string, Record<string, unknown>>();
   const findMany = vi.fn(
     ({
       where,
@@ -107,18 +99,9 @@ function createFixture(initialConversations: Conversation[]) {
     leads.set(lead.id, lead);
     return Promise.resolve(lead);
   });
-  const upsertEvaluation = vi.fn(({ create }: Prisma.LeadEvaluationUpsertArgs) => {
-    if (typeof create.leadId !== 'string') {
-      throw new Error('The fixture requires a scalar leadId.');
-    }
-
-    evaluations.set(create.leadId, { ...create });
-    return Promise.resolve(create);
-  });
   const transaction = {
     conversation: { updateMany },
     lead: { upsert: upsertLead },
-    leadEvaluation: { upsert: upsertEvaluation },
   };
   const prisma = {
     conversation: { findMany },
@@ -126,38 +109,12 @@ function createFixture(initialConversations: Conversation[]) {
       callback(transaction),
     ),
   } as unknown as PrismaService;
-  const service = new ConversationAbandonmentService(
-    prisma,
-    new LeadScoringService(LEAD_SCORING_CONFIG_V1),
-  );
+  const service = new ConversationAbandonmentService(prisma);
 
-  return { conversations, evaluations, leads, service, upsertLead, upsertEvaluation };
+  return { conversations, leads, service, upsertLead };
 }
 
 describe('ConversationAbandonmentService', () => {
-  it('preserves partial V2 intake and never evaluates it with V1 scoring', async () => {
-    const fixture = createFixture([
-      makeConversation({
-        flowVersion: 'V2',
-        v2AnalysisClaimId: null,
-        v2AnalysisLeaseUntil: null,
-        currentState: ConversationState.ASK_COLOR,
-        firstTattoo: false,
-        sameSizeAsReference: false,
-        targetSizeCm: 8,
-      }),
-    ]);
-    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(1);
-    expect([...fixture.leads.values()][0]).toMatchObject({
-      firstTattoo: false,
-      sameSizeAsReference: false,
-      targetSizeCm: 8,
-      colorDeclaration: null,
-      bodyPart: null,
-    });
-    expect(fixture.upsertEvaluation).not.toHaveBeenCalled();
-    expect(fixture.conversations[0]?.status).toBe('ABANDONED');
-  });
   it('keeps an active incomplete conversation under two hours unchanged', async () => {
     const conversation = makeConversation({
       lastActivityAt: inactiveSince(CONVERSATION_ABANDONMENT_TIMEOUT_MS - 1),
@@ -167,47 +124,6 @@ describe('ConversationAbandonmentService', () => {
     await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(0);
     expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ACTIVE);
     expect(fixture.upsertLead).not.toHaveBeenCalled();
-  });
-
-  it('abandons at exactly two hours and persists a partial INCOMPLETO evaluation', async () => {
-    const conversation = makeConversation({
-      currentState: ConversationState.ASK_DETAIL,
-      selectedSize: TattooSize.SMALL,
-    });
-    const fixture = createFixture([conversation]);
-
-    await expect(fixture.service.abandonInactive(NOW)).resolves.toBe(1);
-    expect(fixture.conversations[0]?.status).toBe(ConversationStatus.ABANDONED);
-    expect(fixture.leads.size).toBe(1);
-    const evaluation = [...fixture.evaluations.values()][0];
-    expect(evaluation).toMatchObject({
-      rawScore: 25,
-      readinessStatus: ReadinessStatus.INCOMPLETO,
-      rulesVersion: 1,
-    });
-    expect(evaluation?.contributions).toEqual([
-      {
-        ruleId: 'SIZE_PROVIDED',
-        points: 25,
-        reason: 'El cliente indicó el tamaño',
-      },
-    ]);
-    expect(evaluation?.blockers).toEqual([
-      {
-        ruleId: 'FLOW_INCOMPLETE',
-        reason: 'La cotización está incompleta o la conversación fue abandonada',
-      },
-    ]);
-  });
-
-  it('does not call image analysis when an abandoned lead has no image', async () => {
-    const fixture = createFixture([makeConversation()]);
-
-    await fixture.service.abandonInactive(NOW);
-
-    expect(fixture.upsertLead).toHaveBeenCalledOnce();
-    expect(fixture.upsertEvaluation).toHaveBeenCalledOnce();
-    expect([...fixture.leads.values()][0]?.images).toEqual([]);
   });
 
   it('never modifies completed or already abandoned conversations', async () => {

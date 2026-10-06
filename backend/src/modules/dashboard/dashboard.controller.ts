@@ -15,11 +15,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
 import { TattooArtistGuard } from '../auth/role.guard.js';
 import { DashboardService } from './dashboard.service.js';
-import {
-  LeadListQueryDto,
-  SaveManualFinalPriceDto,
-  UpdatePricingRulesDto,
-} from './dto/dashboard.dto.js';
+import { LeadListQueryDto, SaveManualFinalPriceDto } from './dto/dashboard.dto.js';
 
 @Controller('dashboard')
 @UseGuards(SessionAuthGuard, TattooArtistGuard)
@@ -95,19 +91,5 @@ export class DashboardController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.dashboardService.deleteIncompleteLead(request.tattooArtist.accountId!, leadId);
-  }
-
-  @Get('pricing')
-  getPricingRules(@Req() request: AuthenticatedRequest) {
-    return this.dashboardService.getPricingRules(request.tattooArtist.accountId!);
-  }
-
-  @Patch('pricing')
-  updatePricingRules(@Body() dto: UpdatePricingRulesDto, @Req() request: AuthenticatedRequest) {
-    return this.dashboardService.updatePricingRules(
-      request.tattooArtist.accountId!,
-      dto.updates,
-      request.tattooArtist.id,
-    );
   }
 }

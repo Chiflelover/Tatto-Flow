@@ -1,6 +1,5 @@
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
-import { ConfigService } from '@nestjs/config';
-import { ConversationState, DetailLevel, TattooSize } from '../../../generated/prisma/client.js';
+import { ConversationState } from '../../../generated/prisma/client.js';
 import { ChatbotService } from '../chatbot.service.js';
 import type { ChatbotOption, ChatbotResponse } from '../domain/chatbot.types.js';
 import { WHATSAPP_BUTTON_IDS, WhatsAppAdapter } from './whatsapp.adapter.js';
@@ -17,31 +16,15 @@ function response(
   };
 }
 
-const SIZE_OPTIONS: ChatbotOption[] = [
-  { value: TattooSize.SMALL, label: 'Pequeño' },
-  { value: TattooSize.MEDIUM, label: 'Mediano' },
-  { value: TattooSize.LARGE, label: 'Grande' },
-];
-const DETAIL_OPTIONS: ChatbotOption[] = [
-  { value: DetailLevel.LIGHT, label: 'Ligero' },
-  { value: DetailLevel.MEDIUM, label: 'Medio' },
-  { value: DetailLevel.DETAILED, label: 'Detallado' },
-];
-const SIZE_GUIDE_URL = 'https://tatuoflow.example/nita-size-guide.png';
-const DETAIL_GUIDE_URL = 'https://tatuoflow.example/nita-detail-guide.png';
-
 describe('WhatsAppAdapter', () => {
   const processOptionSelection = vi.fn<ChatbotService['processOptionSelection']>();
   const processTextMessage = vi.fn<ChatbotService['processTextMessage']>();
   const processImageMessage = vi.fn<ChatbotService['processImageMessage']>();
-  const adapter = new WhatsAppAdapter(
-    {
-      processOptionSelection,
-      processTextMessage,
-      processImageMessage,
-    } as unknown as ChatbotService,
-    new ConfigService({ FRONTEND_URL: 'https://tatuoflow.example' }),
-  );
+  const adapter = new WhatsAppAdapter({
+    processOptionSelection,
+    processTextMessage,
+    processImageMessage,
+  } as unknown as ChatbotService);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,6 +39,9 @@ describe('WhatsAppAdapter', () => {
     [WHATSAPP_BUTTON_IDS.SAME_SIZE_YES, { stage: 'sameSize', value: true }],
     [WHATSAPP_BUTTON_IDS.SAME_SIZE_NO, { stage: 'sameSize', value: false }],
     [WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, { stage: 'color', value: 'BLACK_ONLY' }],
+    [WHATSAPP_BUTTON_IDS.COLOR_LOW, { stage: 'color', value: 'LOW_COLOR' }],
+    [WHATSAPP_BUTTON_IDS.COLOR_MEDIUM, { stage: 'color', value: 'MEDIUM_COLOR' }],
+    [WHATSAPP_BUTTON_IDS.COLOR_FULL, { stage: 'color', value: 'FULL_COLOR' }],
     [WHATSAPP_BUTTON_IDS.COLOR_SOME, { stage: 'color', value: 'BLACK_WITH_SOME_COLOR' }],
     [WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, { stage: 'color', value: 'MOSTLY_COLOR' }],
   ])('maps stable V2 button %s to its own stage', async (buttonId, selection) => {
@@ -68,15 +54,16 @@ describe('WhatsAppAdapter', () => {
     expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '51911111111', selection);
   });
 
-  it('renders full color choices with WhatsApp-compatible button titles', async () => {
+  it('renders all four explicit colors in one WhatsApp list and in the text fallback', async () => {
     processTextMessage.mockResolvedValue(
       response(
         ConversationState.ASK_COLOR,
-        ['¿Tu tatuaje llevará color?'],
+        ['¿Qué nivel de color quieres para tu tatuaje?'],
         [
-          { value: 'BLACK_ONLY', label: 'Solo negro' },
-          { value: 'BLACK_WITH_SOME_COLOR', label: 'Negro con algunos colores' },
-          { value: 'MOSTLY_COLOR', label: 'Principalmente a color' },
+          { value: 'BLACK_ONLY', label: 'Negro' },
+          { value: 'LOW_COLOR', label: 'Poco color' },
+          { value: 'MEDIUM_COLOR', label: 'Color medio' },
+          { value: 'FULL_COLOR', label: 'Full color' },
         ],
       ),
     );
@@ -87,12 +74,14 @@ describe('WhatsAppAdapter', () => {
       text: 'sí',
     });
     expect(outbound[0]).toMatchObject({
-      type: 'interactive_buttons',
-      body: expect.stringContaining('Negro con algunos colores') as unknown,
-      buttons: [
-        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Solo negro' },
-        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Negro + colores' },
-        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Mayormente color' },
+      type: 'interactive_list',
+      body: '¿Qué nivel de color quieres para tu tatuaje?',
+      button: 'Elegir color',
+      rows: [
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Negro' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_LOW, title: 'Poco color' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MEDIUM, title: 'Color medio' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_FULL, title: 'Full color' },
       ],
     });
     const fallback = await adapter.handleIncoming(
@@ -101,192 +90,9 @@ describe('WhatsAppAdapter', () => {
     );
     expect(fallback[0]).toMatchObject({
       type: 'text',
-      text: expect.stringContaining('Principalmente a color') as unknown,
+      text: '¿Qué nivel de color quieres para tu tatuaje?\n\n- Negro\n- Poco color\n- Color medio\n- Full color',
     });
     expect(processTextMessage).toHaveBeenLastCalledWith(ACCOUNT_ID, '51911111111', 'sí');
-  });
-
-  it('uses distinct stage-namespaced IDs for every new interactive button', () => {
-    expect(WHATSAPP_BUTTON_IDS).toMatchObject({
-      SIZE_SMALL: 'nita_size_small',
-      SIZE_MEDIUM: 'nita_size_medium',
-      SIZE_LARGE: 'nita_size_large',
-      DETAIL_LIGHT: 'nita_detail_light',
-      DETAIL_MEDIUM: 'nita_detail_medium',
-      DETAIL_DETAILED: 'nita_detail_detailed',
-    });
-    expect(WHATSAPP_BUTTON_IDS.SIZE_MEDIUM).not.toBe(WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM);
-  });
-
-  it('renders the exact size question as three interactive buttons with stable IDs', async () => {
-    processTextMessage.mockResolvedValue(
-      response(
-        ConversationState.ASK_SIZE,
-        [
-          'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.',
-          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
-        ],
-        SIZE_OPTIONS,
-      ),
-    );
-
-    await expect(
-      adapter.handleIncoming({
-        type: 'text',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        text: 'Hola',
-      }),
-    ).resolves.toEqual([
-      {
-        type: 'text',
-        text: 'Hola, soy Nita, la secretaria virtual. Te haré unas preguntas rápidas para conocer mejor tu idea y poder atenderte.',
-      },
-      {
-        type: 'interactive_buttons',
-        body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
-        headerImageUrl: SIZE_GUIDE_URL,
-        buttons: [
-          { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
-          { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
-          { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
-        ],
-      },
-    ]);
-  });
-
-  it('renders the exact detail question as three interactive buttons with stable IDs', async () => {
-    processOptionSelection.mockResolvedValue(
-      response(
-        ConversationState.ASK_DETAIL,
-        [
-          '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
-        ],
-        DETAIL_OPTIONS,
-      ),
-    );
-
-    await expect(
-      adapter.handleIncoming({
-        type: 'button_reply',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
-      }),
-    ).resolves.toEqual([
-      {
-        type: 'interactive_buttons',
-        body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
-        headerImageUrl: DETAIL_GUIDE_URL,
-        buttons: [
-          { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
-          { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
-          { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
-        ],
-      },
-    ]);
-  });
-
-  it('keeps the existing transition after a detail button selection', async () => {
-    processOptionSelection.mockResolvedValue(
-      response(ConversationState.ASK_BODY_PART, [
-        '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?',
-      ]),
-    );
-
-    await expect(
-      adapter.handleIncoming({
-        type: 'button_reply',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT,
-      }),
-    ).resolves.toEqual([
-      {
-        type: 'text',
-        text: '¿En qué parte del cuerpo te gustaría hacerte el tatuaje?',
-      },
-    ]);
-    expect(processOptionSelection).toHaveBeenCalledOnce();
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
-    });
-  });
-
-  it('keeps the size question and buttons available when no public guide URL is configured', async () => {
-    processTextMessage.mockResolvedValue(
-      response(
-        ConversationState.ASK_SIZE,
-        [
-          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
-        ],
-        SIZE_OPTIONS,
-      ),
-    );
-    const adapterWithoutGuide = new WhatsAppAdapter(
-      {
-        processOptionSelection,
-        processTextMessage,
-        processImageMessage,
-      } as unknown as ChatbotService,
-      new ConfigService(),
-    );
-
-    await expect(
-      adapterWithoutGuide.handleIncoming({
-        type: 'text',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        text: 'Hola',
-      }),
-    ).resolves.toEqual([
-      {
-        type: 'interactive_buttons',
-        body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
-        buttons: [
-          { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
-          { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
-          { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
-        ],
-      },
-    ]);
-  });
-
-  it.each([
-    [WHATSAPP_BUTTON_IDS.SIZE_SMALL, TattooSize.SMALL],
-    [WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, TattooSize.MEDIUM],
-    [WHATSAPP_BUTTON_IDS.SIZE_LARGE, TattooSize.LARGE],
-  ])('maps size button %s to the internal value %s', async (buttonId, value) => {
-    await adapter.handleIncoming({
-      type: 'button_reply',
-      accountId: ACCOUNT_ID,
-      customerIdentifier: '+51911111111',
-      buttonId,
-    });
-
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'size',
-      value,
-    });
-  });
-
-  it.each([
-    [WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, DetailLevel.LIGHT],
-    [WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, DetailLevel.MEDIUM],
-    [WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, DetailLevel.DETAILED],
-  ])('maps detail button %s to the internal value %s', async (buttonId, value) => {
-    await adapter.handleIncoming({
-      type: 'button_reply',
-      accountId: ACCOUNT_ID,
-      customerIdentifier: '+51911111111',
-      buttonId,
-    });
-
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'detail',
-      value,
-    });
   });
 
   it('passes free body text to ChatbotService without trimming or state logic', async () => {
@@ -318,47 +124,8 @@ describe('WhatsAppAdapter', () => {
     expect(processImageMessage).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', image);
   });
 
-  it('uses an equivalent text list and maps its reply when buttons are unavailable', async () => {
-    processTextMessage.mockResolvedValue(
-      response(
-        ConversationState.ASK_SIZE,
-        [
-          '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
-        ],
-        SIZE_OPTIONS,
-      ),
-    );
-
-    const fallback = { interactiveButtons: false };
-    const outgoing = await adapter.handleIncoming(
-      { type: 'text', accountId: ACCOUNT_ID, customerIdentifier: '+51911111111', text: 'Hola' },
-      fallback,
-    );
-
-    expect(outgoing).toEqual([
-      {
-        type: 'text',
-        text: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)\n\n- Pequeño\n- Mediano\n- Grande',
-      },
-    ]);
-
-    await adapter.handleIncoming(
-      {
-        type: 'text',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        text: '  Pequeño ',
-      },
-      fallback,
-    );
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'size',
-      value: TattooSize.SMALL,
-    });
-  });
-
-  it.each(['stale-button', 'nita_value_medium'])(
-    'silently ignores stale or ambiguous legacy button ID %s',
+  it.each(['stale-button', 'unknown-button'])(
+    'silently ignores unknown button ID %s',
     async (buttonId) => {
       await expect(
         adapter.handleIncoming({
@@ -372,46 +139,4 @@ describe('WhatsAppAdapter', () => {
       expect(processOptionSelection).not.toHaveBeenCalled();
     },
   );
-
-  it('passes the stage namespace through for a delayed size button', async () => {
-    await expect(
-      adapter.handleIncoming({
-        type: 'button_reply',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM,
-      }),
-    ).resolves.toBeDefined();
-
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'size',
-      value: TattooSize.MEDIUM,
-    });
-  });
-
-  it('keeps simultaneous replies from different customers separate', async () => {
-    await Promise.all([
-      adapter.handleIncoming({
-        type: 'button_reply',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51911111111',
-        buttonId: WHATSAPP_BUTTON_IDS.SIZE_SMALL,
-      }),
-      adapter.handleIncoming({
-        type: 'button_reply',
-        accountId: ACCOUNT_ID,
-        customerIdentifier: '+51922222222',
-        buttonId: WHATSAPP_BUTTON_IDS.SIZE_LARGE,
-      }),
-    ]);
-
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51911111111', {
-      stage: 'size',
-      value: TattooSize.SMALL,
-    });
-    expect(processOptionSelection).toHaveBeenCalledWith(ACCOUNT_ID, '+51922222222', {
-      stage: 'size',
-      value: TattooSize.LARGE,
-    });
-  });
 });

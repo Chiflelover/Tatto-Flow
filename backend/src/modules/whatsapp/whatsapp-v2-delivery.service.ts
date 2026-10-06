@@ -34,7 +34,7 @@ export class WhatsAppV2DeliveryService {
       where: {
         accountId,
         customer: { phoneNumber },
-        conversation: { flowVersion: 'V2', status: { not: 'ABANDONED' } },
+        conversation: { status: { not: 'ABANDONED' } },
         OR: [
           { status: { not: 'COMPLETED' } },
           {
@@ -174,14 +174,13 @@ export class WhatsAppV2DeliveryService {
             ? {
                 status: 'COMPLETED' as const,
                 conversation: {
-                  flowVersion: 'V2' as const,
                   status: 'COMPLETED' as const,
                   currentState: 'INVALID_REFERENCE' as const,
                 },
               }
             : {
                 status: { not: 'COMPLETED' as const },
-                conversation: { flowVersion: 'V2' as const, status: { not: 'ABANDONED' as const } },
+                conversation: { status: { not: 'ABANDONED' as const } },
               }),
         },
         select: { id: true },
@@ -249,7 +248,7 @@ export class WhatsAppV2DeliveryService {
           where: {
             id: lead.conversation.id,
             accountId,
-            flowVersion: 'V2',
+
             status: 'ACTIVE',
             currentState: 'PRICE_READY',
           },
@@ -260,7 +259,7 @@ export class WhatsAppV2DeliveryService {
           where: {
             id: lead.conversation.id,
             accountId,
-            flowVersion: 'V2',
+
             status: 'ACTIVE',
             currentState: { in: ['HUMAN_REVIEW', 'SPECIAL_REVIEW'] },
           },

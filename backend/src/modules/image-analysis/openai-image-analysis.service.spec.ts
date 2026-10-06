@@ -1,24 +1,13 @@
+import { VISION_RESPONSE, VISION_STYLES, visionResult } from '../../../test/fixtures/vision-v2.js';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
-import { ImageAmbiguityLevel, type TattooImageInput } from './domain/image-analysis.types.js';
+
+import { type TattooImageInput } from './domain/image-analysis.types.js';
 import { OpenAIImageAnalysisService } from './openai-image-analysis.service.js';
 
 const VALID_PNG: TattooImageInput = {
   content: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   mimeType: 'image/png',
-};
-
-const VALID_RESPONSE = {
-  detectedSize: TattooSize.SMALL,
-  sizeConfidence: 0.94,
-  detectedDetail: DetailLevel.MEDIUM,
-  detailConfidence: 0.93,
-  tattooOnSkin: true,
-  tattooOnSkinConfidence: 0.97,
-  referenceAnalyzable: true,
-  analyzabilityConfidence: 0.96,
-  ambiguityLevel: ImageAmbiguityLevel.NONE,
 };
 
 function createFixture(response: Record<string, unknown> | Error = {}) {
@@ -28,7 +17,7 @@ function createFixture(response: Record<string, unknown> | Error = {}) {
     create.mockRejectedValue(response);
   } else {
     create.mockResolvedValue({
-      output_text: JSON.stringify(VALID_RESPONSE),
+      output_text: JSON.stringify(VISION_RESPONSE),
       output: [],
       error: null,
       ...response,
@@ -46,15 +35,15 @@ function createFixture(response: Record<string, unknown> | Error = {}) {
 
 describe('OpenAIImageAnalysisService', () => {
   it('returns the exact shared normalized contract', async () => {
-    await expect(createFixture().service.analyzeTattooImage(VALID_PNG)).resolves.toEqual(
-      VALID_RESPONSE,
-    );
+    await expect(
+      createFixture().service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
+    ).resolves.toMatchObject({ observations: visionResult().observations });
   });
 
   it('uses Responses API with image input, strict Structured Outputs and no SDK retry', async () => {
     const { service, create } = createFixture();
 
-    await service.analyzeTattooImage(VALID_PNG);
+    await service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES);
 
     expect(create).toHaveBeenCalledOnce();
     const [request, options] = create.mock.calls[0] as [
@@ -69,7 +58,7 @@ describe('OpenAIImageAnalysisService', () => {
       text: {
         format: {
           type: 'json_schema',
-          name: 'tattoo_image_analysis',
+          name: 'tattoo_image_analysis_v2',
           strict: true,
           schema: { additionalProperties: false },
         },
@@ -82,17 +71,17 @@ describe('OpenAIImageAnalysisService', () => {
   });
 
   it.each([
-    ['detectedSize', 'TINY'],
-    ['detectedDetail', 'ULTRA'],
-    ['ambiguityLevel', 'UNKNOWN'],
-    ['sizeConfidence', 1.4],
+    ['unknown_field', 'unexpected'],
+    ['style', 'UNKNOWN_STYLE'],
+    ['estimated_density', 101],
+    ['style_confidence', 1.4],
     ['analyzabilityConfidence', -0.1],
   ])('defensively rejects an invalid %s despite strict output mode', async (field, value) => {
     const { service } = createFixture({
-      output_text: JSON.stringify({ ...VALID_RESPONSE, [field]: value }),
+      output_text: JSON.stringify({ ...VISION_RESPONSE, [field]: value }),
     });
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       provider: 'openai',
       category: 'INVALID_RESPONSE',
       retryable: false,
@@ -110,7 +99,7 @@ describe('OpenAIImageAnalysisService', () => {
       ],
     });
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       category: 'SAFETY_REJECTION',
       fallbackEligible: false,
     });
@@ -126,7 +115,9 @@ describe('OpenAIImageAnalysisService', () => {
   ])('classifies HTTP %i as %s', async (status, category) => {
     const error = Object.assign(new Error('provider failure'), { status, code: 'provider_code' });
 
-    await expect(createFixture(error).service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(
+      createFixture(error).service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
+    ).rejects.toMatchObject({
       status,
       category,
       retryable: false,
@@ -135,13 +126,16 @@ describe('OpenAIImageAnalysisService', () => {
 
   it('classifies SDK timeout and network failures without retrying', async () => {
     await expect(
-      createFixture(new OpenAI.APIConnectionTimeoutError()).service.analyzeTattooImage(VALID_PNG),
+      createFixture(new OpenAI.APIConnectionTimeoutError()).service.analyzeTattooImageV2(
+        VALID_PNG,
+        VISION_STYLES,
+      ),
     ).rejects.toMatchObject({ category: 'TIMEOUT', retryable: false });
 
     await expect(
       createFixture(
         new OpenAI.APIConnectionError({ message: 'network unavailable' }),
-      ).service.analyzeTattooImage(VALID_PNG),
+      ).service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
     ).rejects.toMatchObject({ category: 'NETWORK_ERROR', retryable: false });
   });
 
@@ -151,7 +145,7 @@ describe('OpenAIImageAnalysisService', () => {
       null,
     );
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       category: 'AUTHENTICATION',
     });
   });

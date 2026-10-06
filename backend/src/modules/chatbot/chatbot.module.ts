@@ -3,7 +3,7 @@ import { ConversationsModule } from '../conversations/conversations.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { ImageAnalysisModule } from '../image-analysis/image-analysis.module.js';
 import { ChatbotService } from './chatbot.service.js';
-import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaV2StateMachine } from './domain/nita-v2-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { WhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
@@ -23,7 +23,7 @@ import { NitaV2CompletionService } from './nita-v2-completion.service.js';
   providers: [
     ChatbotService,
     NitaBusinessHoursService,
-    NitaStateMachine,
+    NitaV2StateMachine,
     WhatsAppAdapter,
     NitaV2IntakeService,
     NitaV2AnalysisService,

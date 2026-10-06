@@ -1,8 +1,9 @@
+import { visionResult, VISION_STYLES } from '../../../test/fixtures/vision-v2.js';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
+
 import { AIProviderError, type AIProviderErrorCategory } from './ai-provider.error.js';
-import { ImageAmbiguityLevel, type ImageAnalysisResult } from './domain/image-analysis.types.js';
+import type { ImageAnalysisV2Result } from './domain/image-analysis-v2.types.js';
 import { GeminiImageAnalysisService } from './gemini-image-analysis.service.js';
 import { OpenAIImageAnalysisService } from './openai-image-analysis.service.js';
 import { ResilientImageAnalysisService } from './resilient-image-analysis.service.js';
@@ -12,22 +13,12 @@ const IMAGE = {
   mimeType: 'image/png',
 };
 
-const VALID_RESULT: ImageAnalysisResult = {
-  detectedSize: TattooSize.MEDIUM,
-  sizeConfidence: 0.95,
-  detectedDetail: DetailLevel.DETAILED,
-  detailConfidence: 0.96,
-  tattooOnSkin: true,
-  tattooOnSkinConfidence: 0.98,
-  referenceAnalyzable: true,
-  analyzabilityConfidence: 0.97,
-  ambiguityLevel: ImageAmbiguityLevel.NONE,
-};
+const VALID_RESULT = visionResult();
 
 interface FixtureOptions {
   fallback?: 'none' | 'openai';
-  geminiResults?: Array<ImageAnalysisResult | Error>;
-  openAIResult?: ImageAnalysisResult | Error;
+  geminiResults?: Array<ImageAnalysisV2Result | Error>;
+  openAIResult?: ImageAnalysisV2Result | Error;
 }
 
 function createProviderError(
@@ -72,8 +63,8 @@ function createFixture(options: FixtureOptions = {}) {
       GEMINI_MODEL: 'gemini-test-model',
       OPENAI_MODEL: 'openai-test-model',
     }),
-    { analyzeTattooImage: analyzeWithGemini } as unknown as GeminiImageAnalysisService,
-    { analyzeTattooImage: analyzeWithOpenAI } as unknown as OpenAIImageAnalysisService,
+    { analyzeTattooImageV2: analyzeWithGemini } as unknown as GeminiImageAnalysisService,
+    { analyzeTattooImageV2: analyzeWithOpenAI } as unknown as OpenAIImageAnalysisService,
     sleep,
     () => 0,
   );
@@ -91,7 +82,9 @@ describe('ResilientImageAnalysisService', () => {
   it('uses Gemini as the fixed primary provider', async () => {
     const fixture = createFixture();
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).resolves.toEqual(VALID_RESULT);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).resolves.toEqual(
+      VALID_RESULT,
+    );
     expect(fixture.analyzeWithGemini).toHaveBeenCalledOnce();
     expect(fixture.analyzeWithOpenAI).not.toHaveBeenCalled();
   });
@@ -101,7 +94,9 @@ describe('ResilientImageAnalysisService', () => {
       geminiResults: [createProviderError('SERVER_ERROR', { status: 503 }), VALID_RESULT],
     });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).resolves.toEqual(VALID_RESULT);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).resolves.toEqual(
+      VALID_RESULT,
+    );
     expect(fixture.analyzeWithGemini).toHaveBeenCalledTimes(2);
     expect(fixture.sleep).toHaveBeenCalledOnce();
     expect(fixture.sleep).toHaveBeenCalledWith(250);
@@ -116,7 +111,9 @@ describe('ResilientImageAnalysisService', () => {
       ],
     });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).resolves.toEqual(VALID_RESULT);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).resolves.toEqual(
+      VALID_RESULT,
+    );
     expect(fixture.analyzeWithGemini).toHaveBeenCalledTimes(2);
     expect(fixture.analyzeWithOpenAI).toHaveBeenCalledOnce();
   });
@@ -128,33 +125,33 @@ describe('ResilientImageAnalysisService', () => {
       geminiResults: [createProviderError('SERVER_ERROR'), terminalError],
     });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).rejects.toBe(terminalError);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).rejects.toBe(
+      terminalError,
+    );
     expect(fixture.analyzeWithOpenAI).not.toHaveBeenCalled();
   });
 
   it('does not call fallback for a valid low-confidence size mismatch observation', async () => {
-    const validReviewCandidate: ImageAnalysisResult = {
+    const validReviewCandidate: ImageAnalysisV2Result = {
       ...VALID_RESULT,
-      detectedSize: TattooSize.LARGE,
-      detectedDetail: DetailLevel.LIGHT,
-      sizeConfidence: 0.2,
-      detailConfidence: 0.3,
     };
     const fixture = createFixture({ geminiResults: [validReviewCandidate] });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).resolves.toEqual(validReviewCandidate);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).resolves.toEqual(
+      validReviewCandidate,
+    );
     expect(fixture.analyzeWithOpenAI).not.toHaveBeenCalled();
   });
 
   it('does not call fallback for a valid detail mismatch observation', async () => {
-    const validReviewCandidate: ImageAnalysisResult = {
+    const validReviewCandidate: ImageAnalysisV2Result = {
       ...VALID_RESULT,
-      detectedDetail: DetailLevel.LIGHT,
-      detailConfidence: 0.7,
     };
     const fixture = createFixture({ geminiResults: [validReviewCandidate] });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).resolves.toEqual(validReviewCandidate);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).resolves.toEqual(
+      validReviewCandidate,
+    );
     expect(fixture.analyzeWithOpenAI).not.toHaveBeenCalled();
   });
 
@@ -165,7 +162,9 @@ describe('ResilientImageAnalysisService', () => {
     });
     const fixture = createFixture({ geminiResults: [safetyError] });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).rejects.toBe(safetyError);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).rejects.toBe(
+      safetyError,
+    );
     expect(fixture.analyzeWithGemini).toHaveBeenCalledOnce();
     expect(fixture.analyzeWithOpenAI).not.toHaveBeenCalled();
   });
@@ -182,7 +181,9 @@ describe('ResilientImageAnalysisService', () => {
       openAIResult: openAIError,
     });
 
-    await expect(fixture.service.analyzeTattooImage(IMAGE)).rejects.toBe(openAIError);
+    await expect(fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES)).rejects.toBe(
+      openAIError,
+    );
     expect(fixture.analyzeWithOpenAI).toHaveBeenCalledOnce();
   });
 
@@ -196,7 +197,7 @@ describe('ResilientImageAnalysisService', () => {
       geminiResults: [createProviderError('SERVER_ERROR'), createProviderError('SERVER_ERROR')],
     });
 
-    await fixture.service.analyzeTattooImage(IMAGE, { leadId: 'lead-test-id' });
+    await fixture.service.analyzeTattooImageV2(IMAGE, VISION_STYLES, { leadId: 'lead-test-id' });
 
     const messages = [...log.mock.calls, ...warn.mock.calls, ...error.mock.calls].flat().join(' ');
     expect(messages).toContain('ai.provider.started');

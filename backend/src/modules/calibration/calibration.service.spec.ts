@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { PricingModelStatus, Prisma } from '../../generated/prisma/client.js';
 import type { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { CalibrationService } from './calibration.service.js';
+import { CATALOG_AB_ALGORITHM_VERSION } from './catalog-ab-interpolation.js';
+import { catalogABPricingFixture } from '../../../test/fixtures/catalog-ab-pricing.js';
 
 const styleId = '00000000-0000-4000-8000-000000000010';
 const accountA = '00000000-0000-4000-8000-000000000001';
@@ -178,6 +180,63 @@ describe('CalibrationService', () => {
       update: { pricePen: 350 },
     });
     await expect(service.saveAnswer(accountA, styleId, 'foreign', 500)).rejects.toThrow();
+  });
+
+  it('keeps incomplete A/B drafts pending without falling back to AREA/COLOR pricing', async () => {
+    const { tx, service } = mockDatabase();
+    tx.pricingModelVersion.findFirst.mockResolvedValue({
+      id: 'phased',
+      caseSnapshot: [{ id: 'case-a', phase: 'A', density: 34.5 }],
+      answers: [],
+    });
+    await expect(service.activate(accountA, styleId)).rejects.toThrow(/Responde todos los casos/);
+    expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects switching catalog formats while retaining an existing draft', async () => {
+    const { tx, service } = mockDatabase();
+    tx.pricingModelVersion.findFirst.mockResolvedValue({
+      id: 'current-draft',
+      caseSnapshot: cases,
+    });
+    await expect(service.startDraft(accountA, styleId, 'PHASED')).rejects.toThrow(/otro catálogo/);
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
+  });
+
+  it('materializes a completed pending A/B draft when calibration is reopened', async () => {
+    const { tx, prisma, service } = mockDatabase();
+    const points = catalogABPricingFixture(styleId);
+    const draft = {
+      id: 'completed-pending',
+      version: 2,
+      algorithmVersion: 'CATALOG_AB_PENDING',
+      caseSnapshot: points,
+      answers: points.map((point) => ({
+        caseId: point.id,
+        pricePen: new Prisma.Decimal(point.pricePen),
+      })),
+      style: { name: 'Fine Line' },
+    };
+    tx.pricingModelVersion.findFirst.mockResolvedValue(draft);
+    prisma.pricingModelVersion.findFirst.mockResolvedValue(draft);
+    expect(await service.startDraft(accountA, styleId, 'PHASED')).toMatchObject({
+      id: draft.id,
+      answeredCount: 25,
+      canActivate: true,
+    });
+    expect(tx.pricingModelVersion.update).toHaveBeenCalledWith({
+      where: { id: draft.id },
+      data: {
+        algorithmVersion: CATALOG_AB_ALGORITHM_VERSION,
+        modelParameters: expect.objectContaining({
+          styleId,
+          baseSurface: expect.any(Array),
+          densityCurve: expect.any(Array),
+        }),
+      },
+    });
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
   });
 
   it('activates a completed recalibration and supersedes only its prior active model', async () => {

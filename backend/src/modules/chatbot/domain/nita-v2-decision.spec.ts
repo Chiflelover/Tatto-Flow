@@ -2,11 +2,12 @@ import { persistedVision } from '../../../../test/fixtures/vision-v2.js';
 import type { AiAnalysis } from '../../../generated/prisma/client.js';
 import type { V2Intake } from '../../conversations/conversation-v2-intake.js';
 import { prepareV2Case } from './nita-v2-decision.js';
+import { CATALOG_AB_ALGORITHM_VERSION } from '../../calibration/catalog-ab-interpolation.js';
 
 const intake: V2Intake = {
   firstTattoo: false,
   sameSizeAsReference: true,
-  targetSizeCm: null,
+  targetSizeCm: 12,
   colorDeclaration: 'BLACK_ONLY',
   bodyPart: 'Antebrazo izquierdo',
 };
@@ -14,6 +15,50 @@ const enabled = { exists: true, enabled: true };
 const observe = (changes: Partial<AiAnalysis> = {}) => ({ ...persistedVision(), ...changes });
 
 describe('Nita V2 backend preparation', () => {
+  it('prepares a size-based model without requiring or inventing reference geometry', () => {
+    const analysis = observe({
+      compositionAspectRatio: null,
+      compositionFillRatio: null,
+      referenceMainDimensionCm: null,
+      referenceAreaCm2: null,
+      scaleReferenceType: 'NONE',
+      estimatedDensity: 70,
+    });
+    expect(
+      prepareV2Case({ ...intake, targetSizeCm: 11 }, analysis, {
+        ...enabled,
+        pricingAlgorithmVersion: CATALOG_AB_ALGORITHM_VERSION,
+      }),
+    ).toMatchObject({
+      decision: 'READY_FOR_PRICING',
+      targetMainDimensionCm: '11',
+      targetAreaCm2: null,
+      reviewReasons: [],
+    });
+    expect(prepareV2Case({ ...intake, targetSizeCm: 11 }, analysis, enabled).decision).toBe(
+      'HUMAN_REVIEW',
+    );
+  });
+  it.each([null, 0, 19.9, 100.1, NaN])(
+    'reviews unavailable or uncalibrated density %s only for the new model',
+    (estimatedDensity) => {
+      const result = prepareV2Case(intake, observe({ estimatedDensity }), {
+        ...enabled,
+        pricingAlgorithmVersion: CATALOG_AB_ALGORITHM_VERSION,
+      });
+      expect(result.decision).toBe('HUMAN_REVIEW');
+      expect(result.reviewReasons).toContain('MODEL_NOT_APPLICABLE');
+    },
+  );
+  it('continues historical client-size recovery for a size-based model', () => {
+    expect(
+      prepareV2Case(
+        { ...intake, targetSizeCm: null },
+        observe({ compositionAspectRatio: null, compositionFillRatio: null, estimatedDensity: 60 }),
+        { ...enabled, pricingAlgorithmVersion: CATALOG_AB_ALGORITHM_VERSION },
+      ),
+    ).toMatchObject({ decision: 'ASK_TARGET_SIZE_AFTER_ANALYSIS', targetMainDimensionCm: null });
+  });
   it('closes an invalid reference before area, confidence, style, color or any review rule', () => {
     const result = prepareV2Case(
       { ...intake, firstTattoo: null, targetSizeCm: 10, colorDeclaration: 'MOSTLY_COLOR' },
@@ -76,7 +121,7 @@ describe('Nita V2 backend preparation', () => {
   it('reviews DIFFERENT_SIZE without a client dimension', () => {
     expect(
       prepareV2Case(
-        { ...intake, sameSizeAsReference: false },
+        { ...intake, sameSizeAsReference: false, targetSizeCm: null },
         observe({ scaleReferenceType: 'NONE' }),
         enabled,
       ),
@@ -85,7 +130,7 @@ describe('Nita V2 backend preparation', () => {
   it('keeps historical explicit-scale analyses valid without newly observed geometry', () => {
     expect(
       prepareV2Case(
-        intake,
+        { ...intake, targetSizeCm: null },
         observe({
           schemaVersion: 'VISION_V2_2',
           compositionAspectRatio: null,
@@ -93,7 +138,12 @@ describe('Nita V2 backend preparation', () => {
         }),
         enabled,
       ),
-    ).toMatchObject({ decision: 'READY_FOR_PRICING', targetAreaCm2: '54' });
+    ).toMatchObject({
+      decision: 'ASK_TARGET_SIZE_AFTER_ANALYSIS',
+      targetMainDimensionCm: null,
+      targetAreaCm2: null,
+      scaleFactor: null,
+    });
   });
   it.each(['compositionAspectRatio', 'compositionFillRatio'] as const)(
     'rejects impossible %s',
@@ -104,28 +154,34 @@ describe('Nita V2 backend preparation', () => {
         ).toMatchObject({ decision: 'HUMAN_REVIEW', targetAreaCm2: null });
     },
   );
-  it('keeps SAME_SIZE with explicit scale and the original observations', () => {
+  it('keeps the declared target size even when SAME_SIZE and explicit reference dimensions differ', () => {
     const analysis = observe();
     const before = { ...analysis };
-    expect(prepareV2Case(intake, analysis, enabled)).toMatchObject({
+    const declared = { ...intake, targetSizeCm: 10 };
+    expect(prepareV2Case(declared, analysis, enabled)).toMatchObject({
       decision: 'READY_FOR_PRICING',
-      scaleFactor: '1',
-      targetMainDimensionCm: '12',
-      targetAreaCm2: '54',
+      scaleFactor: null,
+      targetMainDimensionCm: '10',
+      targetAreaCm2: '37.5',
       clientReferenceMatch: 'CONSISTENT',
       targetColorCoverage: 0,
       specialReviewTypes: [],
       reviewReasons: [],
     });
     expect(analysis).toEqual(before);
+    expect(declared.targetSizeCm).toBe(10);
   });
-  it.each(['BODY_CONTEXT', 'NONE'] as const)(
+  it.each(['EXPLICIT_REFERENCE', 'BODY_CONTEXT', 'NONE'] as const)(
     'asks for client size instead of relying on %s for SAME_SIZE',
     (scaleReferenceType) => {
-      const result = prepareV2Case(intake, observe({ scaleReferenceType }), enabled);
+      const historical = { ...intake, targetSizeCm: null };
+      const result = prepareV2Case(historical, observe({ scaleReferenceType }), enabled);
       expect(result.decision).toBe('ASK_TARGET_SIZE_AFTER_ANALYSIS');
       expect(result.specialReviewTypes).toEqual([]);
       expect(result.targetAreaCm2).toBeNull();
+      expect(result.targetMainDimensionCm).toBeNull();
+      expect(result.scaleFactor).toBeNull();
+      expect(historical.targetSizeCm).toBeNull();
       expect(result.reviewReasons).toEqual([]);
     },
   );
@@ -218,7 +274,7 @@ describe('Nita V2 backend preparation', () => {
     },
   );
   it.each(['BLACK_WITH_SOME_COLOR', 'MOSTLY_COLOR'] as const)(
-    'uses observed colored coverage for %s without fixed percentages',
+    'does not infer an explicit target from historical declaration %s',
     (colorDeclaration) => {
       expect(
         prepareV2Case(
@@ -227,10 +283,64 @@ describe('Nita V2 backend preparation', () => {
           enabled,
         ),
       ).toMatchObject({
-        decision: 'READY_FOR_PRICING',
-        targetColorCoverage: 0.47,
-        clientReferenceMatch: 'CONSISTENT',
+        decision: 'HUMAN_REVIEW',
+        targetColorCoverage: null,
+        clientReferenceMatch: 'UNKNOWN',
+        reviewReasons: ['TARGET_COLOR_NOT_DECLARED'],
       });
+    },
+  );
+  it.each([
+    ['BLACK_ONLY', 0],
+    ['LOW_COLOR', 0.25],
+    ['MEDIUM_COLOR', 0.5],
+    ['FULL_COLOR', 1],
+  ] as const)(
+    'maps %s to the client target %s independently of observed color',
+    (colorDeclaration, targetColorCoverage) => {
+      const analysis = observe({ referenceEssentiallyBlack: false, colorCoverage: 0.47 });
+      expect(prepareV2Case({ ...intake, colorDeclaration }, analysis, enabled)).toMatchObject({
+        decision: 'READY_FOR_PRICING',
+        targetColorCoverage,
+        clientReferenceMatch: 'MODIFIED',
+      });
+      expect(analysis.colorCoverage).toBe(0.47);
+      expect(analysis.estimatedDensity).toBe(34.5);
+      expect(
+        prepareV2Case(
+          { ...intake, colorDeclaration },
+          { ...analysis, colorCoverage: null },
+          enabled,
+        ),
+      ).toMatchObject({
+        decision: 'READY_FOR_PRICING',
+        targetColorCoverage,
+      });
+    },
+  );
+  it.each([
+    ['LOW_COLOR', 0.25],
+    ['MEDIUM_COLOR', 0.5],
+    ['FULL_COLOR', 1],
+  ] as const)(
+    'keeps the explicit %s target %s while reviewing added color on a black reference',
+    (colorDeclaration, targetColorCoverage) => {
+      expect(prepareV2Case({ ...intake, colorDeclaration }, observe(), enabled)).toMatchObject({
+        decision: 'SPECIAL_REVIEW',
+        targetColorCoverage,
+        clientReferenceMatch: 'MODIFIED',
+        specialReviewTypes: ['SPECIAL_REVIEW_COLOR_MODIFICATION'],
+      });
+      expect(
+        prepareV2Case(
+          { ...intake, colorDeclaration },
+          observe({
+            referenceEssentiallyBlack: false,
+            colorCoverage: targetColorCoverage,
+          }),
+          enabled,
+        ),
+      ).toMatchObject({ decision: 'READY_FOR_PRICING', clientReferenceMatch: 'CONSISTENT' });
     },
   );
   it('prioritizes extensive coverage over low confidence and unusable scale', () => {
@@ -264,13 +374,17 @@ describe('Nita V2 backend preparation', () => {
   it.each(['referenceMainDimensionCm', 'referenceAreaCm2'] as const)(
     'reviews missing %s without guessing area',
     (field) => {
-      const result = prepareV2Case(intake, observe({ [field]: null }), enabled);
+      const result = prepareV2Case(
+        { ...intake, targetSizeCm: null },
+        observe({ [field]: null }),
+        enabled,
+      );
       expect(result).toMatchObject({ decision: 'HUMAN_REVIEW', targetAreaCm2: null });
       expect(result.reviewReasons).toContain('MISSING_REFERENCE_MEASUREMENTS');
     },
   );
-  it.each([null, -0.1, 1.1, Number.NaN])(
-    'reviews absent or impossible observed color coverage %s',
+  it.each([-0.1, 1.1, Number.NaN])(
+    'reviews impossible observed color coverage %s',
     (colorCoverage) => {
       expect(prepareV2Case(intake, observe({ colorCoverage }), enabled).decision).toBe(
         'HUMAN_REVIEW',
@@ -282,12 +396,6 @@ describe('Nita V2 backend preparation', () => {
       decision: 'HUMAN_REVIEW',
       reviewReasons: ['ANALYSIS_FAILED'],
       clientReferenceMatch: 'UNKNOWN',
-    });
-  });
-  it('never treats V1 analysis as V2', () => {
-    expect(prepareV2Case(intake, persistedVision('V1'), enabled)).toMatchObject({
-      decision: 'HUMAN_REVIEW',
-      reviewReasons: ['INVALID_ANALYSIS'],
     });
   });
   it('reviews incomplete intake and impossible reference dimensions', () => {

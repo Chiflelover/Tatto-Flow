@@ -1,24 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  ConversationStatus,
-  FlowVersion,
-  type Conversation,
-} from '../../generated/prisma/client.js';
+import { ConversationStatus, type Conversation } from '../../generated/prisma/client.js';
 import { v2IntakeSnapshot } from './conversation-v2-intake.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
-import { toImageAnalysisResult } from '../image-analysis/domain/persisted-image-analysis.js';
-import { LeadScoringService } from '../lead-scoring/lead-scoring.service.js';
 import { getConversationAbandonmentCutoff } from './conversation-abandonment.constants.js';
 
 @Injectable()
 export class ConversationAbandonmentService {
   private readonly logger = new SafeStructuredLogger(ConversationAbandonmentService.name);
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(LeadScoringService) private readonly leadScoringService: LeadScoringService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   abandonInactive(now = new Date()): Promise<number> {
     return this.updateInactiveConversations(now);
@@ -66,43 +57,17 @@ export class ConversationAbandonmentService {
       const lead = await transaction.lead.upsert({
         where: { conversationId: conversation.id },
         update: {
-          ...(conversation.flowVersion === FlowVersion.V2 ? v2IntakeSnapshot(conversation) : {}),
-          selectedSize: conversation.selectedSize,
-          selectedDetail: conversation.selectedDetail,
+          ...v2IntakeSnapshot(conversation),
           bodyPart: conversation.bodyPart,
         },
         create: {
-          ...(conversation.flowVersion === FlowVersion.V2 ? v2IntakeSnapshot(conversation) : {}),
+          ...v2IntakeSnapshot(conversation),
           accountId: conversation.accountId,
           customerId: conversation.customerId,
           conversationId: conversation.id,
-          selectedSize: conversation.selectedSize,
-          selectedDetail: conversation.selectedDetail,
           bodyPart: conversation.bodyPart,
         },
-        include: {
-          aiAnalysis: true,
-          images: {
-            where: { deletedAt: null },
-            select: { id: true },
-          },
-        },
       });
-
-      if (conversation.flowVersion === FlowVersion.V1)
-        await this.leadScoringService.evaluateAndPersist(
-          lead.id,
-          {
-            selectedSize: lead.selectedSize,
-            selectedDetail: lead.selectedDetail,
-            bodyPart: lead.bodyPart,
-            referenceReceived: lead.images.length > 0,
-            conversationStatus: ConversationStatus.ABANDONED,
-            analysis: lead.aiAnalysis ? toImageAnalysisResult(lead.aiAnalysis) : null,
-            analysisFailed: false,
-          },
-          transaction,
-        );
 
       return lead.id;
     });

@@ -2,20 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import {
-  LeadListQueryDto,
-  SaveManualFinalPriceDto,
-  UpdatePricingRulesDto,
-} from './dashboard.dto.js';
-
-const RULE_ID = '00000000-0000-4000-8000-000000000001';
-
-function validatePayload(payload: object) {
-  return validate(plainToInstance(UpdatePricingRulesDto, payload), {
-    forbidNonWhitelisted: true,
-    whitelist: true,
-  });
-}
+import { LeadListQueryDto, SaveManualFinalPriceDto } from './dashboard.dto.js';
 
 function validateLeadQuery(payload: object) {
   return validate(plainToInstance(LeadListQueryDto, payload), {
@@ -51,14 +38,12 @@ describe('SaveManualFinalPriceDto', () => {
 });
 
 describe('LeadListQueryDto', () => {
-  it('accepts readiness, archive, sorting, pagination and phone search', async () => {
+  it('accepts current status, archive, sorting, pagination and phone search', async () => {
     await expect(
       validateLeadQuery({
-        status: 'REVISAR',
-        size: 'SMALL',
-        detail: 'LIGHT',
+        status: 'REQUIRES_REVIEW',
         archived: 'true',
-        sortBy: 'readinessScore',
+        sortBy: 'targetSizeCm',
         sortOrder: 'asc',
         page: '2',
         pageSize: '25',
@@ -78,48 +63,5 @@ describe('LeadListQueryDto', () => {
     [{ search: '123456789012345678901' }],
   ])('rejects unsupported lead query values', async (payload) => {
     await expect(validateLeadQuery(payload)).resolves.not.toHaveLength(0);
-  });
-});
-
-describe('UpdatePricingRulesDto', () => {
-  it('accepts only a rule identifier and valid min/max prices', async () => {
-    await expect(
-      validatePayload({
-        updates: [{ pricingRuleId: RULE_ID, minPrice: 70, maxPrice: 80 }],
-      }),
-    ).resolves.toHaveLength(0);
-  });
-
-  it.each([
-    ['', 80],
-    ['not-a-number', 80],
-    [-1, 80],
-  ])('rejects empty, non-numeric or negative price fields', async (minPrice, maxPrice) => {
-    const errors = await validatePayload({
-      updates: [{ pricingRuleId: RULE_ID, minPrice, maxPrice }],
-    });
-
-    expect(errors).not.toHaveLength(0);
-  });
-
-  it('rejects attempts to modify size, detail, version or active state', async () => {
-    const errors = await validatePayload({
-      updates: [
-        {
-          pricingRuleId: RULE_ID,
-          minPrice: 70,
-          maxPrice: 80,
-          size: 'LARGE',
-          detail: 'DETAILED',
-          version: 99,
-          isActive: false,
-        },
-      ],
-    });
-    const nestedConstraints = errors[0]?.children?.[0]?.children ?? [];
-
-    expect(nestedConstraints.map((error) => error.property)).toEqual(
-      expect.arrayContaining(['size', 'detail', 'version', 'isActive']),
-    );
   });
 });

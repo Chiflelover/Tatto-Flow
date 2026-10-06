@@ -49,7 +49,7 @@ export default function PrivacyPage() {
               observaciones sobre la calidad de la referencia.
             </li>
             <li>
-              El estado y evaluación de la cotización, motivos de revisión, rango de precio y fechas
+              El estado de la cotización, motivos de revisión, precio aproximado y fechas
               relacionadas con su atención.
             </li>
             <li>
@@ -69,7 +69,7 @@ export default function PrivacyPage() {
           <ul>
             <li>Recibir y gestionar tu solicitud de cotización.</li>
             <li>Analizar la imagen y determinar si necesita revisión del tatuador.</li>
-            <li>Calcular un rango de precio mediante las reglas configuradas en el sistema.</li>
+            <li>Calcular un precio aproximado mediante los modelos calibrados del tatuador.</li>
             <li>Permitir que el tatuador continúe personalmente la atención por WhatsApp.</li>
             <li>Prevenir duplicados, diagnosticar errores y mantener el servicio funcionando.</li>
           </ul>

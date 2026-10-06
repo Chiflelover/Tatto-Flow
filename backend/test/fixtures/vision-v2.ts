@@ -1,10 +1,4 @@
-import {
-  AnalysisVersion,
-  DetailLevel,
-  Prisma,
-  TattooSize,
-  type AiAnalysis,
-} from '../../src/generated/prisma/client.js';
+import type { AiAnalysis } from '../../src/generated/prisma/client.js';
 import type {
   ImageAnalysisV2Result,
   VisionStyle,
@@ -26,6 +20,7 @@ export const VISION_RESPONSE = {
   reference_validation_confidence: 0.99,
   composition_aspect_ratio: 0.5,
   composition_fill_ratio: 0.75,
+  estimated_density: 34.5,
   style: 'FINE_LINE',
   style_confidence: 0.94,
   scale_reference_type: 'EXPLICIT_REFERENCE',
@@ -61,43 +56,17 @@ export function visionResult(
   };
 }
 
-export function persistedVision(version: AnalysisVersion = AnalysisVersion.V2): AiAnalysis {
+export function persistedVision(): AiAnalysis {
   const result = visionResult();
   return {
     id: '00000000-0000-4000-8000-000000000010',
     leadId: '00000000-0000-4000-8000-000000000020',
-    analysisVersion: version,
-    validTattooReference: version === 'V1' ? null : result.observations.validTattooReference,
-    referenceValidationConfidence:
-      version === 'V1' ? null : result.observations.referenceValidationConfidence,
-    detectedSize: version === 'V1' ? TattooSize.MEDIUM : null,
-    sizeConfidence: version === 'V1' ? new Prisma.Decimal('0.951') : null,
-    detectedDetail: version === 'V1' ? DetailLevel.LIGHT : null,
-    detailConfidence: version === 'V1' ? new Prisma.Decimal('0.963') : null,
-    style: version === 'V1' ? null : result.observations.style,
-    compositionAspectRatio: version === 'V1' ? null : result.observations.compositionAspectRatio,
-    compositionFillRatio: version === 'V1' ? null : result.observations.compositionFillRatio,
-    styleConfidence: version === 'V1' ? null : result.observations.styleConfidence,
-    scaleReferenceType: version === 'V1' ? null : result.observations.scaleReferenceType,
-    scaleConfidence: version === 'V1' ? null : result.observations.scaleConfidence,
-    referenceMainDimensionCm:
-      version === 'V1' ? null : result.observations.referenceMainDimensionCm,
-    referenceAreaCm2: version === 'V1' ? null : result.observations.referenceAreaCm2,
-    areaConfidence: version === 'V1' ? null : result.observations.areaConfidence,
-    colorCoverage: version === 'V1' ? null : result.observations.colorCoverage,
-    colorConfidence: version === 'V1' ? null : result.observations.colorConfidence,
-    overallConfidence: version === 'V1' ? null : result.observations.overallConfidence,
-    referenceEssentiallyBlack:
-      version === 'V1' ? null : result.observations.referenceEssentiallyBlack,
-    extensiveBodyCoverage: version === 'V1' ? null : result.observations.extensiveBodyCoverage,
-    promptVersion: version === 'V1' ? null : result.promptVersion,
-    schemaVersion: version === 'V1' ? null : result.schemaVersion,
-    provider: version === 'V1' ? null : result.provider,
-    model: version === 'V1' ? null : result.model,
-    rawResponse:
-      version === 'V1'
-        ? { tattooOnSkin: true, ambiguityLevel: 'NONE' }
-        : { outputText: JSON.stringify(VISION_RESPONSE) },
+    ...result.observations,
+    promptVersion: result.promptVersion,
+    schemaVersion: result.schemaVersion,
+    provider: result.provider,
+    model: result.model,
+    rawResponse: { outputText: JSON.stringify(VISION_RESPONSE) },
     createdAt: new Date('2026-09-29T20:00:00Z'),
   };
 }

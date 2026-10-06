@@ -8,7 +8,6 @@ const PASSWORD = 'Una-clave-segura-123';
 describe('AdminService account management', () => {
   it('creates an artist user and unique Nita channel in one transaction with a hashed password', async () => {
     const create = vi.fn().mockResolvedValue({ id: ACCOUNT_ID });
-    const findMany = vi.fn().mockResolvedValue([]);
     const get = vi.fn().mockResolvedValue({
       id: ACCOUNT_ID,
       name: 'Tatuador A',
@@ -17,7 +16,7 @@ describe('AdminService account management', () => {
       channel: { phoneNumber: '51999888777', phoneNumberId: '12345' },
       createdAt: new Date('2026-09-29T12:00:00Z'),
     });
-    const tx = { tattooArtistAccount: { create }, pricingRule: { findMany } };
+    const tx = { tattooArtistAccount: { create } };
     const service = new AdminService({
       tattooArtistAccount: { findUnique: get },
       $transaction: vi.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),

@@ -1,19 +1,16 @@
 import { ColorDeclaration, ConversationState as State } from '../../../generated/prisma/client.js';
 import type { ChatbotInput, ConversationContext } from './chatbot.types.js';
-import { NitaStateMachine } from './nita-state-machine.js';
+import { NitaV2StateMachine, V2_COLOR_OPTIONS } from './nita-v2-state-machine.js';
 import { parseTargetSizeCm } from './nita-v2-state-machine.js';
 import { VISION_IMAGE } from '../../../../test/fixtures/vision-v2.js';
 
-const machine = new NitaStateMachine();
+const machine = new NitaV2StateMachine();
 function context(
   currentState: State,
   overrides: Partial<ConversationContext> = {},
 ): ConversationContext {
   return {
-    flowVersion: 'V2',
     currentState,
-    selectedSize: null,
-    selectedDetail: null,
     bodyPart: null,
     firstTattoo: null,
     sameSizeAsReference: null,
@@ -70,9 +67,9 @@ describe('Nita V2 intake state machine', () => {
         { type: 'image', image: VISION_IMAGE },
         { type: 'option', stage: 'sameSize', value: sameSize },
       ];
-      if (!sameSize) inputs.push(text('12.5 cm'));
+      inputs.push(text('12.5 cm'));
       inputs.push(
-        { type: 'option', stage: 'color', value: ColorDeclaration.BLACK_WITH_SOME_COLOR },
+        { type: 'option', stage: 'color', value: ColorDeclaration.LOW_COLOR },
         text('Antebrazo izquierdo'),
       );
       const states: State[] = [];
@@ -85,19 +82,17 @@ describe('Nita V2 intake state machine', () => {
         State.ASK_FIRST_TATTOO,
         State.WAITING_IMAGE,
         State.ASK_SAME_SIZE,
-        sameSize ? State.ASK_COLOR : State.ASK_DESIRED_SIZE_CM,
-        ...(!sameSize ? [State.ASK_COLOR] : []),
+        State.ASK_DESIRED_SIZE_CM,
+        State.ASK_COLOR,
         State.ASK_BODY_PART,
         State.READY_FOR_ANALYSIS,
       ]);
       expect(current).toMatchObject({
         firstTattoo: false,
         sameSizeAsReference: sameSize,
-        targetSizeCm: sameSize ? null : 12.5,
-        colorDeclaration: 'BLACK_WITH_SOME_COLOR',
+        targetSizeCm: 12.5,
+        colorDeclaration: 'LOW_COLOR',
         bodyPart: 'Antebrazo izquierdo',
-        selectedSize: null,
-        selectedDetail: null,
       });
       expect(machine.process(current, text('continuar'))).toMatchObject({
         ignored: true,
@@ -106,6 +101,18 @@ describe('Nita V2 intake state machine', () => {
       });
     },
   );
+  it.each([true, false])('asks for centimeters after the sameSize button %s', (value) => {
+    expect(
+      machine.process(context(State.ASK_SAME_SIZE), { type: 'option', stage: 'sameSize', value }),
+    ).toMatchObject({
+      update: {
+        sameSizeAsReference: value,
+        targetSizeCm: null,
+        currentState: State.ASK_DESIRED_SIZE_CM,
+      },
+      response: { state: State.ASK_DESIRED_SIZE_CM, options: [] },
+    });
+  });
   it.each([
     ['8', 8],
     ['8 cm', 8],
@@ -133,11 +140,44 @@ describe('Nita V2 intake state machine', () => {
       response: { state: State.ASK_DESIRED_SIZE_CM },
     });
   });
-  it.each(Object.values(ColorDeclaration))('accepts stable color %s', (value) => {
-    expect(
-      machine.process(context(State.ASK_COLOR), { type: 'option', stage: 'color', value }).update,
-    ).toEqual({ colorDeclaration: value, currentState: State.ASK_BODY_PART });
+  it('asks for exactly four explicit color levels', () => {
+    expect(machine.prompt(context(State.ASK_COLOR)).options).toEqual([
+      { value: 'BLACK_ONLY', label: 'Negro' },
+      { value: 'LOW_COLOR', label: 'Poco color' },
+      { value: 'MEDIUM_COLOR', label: 'Color medio' },
+      { value: 'FULL_COLOR', label: 'Full color' },
+    ]);
   });
+  it.each(V2_COLOR_OPTIONS)(
+    'accepts explicit color $value and its text label',
+    ({ value, label }) => {
+      expect(
+        machine.process(context(State.ASK_COLOR), {
+          type: 'option',
+          stage: 'color',
+          value: value as ColorDeclaration,
+        }).update,
+      ).toEqual({ colorDeclaration: value, currentState: State.ASK_BODY_PART });
+      expect(machine.process(context(State.ASK_COLOR), text(label)).update.colorDeclaration).toBe(
+        value,
+      );
+    },
+  );
+  it.each(['BLACK_WITH_SOME_COLOR', 'MOSTLY_COLOR'] as const)(
+    'requests a new explicit choice for an old ambiguous button %s',
+    (value) => {
+      expect(
+        machine.process(context(State.ASK_COLOR), { type: 'option', stage: 'color', value }),
+      ).toMatchObject({
+        update: {},
+        response: { state: State.ASK_COLOR, options: V2_COLOR_OPTIONS },
+      });
+    },
+  );
+  it.each(['Negro con algunos colores', 'Principalmente a color'])(
+    'does not reinterpret ambiguous historical text %s',
+    (value) => expect(machine.process(context(State.ASK_COLOR), text(value)).update).toEqual({}),
+  );
   it.each(['Black & Grey', 'negro y gris', 'Solo negro'])(
     'classifies textual %s as BLACK_ONLY',
     (value) => {
@@ -181,7 +221,7 @@ describe('Nita V2 intake state machine', () => {
       ).toEqual({});
     }
   });
-  it('ignores earlier and V1 buttons', () => {
+  it('ignores buttons from earlier intake steps', () => {
     expect(
       machine.process(context(State.ASK_SAME_SIZE), {
         type: 'option',
@@ -196,29 +236,6 @@ describe('Nita V2 intake state machine', () => {
         value: 'MOSTLY_COLOR',
       }),
     ).toMatchObject({ ignored: true, update: {} });
-    expect(
-      machine.process(context(State.START), { type: 'option', stage: 'size', value: 'SMALL' }),
-    ).toMatchObject({ ignored: true, update: {} });
-  });
-  it('does not route V1 states into V2, or V2 states into V1', () => {
-    expect(
-      machine.process(context(State.ASK_SIZE), { type: 'option', stage: 'size', value: 'SMALL' })
-        .update,
-    ).toEqual({});
-    expect(
-      machine.process(context(State.ASK_FIRST_TATTOO, { flowVersion: 'V1' }), text('Sí')).update,
-    ).toEqual({});
-    expect(
-      machine.process(context(State.START, { flowVersion: 'V1' }), {
-        type: 'option',
-        stage: 'firstTattoo',
-        value: true,
-      }),
-    ).toMatchObject({ ignored: true, update: {} });
-    expect(
-      machine.process(context(State.START, { flowVersion: 'V1' }), text('hola')).update
-        .currentState,
-    ).toBe(State.ASK_SIZE);
   });
   it('accepts a placement beyond 10 characters and rejects empty or oversized input', () => {
     expect(

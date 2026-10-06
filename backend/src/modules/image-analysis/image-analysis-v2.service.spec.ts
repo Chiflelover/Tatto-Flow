@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import {
   persistedVision,
@@ -12,12 +12,12 @@ import { ImageAnalysisV2Service } from './image-analysis-v2.service.js';
 const accountId = '00000000-0000-4000-8000-000000000001';
 const leadId = '00000000-0000-4000-8000-000000000020';
 
-function fixture(flowVersion = 'V2') {
+function fixture() {
   let stored: ReturnType<typeof persistedVision> | null = null;
   const findFirst = vi.fn(({ where }: { where: { id: string; accountId: string } }) =>
     Promise.resolve(
       where.id === leadId && where.accountId === accountId
-        ? { id: leadId, conversation: { flowVersion }, aiAnalysis: stored }
+        ? { id: leadId, aiAnalysis: stored }
         : null,
     ),
   );
@@ -84,7 +84,6 @@ describe('controlled AI Vision V2 persistence', () => {
       update: {},
       create: {
         leadId,
-        analysisVersion: 'V2',
         ...result.observations,
         provider: result.provider,
         model: result.model,
@@ -94,16 +93,17 @@ describe('controlled AI Vision V2 persistence', () => {
       },
     });
     expect(f.findFirst).toHaveBeenLastCalledWith({
-      where: { id: leadId, accountId, conversation: { flowVersion: 'V2' } },
+      where: { id: leadId, accountId },
       select: { id: true },
     });
     expect(stored.referenceAreaCm2).toBeNull();
+    expect(stored.estimatedDensity).toBe(34.5);
     expect(stored.validTattooReference).toBe(true);
     expect(stored.referenceValidationConfidence).toBe(0.99);
     expect(stored.scaleReferenceType).toBe('BODY_CONTEXT');
     expect(stored.scaleConfidence).toBe(0.12);
     expect(stored.extensiveBodyCoverage).toBe(true);
-    expect(stored.detectedSize).toBeNull();
+
     expect(stored.overallConfidence).toBe(0.91);
     expect(f.updateLead).not.toHaveBeenCalled();
     expect(f.updateConversation).not.toHaveBeenCalled();
@@ -136,23 +136,41 @@ describe('controlled AI Vision V2 persistence', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(f.findFirst).toHaveBeenCalledWith({
       where: { id: leadId, accountId: 'another-account' },
-      select: { conversation: { select: { flowVersion: true } }, aiAnalysis: true },
+      select: { aiAnalysis: true },
     });
     expect(f.analyzeTattooImageV2).not.toHaveBeenCalled();
     expect(f.upsert).not.toHaveBeenCalled();
   });
 
-  it('never activates V2 for a normal V1 conversation or overwrites a V1 analysis', async () => {
-    const f = fixture('V1');
-    await expect(
-      f.service.analyzeAndPersistLeadReference(accountId, leadId, VISION_IMAGE),
-    ).rejects.toBeInstanceOf(ConflictException);
+  it('reuses historical V2_4 analysis with null density without reanalysis or backfill', async () => {
+    const f = fixture();
+    const historical = {
+      ...persistedVision(),
+      schemaVersion: 'VISION_V2_4',
+      promptVersion: 4,
+      estimatedDensity: null,
+    };
+    const before = { ...historical };
+    f.setStored(historical);
+    expect(await f.service.analyzeAndPersistLeadReference(accountId, leadId, VISION_IMAGE)).toEqual(
+      before,
+    );
     expect(f.analyzeTattooImageV2).not.toHaveBeenCalled();
-    const v2 = fixture();
-    v2.setStored(persistedVision('V1'));
-    await expect(
-      v2.service.analyzeAndPersistLeadReference(accountId, leadId, VISION_IMAGE),
-    ).rejects.toThrow('histórico V1');
-    expect(v2.upsert).not.toHaveBeenCalled();
+    expect(f.upsert).not.toHaveBeenCalled();
+    expect(historical).toEqual(before);
   });
+
+  it.each([null, -1, 101, Infinity, Number.NaN])(
+    'rejects new density %s before persistence',
+    async (density) => {
+      const f = fixture();
+      const result = visionResult();
+      result.observations.estimatedDensity = density;
+      f.analyzeTattooImageV2.mockResolvedValueOnce(result);
+      await expect(
+        f.service.analyzeAndPersistLeadReference(accountId, leadId, VISION_IMAGE),
+      ).rejects.toThrow();
+      expect(f.upsert).not.toHaveBeenCalled();
+    },
+  );
 });

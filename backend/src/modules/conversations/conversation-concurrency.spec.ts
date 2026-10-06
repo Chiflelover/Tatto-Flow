@@ -3,17 +3,14 @@ import {
   ConversationState,
   ConversationStatus,
   Prisma,
-  TattooSize,
   type Conversation,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
-import { ConversationsService, type ConversationUpdate } from './conversations.service.js';
+import { ConversationsService } from './conversations.service.js';
 
 const CUSTOMER_A = '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e';
-const CUSTOMER_B = 'b1988d82-056f-4510-9259-0d09bb096923';
 const CONVERSATION_A = 'a459f257-b03c-48f4-9091-2dc37871ef81';
-const CONVERSATION_B = 'a12936c1-ab59-45a8-9137-cbbd6c128f2c';
 
 function makeConversation(id: string, customerId: string): Conversation {
   const now = new Date('2026-09-14T12:00:00.000Z');
@@ -21,7 +18,6 @@ function makeConversation(id: string, customerId: string): Conversation {
   return {
     id,
     accountId: ACCOUNT_ID,
-    flowVersion: 'V1',
     v2AnalysisClaimId: null,
     v2AnalysisLeaseUntil: null,
     firstTattoo: null,
@@ -29,10 +25,8 @@ function makeConversation(id: string, customerId: string): Conversation {
     targetSizeCm: null,
     colorDeclaration: null,
     customerId,
-    currentState: ConversationState.ASK_SIZE,
+    currentState: ConversationState.ASK_FIRST_TATTOO,
     status: ConversationStatus.ACTIVE,
-    selectedSize: null,
-    selectedDetail: null,
     bodyPart: null,
     lastActivityAt: now,
     createdAt: now,
@@ -40,90 +34,7 @@ function makeConversation(id: string, customerId: string): Conversation {
   };
 }
 
-function transitionFixture(initialConversations: Conversation[]) {
-  const conversations = new Map(
-    initialConversations.map((conversation) => [conversation.id, conversation]),
-  );
-  const updateMany = vi.fn(
-    (arguments_: {
-      where: { id: string; currentState: ConversationState; status: ConversationStatus };
-      data: ConversationUpdate & { lastActivityAt: Date };
-    }) => {
-      const current = conversations.get(arguments_.where.id);
-
-      if (
-        !current ||
-        current.currentState !== arguments_.where.currentState ||
-        current.status !== arguments_.where.status
-      ) {
-        return Promise.resolve({ count: 0 });
-      }
-
-      conversations.set(current.id, { ...current, ...arguments_.data, updatedAt: new Date() });
-      return Promise.resolve({ count: 1 });
-    },
-  );
-  const findUniqueOrThrow = vi.fn(({ where }: { where: { id: string } }) => {
-    const conversation = conversations.get(where.id);
-
-    if (!conversation) {
-      return Promise.reject(new Error('conversation missing'));
-    }
-
-    return Promise.resolve(conversation);
-  });
-  const prisma = {
-    conversation: { updateMany, findUniqueOrThrow },
-  } as unknown as PrismaService;
-  const service = new ConversationsService(prisma, {} as ConversationAbandonmentService);
-
-  return { conversations, service };
-}
-
 describe('conversation concurrency', () => {
-  it('allows only one of two rapid messages to advance the same state', async () => {
-    const fixture = transitionFixture([makeConversation(CONVERSATION_A, CUSTOMER_A)]);
-
-    const results = await Promise.all([
-      fixture.service.applyTransition(CONVERSATION_A, ConversationState.ASK_SIZE, {
-        selectedSize: TattooSize.SMALL,
-        currentState: ConversationState.ASK_DETAIL,
-      }),
-      fixture.service.applyTransition(CONVERSATION_A, ConversationState.ASK_SIZE, {
-        selectedSize: TattooSize.LARGE,
-        currentState: ConversationState.ASK_DETAIL,
-      }),
-    ]);
-
-    expect(results.filter(({ applied }) => applied)).toHaveLength(1);
-    expect(fixture.conversations.get(CONVERSATION_A)).toMatchObject({
-      currentState: ConversationState.ASK_DETAIL,
-      selectedSize: TattooSize.SMALL,
-    });
-  });
-
-  it('keeps simultaneous transitions from different customers isolated', async () => {
-    const fixture = transitionFixture([
-      makeConversation(CONVERSATION_A, CUSTOMER_A),
-      makeConversation(CONVERSATION_B, CUSTOMER_B),
-    ]);
-
-    const results = await Promise.all([
-      fixture.service.applyTransition(CONVERSATION_A, ConversationState.ASK_SIZE, {
-        selectedSize: TattooSize.SMALL,
-        currentState: ConversationState.ASK_DETAIL,
-      }),
-      fixture.service.applyTransition(CONVERSATION_B, ConversationState.ASK_SIZE, {
-        selectedSize: TattooSize.LARGE,
-        currentState: ConversationState.ASK_DETAIL,
-      }),
-    ]);
-
-    expect(results.every(({ applied }) => applied)).toBe(true);
-    expect(fixture.conversations.get(CONVERSATION_A)?.selectedSize).toBe(TattooSize.SMALL);
-    expect(fixture.conversations.get(CONVERSATION_B)?.selectedSize).toBe(TattooSize.LARGE);
-  });
-
   it('recovers the active conversation when concurrent creation hits the unique index', async () => {
     const activeConversation = makeConversation(CONVERSATION_A, CUSTOMER_A);
     const conflict = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {

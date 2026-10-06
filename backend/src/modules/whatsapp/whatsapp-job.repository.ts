@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import {
   Prisma,
@@ -21,12 +20,9 @@ export const WHATSAPP_JOB_LEASE_MS = 300_000;
 @Injectable()
 export class WhatsAppJobRepository {
   private readonly logger = new SafeStructuredLogger(WhatsAppJobRepository.name);
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(ConfigService) private readonly config: ConfigService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async enqueueIfV2(
+  async enqueue(
     messageId: string,
     channel: WhatsAppChannel,
     phoneNumber: string,
@@ -73,24 +69,7 @@ export class WhatsAppJobRepository {
             orderBy: { createdAt: 'desc' },
           })
         : null;
-    const restarting = latest?.status === 'ABANDONED' && latest.flowVersion === 'V2';
-    const pending = customer
-      ? await this.prisma.whatsAppJob.findFirst({
-          where: {
-            accountId: channel.accountId,
-            customerId: customer.id,
-            status: { in: ['PENDING', 'PROCESSING', 'RETRYABLE', 'UNKNOWN'] },
-          },
-          select: { id: true },
-        })
-      : null;
-    const flow = restarting
-      ? 'V2'
-      : (active?.flowVersion ??
-        (pending && !restartInvalidReference
-          ? 'V2'
-          : (this.config.get<string>('NITA_DEFAULT_FLOW_VERSION') ?? 'V1')));
-    if (flow !== 'V2') return { queued: false };
+    const restarting = latest?.status === 'ABANDONED';
     const saved = await this.prisma.$transaction(async (tx) => {
       const ownedCustomer =
         customer ??
@@ -173,9 +152,7 @@ export class WhatsAppJobRepository {
     if (current.inputProcessedAt) return;
     if (
       conversation &&
-      (conversation.accountId !== job.accountId ||
-        conversation.customerId !== job.customerId ||
-        conversation.flowVersion !== 'V2')
+      (conversation.accountId !== job.accountId || conversation.customerId !== job.customerId)
     )
       throw new ConflictException('La conversación no corresponde al trabajo.');
     if (conversation && job.conversationId && job.conversationId !== conversation.id) {
@@ -184,7 +161,7 @@ export class WhatsAppJobRepository {
           id: job.conversationId,
           accountId: job.accountId,
           customerId: job.customerId,
-          flowVersion: 'V2',
+
           OR: [{ status: 'ABANDONED' }, { status: 'COMPLETED', currentState: 'INVALID_REFERENCE' }],
         },
         select: { id: true },

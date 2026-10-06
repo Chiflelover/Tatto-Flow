@@ -24,6 +24,7 @@ const REVIEW_LABELS: Record<string, string> = {
   MISSING_COLOR_COVERAGE: 'Falta información sobre cobertura de color',
   INVALID_COLOR_COVERAGE: 'La cobertura de color no es válida',
   INCONSISTENT_COLOR_OBSERVATIONS: 'La información sobre el color necesita revisión',
+  TARGET_COLOR_NOT_DECLARED: 'Falta una elección explícita del nivel de color del cliente',
   INVALID_PREPARATION: 'Los datos preparados necesitan revisión',
   PRICING_MODEL_NOT_AVAILABLE: 'No hay modelo de precios activo para este estilo',
   MODEL_NOT_APPLICABLE: 'El modelo no puede cotizar estas entradas sin extrapolar',

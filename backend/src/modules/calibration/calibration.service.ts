@@ -8,23 +8,23 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import {
   ALGORITHM_VERSION,
   buildModel,
-  interpolatePrice,
   type ModelParameters,
   type ModelPoint,
 } from './model-interpolation.js';
-
-interface CaseSnapshot {
-  id: string;
-  imageUrl: string;
-  type: 'AREA' | 'COLOR';
-  areaCm2: number;
-  colorCoverage: number;
-  displayOrder: number;
-}
-
-function snapshot(value: Prisma.JsonValue): CaseSnapshot[] {
-  return value as unknown as CaseSnapshot[];
-}
+import {
+  freezeCase,
+  readCaseSnapshot as snapshot,
+  snapshotCatalog,
+  type AreaColorSnapshot,
+  type CalibrationCatalog,
+  type PhasedCaseSnapshot,
+} from './calibration-snapshot.js';
+import {
+  buildCatalogABModel,
+  CATALOG_AB_ALGORITHM_VERSION,
+  type CatalogABModelParameters,
+} from './catalog-ab-interpolation.js';
+import { calculateModelPrice } from './pricing-model-dispatch.js';
 
 @Injectable()
 export class CalibrationService {
@@ -35,7 +35,7 @@ export class CalibrationService {
       where: { isActive: true },
       include: {
         artistStyles: { where: { accountId }, select: { isEnabled: true } },
-        cases: { where: { isActive: true }, select: { id: true } },
+        cases: { where: { isActive: true }, select: { id: true, phase: true } },
         modelVersions: {
           where: { accountId, status: PricingModelStatus.ACTIVE },
           select: { id: true, version: true },
@@ -48,7 +48,8 @@ export class CalibrationService {
       code: style.code,
       name: style.name,
       enabled: style.artistStyles[0]?.isEnabled ?? false,
-      caseCount: style.cases.length,
+      caseCount: style.cases.filter((item) => !item.phase).length,
+      catalogCaseCount: style.cases.filter((item) => !!item.phase).length,
       activeVersion: style.modelVersions[0]?.version ?? null,
     }));
   }
@@ -65,16 +66,52 @@ export class CalibrationService {
     return { styleId, enabled };
   }
 
-  async startDraft(accountId: string, styleId: string) {
+  async listCases(accountId: string, styleId: string, catalog: CalibrationCatalog = 'AREA_COLOR') {
+    const style = await this.requireEnabledStyle(this.prisma, accountId, styleId);
+    const cases = await this.prisma.calibrationCase.findMany({
+      where: { styleId, isActive: true, phase: catalog === 'PHASED' ? { not: null } : null },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+    });
+    return cases.map((item) => freezeCase(item, style.code));
+  }
+
+  async startDraft(accountId: string, styleId: string, catalog: CalibrationCatalog = 'AREA_COLOR') {
     const id = await this.prisma.$transaction(async (tx) => {
       await this.lockAccount(tx, accountId);
-      await this.requireEnabledStyle(tx, accountId, styleId);
+      const style = await this.requireEnabledStyle(tx, accountId, styleId);
       const existing = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
+        include: { answers: { select: { caseId: true, pricePen: true } } },
       });
-      if (existing) return existing.id;
+      if (existing) {
+        const frozen = snapshot(existing.caseSnapshot);
+        if (snapshotCatalog(frozen) !== catalog)
+          throw new ConflictException('Ya existe un borrador de otro catálogo para este estilo.');
+        if (catalog === 'PHASED' && existing.algorithmVersion === 'CATALOG_AB_PENDING') {
+          const prices = new Map(
+            existing.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
+          );
+          if (prices.size === frozen.length) {
+            let parameters: CatalogABModelParameters | null = null;
+            try {
+              parameters = this.buildPhased(frozen as PhasedCaseSnapshot[], prices, styleId);
+            } catch {
+              /* Preserve completed answers when the catalog requires review. */
+            }
+            if (parameters)
+              await tx.pricingModelVersion.update({
+                where: { id: existing.id },
+                data: {
+                  algorithmVersion: CATALOG_AB_ALGORITHM_VERSION,
+                  modelParameters: parameters as unknown as Prisma.InputJsonValue,
+                },
+              });
+          }
+        }
+        return existing.id;
+      }
       const cases = await tx.calibrationCase.findMany({
-        where: { styleId, isActive: true },
+        where: { styleId, isActive: true, phase: catalog === 'PHASED' ? { not: null } : null },
         orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
       });
       if (!cases.length)
@@ -92,14 +129,10 @@ export class CalibrationService {
           styleId,
           version: (latest?.version ?? 0) + 1,
           sourceVersionId: active?.id,
-          caseSnapshot: cases.map((item) => ({
-            id: item.id,
-            imageUrl: item.imageUrl,
-            type: item.type,
-            areaCm2: Number(item.areaCm2),
-            colorCoverage: Number(item.colorCoverage),
-            displayOrder: item.displayOrder,
-          })),
+          ...(catalog === 'PHASED' ? { algorithmVersion: 'CATALOG_AB_PENDING' } : {}),
+          caseSnapshot: cases.map((item) =>
+            freezeCase(item, style.code),
+          ) as unknown as Prisma.InputJsonValue,
         },
       });
       return draft.id;
@@ -120,6 +153,14 @@ export class CalibrationService {
       draft.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
     );
     const cases = snapshot(draft.caseSnapshot);
+    let phasedParameters: CatalogABModelParameters | null = null;
+    if (snapshotCatalog(cases) === 'PHASED' && answers.size === cases.length) {
+      try {
+        phasedParameters = this.buildPhased(cases as PhasedCaseSnapshot[], answers, styleId);
+      } catch {
+        /* The draft remains editable when the catalog cannot build a model. */
+      }
+    }
     return {
       id: draft.id,
       styleId,
@@ -127,9 +168,14 @@ export class CalibrationService {
       version: draft.version,
       answeredCount: answers.size,
       totalCount: cases.length,
+      catalogFormat: snapshotCatalog(cases),
+      canActivate: snapshotCatalog(cases) === 'AREA_COLOR' || phasedParameters !== null,
+      calibrationError:
+        snapshotCatalog(cases) === 'PHASED' && answers.size === cases.length && !phasedParameters
+          ? 'La calibración requiere revisión antes de activar el modelo. Contacta al administrador.'
+          : null,
       cases: cases.map((item, index) => ({
-        id: item.id,
-        imageUrl: item.imageUrl,
+        ...item,
         position: index + 1,
         pricePen: answers.get(item.id) ?? null,
       })),
@@ -144,15 +190,40 @@ export class CalibrationService {
       await this.requireEnabledStyle(tx, accountId, styleId);
       const draft = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
+        include: { answers: { select: { caseId: true, pricePen: true } } },
       });
       if (!draft) throw new NotFoundException('Inicia la calibración de este estilo.');
       if (!snapshot(draft.caseSnapshot).some((item) => item.id === caseId))
         throw new NotFoundException('Caso no pertenece a esta calibración.');
-      await tx.calibrationAnswer.upsert({
+      const saved = await tx.calibrationAnswer.upsert({
         where: { modelVersionId_caseId: { modelVersionId: draft.id, caseId } },
         create: { modelVersionId: draft.id, caseId, pricePen: price },
         update: { pricePen: price },
       });
+      const frozen = snapshot(draft.caseSnapshot);
+      if (snapshotCatalog(frozen) === 'PHASED') {
+        const prices = new Map(
+          draft.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
+        );
+        prices.set(caseId, saved.pricePen.toFixed(2));
+        let parameters: CatalogABModelParameters | null = null;
+        if (prices.size === frozen.length) {
+          try {
+            parameters = this.buildPhased(frozen as PhasedCaseSnapshot[], prices, styleId);
+          } catch {
+            /* Keep all artist answers for correction or catalog review. */
+          }
+        }
+        await tx.pricingModelVersion.update({
+          where: { id: draft.id },
+          data: {
+            algorithmVersion: parameters ? CATALOG_AB_ALGORITHM_VERSION : 'CATALOG_AB_PENDING',
+            modelParameters: parameters
+              ? (parameters as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+          },
+        });
+      }
     });
     return this.getDraft(accountId, styleId);
   }
@@ -166,27 +237,30 @@ export class CalibrationService {
         include: { answers: true },
       });
       if (!draft) throw new NotFoundException('No hay calibración pendiente.');
-      const cases = snapshot(draft.caseSnapshot);
+      const frozen = snapshot(draft.caseSnapshot);
       const prices = new Map(
         draft.answers.map((answer) => [answer.caseId, answer.pricePen.toFixed(2)]),
       );
       if (
-        !cases.length ||
-        prices.size !== cases.length ||
-        cases.some((item) => !prices.has(item.id))
+        !frozen.length ||
+        prices.size !== frozen.length ||
+        frozen.some((item) => !prices.has(item.id))
       )
         throw new ConflictException('Responde todos los casos antes de activar el modelo.');
-      let parameters: ModelParameters;
+      let parameters: ModelParameters | CatalogABModelParameters;
       try {
-        parameters = buildModel(
-          cases.map((item): ModelPoint => ({
-            caseId: item.id,
-            type: item.type,
-            areaCm2: item.areaCm2,
-            colorCoverage: item.colorCoverage,
-            pricePen: prices.get(item.id)!,
-          })),
-        );
+        parameters =
+          snapshotCatalog(frozen) === 'PHASED'
+            ? this.buildPhased(frozen as PhasedCaseSnapshot[], prices, styleId)
+            : buildModel(
+                (frozen as AreaColorSnapshot[]).map((item): ModelPoint => ({
+                  caseId: item.id,
+                  type: item.type,
+                  areaCm2: item.areaCm2,
+                  colorCoverage: item.colorCoverage,
+                  pricePen: prices.get(item.id)!,
+                })),
+              );
       } catch (error) {
         throw new ConflictException(
           error instanceof Error ? error.message : 'Calibración no aplicable.',
@@ -212,7 +286,7 @@ export class CalibrationService {
           status: PricingModelStatus.ACTIVE,
           activatedAt: new Date(),
           modelParameters: parameters as unknown as Prisma.InputJsonValue,
-          algorithmVersion: ALGORITHM_VERSION,
+          algorithmVersion: parameters.algorithmVersion,
           adjustmentPercent: account.adjustmentPercent,
           sourceVersionId: active?.id ?? null,
         },
@@ -290,7 +364,13 @@ export class CalibrationService {
     });
   }
 
-  async calculatePrice(accountId: string, styleId: string, areaCm2: number, colorCoverage: number) {
+  async calculatePrice(
+    accountId: string,
+    styleId: string,
+    measurements:
+      number | { targetSizeCm: number; colorCoverage: number; estimatedDensity: number },
+    colorCoverage?: number,
+  ) {
     const model = await this.prisma.pricingModelVersion.findFirst({
       where: {
         accountId,
@@ -301,19 +381,33 @@ export class CalibrationService {
     });
     if (!model || !model.modelParameters)
       return { applicable: false as const, reason: 'NO_ACTIVE_MODEL' as const };
-    if (model.algorithmVersion !== ALGORITHM_VERSION)
+    if (
+      model.algorithmVersion !== ALGORITHM_VERSION &&
+      model.algorithmVersion !== CATALOG_AB_ALGORITHM_VERSION
+    )
       return {
         applicable: false as const,
         reason: 'MODEL_NOT_APPLICABLE' as const,
         modelVersionId: model.id,
       };
-    const result = interpolatePrice(
-      model.modelParameters as unknown as ModelParameters,
-      areaCm2,
-      colorCoverage,
+    const result = calculateModelPrice(
+      model.algorithmVersion,
+      model.modelParameters,
+      typeof measurements === 'number'
+        ? { styleId, areaCm2: measurements, colorCoverage: colorCoverage ?? NaN }
+        : { styleId, ...measurements },
       model.adjustmentPercent.toString(),
     );
     return { ...result, modelVersionId: model.id };
+  }
+
+  private buildPhased(cases: PhasedCaseSnapshot[], prices: Map<string, string>, styleId: string) {
+    const parameters = buildCatalogABModel(
+      cases.map((item) => ({ ...item, pricePen: prices.get(item.id)! })),
+    );
+    if (parameters.styleId !== styleId)
+      throw new Error('Las referencias no pertenecen a este estilo.');
+    return parameters;
   }
 
   private async lockAccount(tx: Prisma.TransactionClient, accountId: string) {
@@ -334,6 +428,7 @@ export class CalibrationService {
     });
     if (!selection?.isEnabled || !selection.style.isActive)
       throw new NotFoundException('Este estilo no está habilitado para tu cuenta.');
+    return selection.style;
   }
 
   private versionView(model: PricingModelVersion) {

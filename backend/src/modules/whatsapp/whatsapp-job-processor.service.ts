@@ -51,7 +51,6 @@ export class WhatsAppJobProcessor {
             id: job.conversationId,
             accountId: job.accountId,
             customerId: job.customerId,
-            flowVersion: 'V2',
           },
         });
         if (!conversation || (owned.inputProcessedAt && conversation.status === 'ABANDONED'))

@@ -1,7 +1,16 @@
 import { persistedVision, visionResult } from '../../../../test/fixtures/vision-v2.js';
-import { toImageAnalysisResult, toImageAnalysisV2Observation } from './persisted-image-analysis.js';
+import { toImageAnalysisV2Observation } from './persisted-image-analysis.js';
 
 describe('versioned persisted observations', () => {
+  it.each(['VISION_V2_2', 'VISION_V2_3', 'VISION_V2_4'])(
+    'reads historical %s with null density without changing the record',
+    (schemaVersion) => {
+      const stored = { ...persistedVision(), schemaVersion, estimatedDensity: null };
+      const before = { ...stored };
+      expect(toImageAnalysisV2Observation(stored)).toMatchObject({ estimatedDensity: null });
+      expect(stored).toEqual(before);
+    },
+  );
   it('does not backfill reference validity in historical V2 analyses', () => {
     const stored = {
       ...persistedVision(),
@@ -26,29 +35,17 @@ describe('versioned persisted observations', () => {
     });
     expect(stored.schemaVersion).toBe('VISION_V2_2');
   });
-  it('keeps a historical V1 observation readable without fabricating V2 values', () => {
-    const stored = persistedVision('V1');
-    expect(toImageAnalysisResult(stored)).toMatchObject({
-      detectedSize: 'MEDIUM',
-      sizeConfidence: 0.951,
-      detectedDetail: 'LIGHT',
-      detailConfidence: 0.963,
-    });
-    expect(toImageAnalysisV2Observation(stored)).toBeNull();
-    expect(stored.promptVersion).toBeNull();
-    expect(stored.rawResponse).toEqual({ tattooOnSkin: true, ambiguityLevel: 'NONE' });
-  });
 
-  it('reads every V2 observation and never interprets it as V1 size or detail', () => {
+  it('reads every current Vision observation', () => {
     const stored = persistedVision();
     expect(toImageAnalysisV2Observation(stored)).toEqual(visionResult().observations);
-    expect(toImageAnalysisResult(stored)).toBeNull();
     expect(stored.rawResponse).toEqual({
       outputText: JSON.stringify({
         valid_tattoo_reference: true,
         reference_validation_confidence: 0.99,
         composition_aspect_ratio: 0.5,
         composition_fill_ratio: 0.75,
+        estimated_density: 34.5,
         style: 'FINE_LINE',
         style_confidence: 0.94,
         scale_reference_type: 'EXPLICIT_REFERENCE',

@@ -3,17 +3,9 @@ import type {
   BookingIntent,
   ConversationState,
   ColorDeclaration,
-  DetailLevel,
-  LeadStatus,
-  ReviewReason,
-  TattooSize,
   Prisma,
 } from '../../../generated/prisma/client.js';
-import type {
-  ImageAnalysisResult,
-  TattooImageInput,
-} from '../../image-analysis/domain/image-analysis.types.js';
-import type { QuotationPricingSnapshot } from '../../image-analysis/image-analysis-workflow.service.js';
+import type { TattooImageInput } from '../../image-analysis/domain/image-analysis.types.js';
 
 export interface ChatbotMessage {
   type: 'text';
@@ -29,14 +21,6 @@ export interface ChatbotResponse {
   messages: ChatbotMessage[];
   options: ChatbotOption[];
   state: ConversationState;
-  development?: {
-    imageAnalysis: ImageAnalysisResult | null;
-    quotation: {
-      status: LeadStatus;
-      reviewReasons: ReviewReason[];
-      pricingRule: QuotationPricingSnapshot | null;
-    };
-  };
 }
 
 export interface DurableV2Input {
@@ -50,8 +34,6 @@ export interface DurableV2Input {
 export type ChatbotImageInput = TattooImageInput;
 
 export type ChatbotOptionSelection =
-  | { stage: 'size'; value: TattooSize }
-  | { stage: 'detail'; value: DetailLevel }
   | { stage: 'firstTattoo'; value: boolean }
   | { stage: 'sameSize'; value: boolean }
   | { stage: 'color'; value: ColorDeclaration }
@@ -62,21 +44,13 @@ export type ChatbotInput =
   | { type: 'text'; value: string }
   | { type: 'image'; image: ChatbotImageInput };
 
-export type ConversationContext = Pick<
-  Conversation,
-  'currentState' | 'selectedSize' | 'selectedDetail' | 'bodyPart'
-> &
+export type ConversationContext = Pick<Conversation, 'currentState' | 'bodyPart'> &
   Partial<
-    Pick<
-      Conversation,
-      'flowVersion' | 'firstTattoo' | 'sameSizeAsReference' | 'targetSizeCm' | 'colorDeclaration'
-    >
+    Pick<Conversation, 'firstTattoo' | 'sameSizeAsReference' | 'targetSizeCm' | 'colorDeclaration'>
   >;
 
 export interface ChatbotConversationUpdate {
   currentState?: ConversationState;
-  selectedSize?: TattooSize;
-  selectedDetail?: DetailLevel;
   bodyPart?: string;
   firstTattoo?: boolean;
   sameSizeAsReference?: boolean;

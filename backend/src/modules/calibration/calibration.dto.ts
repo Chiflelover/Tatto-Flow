@@ -13,6 +13,13 @@ import {
   Min,
 } from 'class-validator';
 import { CalibrationCaseType } from '../../generated/prisma/client.js';
+import type { CalibrationCatalog } from './calibration-snapshot.js';
+
+export class CalibrationCatalogDto {
+  @IsOptional()
+  @IsIn(['AREA_COLOR', 'PHASED'])
+  catalog: CalibrationCatalog = 'AREA_COLOR';
+}
 
 export class CreateStyleDto {
   @IsString()

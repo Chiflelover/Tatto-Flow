@@ -5,28 +5,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import {
-  AnalysisVersion,
-  ConversationStatus,
-  LeadStatus,
-  Prisma,
-  ReadinessStatus,
-  type PricingRule,
-  type ReviewReason,
-} from '../../generated/prisma/client.js';
+import { ConversationStatus, LeadStatus, Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { PricingService, type PricingRulePriceUpdate } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
-import { toImageAnalysisResult } from '../image-analysis/domain/persisted-image-analysis.js';
-import {
-  buildWhatsappUrl,
-  detailLabel,
-  formatMoney,
-  reviewReasonMessage,
-  sizeLabel,
-  sizeRangeLabel,
-  statusLabel,
-} from './domain/dashboard-labels.js';
+import { buildWhatsappUrl, statusLabel } from './domain/dashboard-labels.js';
 import type {
   LeadFilter,
   LeadListQueryDto,
@@ -36,7 +18,7 @@ import type {
 import { v2PreparationFromJson } from '../chatbot/domain/nita-v2-decision.js';
 
 const SUMMARY_INCLUDE = {
-  conversation: { select: { flowVersion: true } },
+  conversation: { select: { status: true } },
   quote: {
     select: {
       id: true,
@@ -51,23 +33,18 @@ const SUMMARY_INCLUDE = {
     },
   },
   customer: { select: { phoneNumber: true } },
-  evaluation: true,
   aiAnalysis: {
     select: {
-      analysisVersion: true,
-      sizeConfidence: true,
-      detailConfidence: true,
       style: true,
     },
   },
 } satisfies Prisma.LeadInclude;
 
 const DETAIL_INCLUDE = {
-  conversation: { select: { flowVersion: true } },
+  conversation: SUMMARY_INCLUDE.conversation,
   quote: SUMMARY_INCLUDE.quote,
   customer: { select: { phoneNumber: true } },
   aiAnalysis: true,
-  evaluation: true,
 } satisfies Prisma.LeadInclude;
 
 type SummaryLead = Prisma.LeadGetPayload<{ include: typeof SUMMARY_INCLUDE }>;
@@ -75,16 +52,13 @@ type DetailLead = Prisma.LeadGetPayload<{ include: typeof DETAIL_INCLUDE }>;
 interface LeadDeletionCandidate {
   status: LeadStatus;
   manualFinalPrice: Prisma.Decimal | null;
-  calculatedMinPrice: Prisma.Decimal | null;
-  calculatedMaxPrice: Prisma.Decimal | null;
-  evaluation: { readinessStatus: ReadinessStatus } | null;
   quote?: { id: string } | null;
+  conversation?: { status: ConversationStatus } | null;
 }
 
 const RETAINED_IMAGE_MESSAGE = 'Imagen no disponible.';
 const SIGNED_URL_TTL_SECONDS = 5 * 60;
 const COMPLETABLE_LEAD_STATUSES = [
-  LeadStatus.VERIFIED,
   LeadStatus.REQUIRES_REVIEW,
   LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
   LeadStatus.AUTO_QUOTED,
@@ -97,8 +71,6 @@ export class DashboardService {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
-    @Inject(PricingService)
-    private readonly pricingService: PricingService,
     @Inject(StorageService)
     private readonly storage: StorageService,
   ) {}
@@ -112,7 +84,7 @@ export class DashboardService {
           status: {
             in: [
               LeadStatus.ANALYZING,
-              LeadStatus.VERIFIED,
+
               LeadStatus.REQUIRES_REVIEW,
               LeadStatus.AUTO_QUOTED,
               LeadStatus.SPECIAL_REVIEW,
@@ -126,7 +98,7 @@ export class DashboardService {
           accountId,
           archivedAt: null,
           status: {
-            in: [LeadStatus.VERIFIED, LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
+            in: [LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
           },
         },
       }),
@@ -238,14 +210,14 @@ export class DashboardService {
   async completeLead(accountId: string, leadId: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: leadId, accountId },
-      select: { status: true, conversation: { select: { id: true, flowVersion: true } } },
+      select: { status: true, conversation: { select: { id: true } } },
     });
 
     if (!lead) {
       throw new NotFoundException('No encontramos ese pedido.');
     }
 
-    if (lead.conversation?.flowVersion === 'V2') {
+    if (lead.conversation) {
       const conversationId = lead.conversation.id;
       await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
@@ -260,7 +232,7 @@ export class DashboardService {
         if (!updated.count)
           throw new ConflictException('Este pedido todavía no puede marcarse como finalizado.');
         await tx.conversation.updateMany({
-          where: { id: conversationId, accountId, flowVersion: 'V2', status: 'ACTIVE' },
+          where: { id: conversationId, accountId, status: 'ACTIVE' },
           data: { currentState: 'HANDOFF_TO_TATTOO_ARTIST', status: 'COMPLETED' },
         });
       });
@@ -290,22 +262,14 @@ export class DashboardService {
   async saveManualFinalPrice(accountId: string, leadId: string, price: number) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: leadId, accountId },
-      select: {
-        calculatedMinPrice: true,
-        calculatedMaxPrice: true,
-        evaluation: { select: { readinessStatus: true } },
-      },
+      select: { status: true, quote: { select: { id: true } } },
     });
 
     if (!lead) {
       throw new NotFoundException('No encontramos ese pedido.');
     }
 
-    if (
-      lead.evaluation?.readinessStatus !== ReadinessStatus.REVISAR ||
-      lead.calculatedMinPrice !== null ||
-      lead.calculatedMaxPrice !== null
-    ) {
+    if (!['REQUIRES_REVIEW', 'SPECIAL_REVIEW'].includes(lead.status) || lead.quote !== null) {
       throw new ConflictException(
         'El precio final manual solo puede guardarse en pedidos que requieren revisión y no tienen precio automático.',
       );
@@ -348,11 +312,9 @@ export class DashboardService {
         conversationId: true,
         status: true,
         manualFinalPrice: true,
-        calculatedMinPrice: true,
-        calculatedMaxPrice: true,
-        evaluation: { select: { readinessStatus: true } },
         images: { select: { storagePath: true } },
         quote: { select: { id: true } },
+        conversation: { select: { status: true } },
       },
     });
 
@@ -400,31 +362,9 @@ export class DashboardService {
     return { deleted: true, leadId: lead.id };
   }
 
-  async getPricingRules(accountId: string) {
-    const rules = await this.pricingService.listActiveRules(accountId);
-
-    return {
-      rules: rules.map((rule) => this.toPricingRule(rule)),
-    };
-  }
-
-  async updatePricingRules(
-    accountId: string,
-    updates: PricingRulePriceUpdate[],
-    changedByUserId: string,
-  ) {
-    const result = await this.pricingService.updateActiveRules(accountId, updates, changedByUserId);
-
-    return {
-      rules: result.rules.map((rule) => this.toPricingRule(rule)),
-      updatedCount: result.updatedCount,
-      message: 'Precios actualizados correctamente.',
-    };
-  }
-
   private filterWhere(accountId: string, query: LeadListQueryDto): Prisma.LeadWhereInput {
     const statusByFilter: Partial<Record<LeadFilter, LeadStatus[]>> = {
-      verified: [LeadStatus.VERIFIED, LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
+      verified: [LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE],
       'requires-review': [LeadStatus.REQUIRES_REVIEW, LeadStatus.SPECIAL_REVIEW],
       completed: [LeadStatus.COMPLETED],
     };
@@ -434,30 +374,7 @@ export class DashboardService {
       accountId,
       archivedAt: query.archived ? { not: null } : null,
       ...(operationalStatus ? { status: { in: operationalStatus } } : {}),
-      ...(query.status
-        ? {
-            OR: [
-              { evaluation: { is: { readinessStatus: query.status } } },
-              {
-                conversation: { flowVersion: 'V2' },
-                status: {
-                  in:
-                    query.status === 'LISTO'
-                      ? [
-                          LeadStatus.AUTO_QUOTED,
-                          LeadStatus.READY_TO_COORDINATE,
-                          LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
-                        ]
-                      : query.status === 'REVISAR'
-                        ? [LeadStatus.REQUIRES_REVIEW, LeadStatus.SPECIAL_REVIEW]
-                        : [LeadStatus.ANALYZING],
-                },
-              },
-            ],
-          }
-        : {}),
-      ...(query.size ? { selectedSize: query.size } : {}),
-      ...(query.detail ? { selectedDetail: query.detail } : {}),
+      ...(query.status ? { AND: [{ status: query.status }] } : {}),
       ...(query.search ? { customer: { is: { phoneNumber: { contains: query.search } } } } : {}),
     };
   }
@@ -466,20 +383,12 @@ export class DashboardService {
     sortBy: LeadSortField | undefined,
     sortOrder: SortOrder,
   ): Prisma.LeadOrderByWithRelationInput[] {
-    if (!sortBy) {
-      return [
-        { evaluation: { readinessStatus: 'asc' } },
-        { evaluation: { readinessScore: 'desc' } },
-      ];
-    }
-
+    if (!sortBy) return [{ createdAt: 'desc' }];
     const orderByField: Record<LeadSortField, Prisma.LeadOrderByWithRelationInput> = {
-      readinessScore: { evaluation: { readinessScore: sortOrder } },
-      price: { calculatedMinPrice: sortOrder },
+      price: { quote: { amount: sortOrder } },
       createdAt: { createdAt: sortOrder },
-      size: { selectedSize: sortOrder },
-      detail: { selectedDetail: sortOrder },
-      status: { evaluation: { readinessStatus: sortOrder } },
+      targetSizeCm: { targetSizeCm: sortOrder },
+      status: { status: sortOrder },
     };
 
     return [orderByField[sortBy], { createdAt: 'desc' }];
@@ -487,24 +396,16 @@ export class DashboardService {
 
   private toSummary(lead: SummaryLead) {
     const preparation = v2PreparationFromJson(lead.v2Preparation);
-    const v2 =
-      lead.conversation?.flowVersion === 'V2' ||
-      !!preparation ||
-      lead.aiAnalysis?.analysisVersion === 'V2';
     return {
       id: lead.id,
       customerPhoneNumber: lead.customer.phoneNumber,
-      selectedSize: lead.selectedSize,
-      selectedSizeLabel: lead.selectedSize ? sizeLabel(lead.selectedSize) : null,
-      selectedDetail: lead.selectedDetail,
-      selectedDetailLabel: lead.selectedDetail ? detailLabel(lead.selectedDetail) : null,
+      targetSizeCm: lead.targetSizeCm,
       bodyPart: lead.bodyPart,
       status: lead.status,
       statusLabel: statusLabel(lead.status),
       createdAt: lead.createdAt.toISOString(),
       archivedAt: lead.archivedAt?.toISOString() ?? null,
       manualFinalPrice: this.manualFinalPrice(lead.manualFinalPrice),
-      price: this.priceRange(lead.calculatedMinPrice, lead.calculatedMaxPrice),
       quote: lead.quote
         ? {
             id: lead.quote.id,
@@ -515,79 +416,33 @@ export class DashboardService {
             createdAt: lead.quote.createdAt.toISOString(),
           }
         : null,
-      v2: v2
-        ? {
-            style: lead.quote?.detectedStyle ?? lead.aiAnalysis?.style ?? null,
-            targetAreaCm2:
-              lead.quote?.targetAreaCm2.toString() ?? preparation?.targetAreaCm2 ?? null,
-            targetColorCoverage:
-              lead.quote?.targetColorCoverage.toNumber() ??
-              preparation?.targetColorCoverage ??
-              null,
-            bookingIntent: lead.bookingIntent ?? null,
-            decision: preparation?.decision ?? null,
-            reviewReasons: preparation?.reviewReasons ?? [],
-            specialReviewTypes: preparation?.specialReviewTypes ?? [],
-          }
-        : null,
+      v2: {
+        style: lead.quote?.detectedStyle ?? lead.aiAnalysis?.style ?? null,
+        targetAreaCm2: lead.quote?.targetAreaCm2?.toString() ?? preparation?.targetAreaCm2 ?? null,
+        targetColorCoverage:
+          lead.quote?.targetColorCoverage.toNumber() ?? preparation?.targetColorCoverage ?? null,
+        bookingIntent: lead.bookingIntent ?? null,
+        decision: preparation?.decision ?? null,
+        reviewReasons: preparation?.reviewReasons ?? [],
+        specialReviewTypes: preparation?.specialReviewTypes ?? [],
+      },
       deletable: this.isLeadDeletable(lead),
-      readiness: lead.evaluation
-        ? {
-            status: lead.evaluation.readinessStatus,
-            score: Math.round(lead.evaluation.readinessScore.toNumber()),
-            rawScore: lead.evaluation.rawScore,
-            rulesVersion: lead.evaluation.rulesVersion,
-          }
-        : null,
-      confidence:
-        lead.aiAnalysis?.analysisVersion === AnalysisVersion.V1 &&
-        lead.aiAnalysis.sizeConfidence &&
-        lead.aiAnalysis.detailConfidence
-          ? {
-              size: lead.aiAnalysis.sizeConfidence.toNumber(),
-              detail: lead.aiAnalysis.detailConfidence.toNumber(),
-            }
-          : null,
     };
   }
 
   private toDetail(lead: DetailLead) {
-    const analysis = lead.aiAnalysis ? toImageAnalysisResult(lead.aiAnalysis) : null;
     return {
       ...this.toSummary(lead),
-      visionV2:
-        lead.aiAnalysis?.analysisVersion === 'V2'
-          ? {
-              style: lead.aiAnalysis.style,
-              overallConfidence: lead.aiAnalysis.overallConfidence,
-              referenceMainDimensionCm: lead.aiAnalysis.referenceMainDimensionCm,
-              referenceAreaCm2: lead.aiAnalysis.referenceAreaCm2,
-              scaleReferenceType: lead.aiAnalysis.scaleReferenceType,
-              scaleConfidence: lead.aiAnalysis.scaleConfidence,
-              colorCoverage: lead.aiAnalysis.colorCoverage,
-            }
-          : null,
-      analysis: analysis
+      visionV2: lead.aiAnalysis
         ? {
-            detectedSize: analysis.detectedSize,
-            detectedSizeLabel: sizeLabel(analysis.detectedSize),
-            sizeConfidence: analysis.sizeConfidence,
-            detectedDetail: analysis.detectedDetail,
-            detectedDetailLabel: detailLabel(analysis.detectedDetail),
-            detailConfidence: analysis.detailConfidence,
-          }
-        : null,
-      reviewMessages: lead.reviewReasons.map((reason: ReviewReason) => reviewReasonMessage(reason)),
-      evaluation: lead.evaluation
-        ? {
-            rawScore: lead.evaluation.rawScore,
-            maxPositiveScore: lead.evaluation.maxPositiveScore,
-            readinessScore: Math.round(lead.evaluation.readinessScore.toNumber()),
-            status: lead.evaluation.readinessStatus,
-            rulesVersion: lead.evaluation.rulesVersion,
-            contributions: lead.evaluation.contributions,
-            blockers: lead.evaluation.blockers,
-            evaluatedAt: lead.evaluation.evaluatedAt.toISOString(),
+            style: lead.aiAnalysis.style,
+            estimatedDensity: lead.aiAnalysis.estimatedDensity,
+            overallConfidence: lead.aiAnalysis.overallConfidence,
+            referenceMainDimensionCm: lead.aiAnalysis.referenceMainDimensionCm,
+            referenceAreaCm2: lead.aiAnalysis.referenceAreaCm2,
+            scaleReferenceType: lead.aiAnalysis.scaleReferenceType,
+            scaleConfidence: lead.aiAnalysis.scaleConfidence,
+            colorCoverage: lead.aiAnalysis.colorCoverage,
           }
         : null,
       whatsappUrl: buildWhatsappUrl(lead.customer.phoneNumber),
@@ -611,11 +466,9 @@ export class DashboardService {
     }
 
     return (
-      lead.evaluation?.readinessStatus === ReadinessStatus.INCOMPLETO &&
-      lead.status !== LeadStatus.HANDOFF_TO_TATTOO_ARTIST &&
+      lead.status === LeadStatus.ANALYZING &&
       lead.manualFinalPrice === null &&
-      lead.calculatedMinPrice === null &&
-      lead.calculatedMaxPrice === null
+      lead.conversation?.status === ConversationStatus.ABANDONED
     );
   }
 
@@ -630,26 +483,7 @@ export class DashboardService {
     }
   }
 
-  private priceRange(minimum: Prisma.Decimal | null, maximum: Prisma.Decimal | null) {
-    return minimum && maximum
-      ? { minimum: formatMoney(minimum), maximum: formatMoney(maximum) }
-      : null;
-  }
-
   private manualFinalPrice(price: Prisma.Decimal | null): string | null {
     return price?.toFixed(2) ?? null;
-  }
-
-  private toPricingRule(rule: PricingRule) {
-    return {
-      id: rule.id,
-      size: rule.size,
-      sizeLabel: sizeLabel(rule.size),
-      sizeRange: sizeRangeLabel(rule.size),
-      detail: rule.detail,
-      detailLabel: detailLabel(rule.detail),
-      minPrice: formatMoney(rule.minPrice),
-      maxPrice: formatMoney(rule.maxPrice),
-    };
   }
 }

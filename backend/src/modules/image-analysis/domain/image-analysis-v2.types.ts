@@ -10,6 +10,7 @@ export interface ImageAnalysisV2Observation {
   referenceValidationConfidence: number;
   compositionAspectRatio: number | null;
   compositionFillRatio: number | null;
+  estimatedDensity: number | null;
   style: string | null;
   styleConfidence: number;
   scaleReferenceType: ScaleReferenceType;

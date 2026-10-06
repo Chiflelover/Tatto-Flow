@@ -1,4 +1,4 @@
-import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { TattooImageInput } from './domain/image-analysis.types.js';
 import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 
 export interface ImageAnalysisContext {
@@ -7,11 +7,6 @@ export interface ImageAnalysisContext {
 
 export abstract class ImageAnalysisService {
   abstract readonly providerName: string;
-
-  abstract analyzeTattooImage(
-    image: TattooImageInput,
-    context?: ImageAnalysisContext,
-  ): Promise<ImageAnalysisResult>;
 
   abstract analyzeTattooImageV2(
     image: TattooImageInput,

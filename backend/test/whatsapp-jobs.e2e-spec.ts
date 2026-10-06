@@ -1,5 +1,6 @@
+import { isolatedDatabase } from './helpers/isolated-database.js';
 import type { INestApplication } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { Server } from 'node:http';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -20,7 +21,6 @@ import { ImageManagementService } from '../src/modules/image-management/image-ma
 import { V2_INVALID_REFERENCE_MESSAGE } from '../src/modules/chatbot/domain/nita-v2-messages.js';
 import { prepareV2Case } from '../src/modules/chatbot/domain/nita-v2-decision.js';
 import { ImageAnalysisService } from '../src/modules/image-analysis/image-analysis.service.js';
-import { ImageAmbiguityLevel } from '../src/modules/image-analysis/domain/image-analysis.types.js';
 import { StorageService } from '../src/modules/storage/storage.service.js';
 import {
   WhatsAppCloudApiClient,
@@ -36,11 +36,12 @@ import { WhatsAppAdapter } from '../src/modules/chatbot/whatsapp/whatsapp.adapte
 import type { WhatsAppOutboundMessage } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
 
 describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
-  'Durable WhatsApp V2 jobs with development DB (e2e)',
+  'Durable WhatsApp V2 jobs with isolated DB (e2e)',
   { timeout: 60_000 },
   () => {
     let app: INestApplication<Server>;
     let prisma: PrismaService;
+    let database: Awaited<ReturnType<typeof isolatedDatabase>>;
     let storage: StorageService;
     const accounts = [randomUUID(), randomUUID()];
     const modelIds = [randomUUID(), randomUUID()];
@@ -60,23 +61,13 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       downloadImage: vi.fn().mockResolvedValue(VISION_IMAGE),
     };
     const analyzeV2 = vi.fn();
-    const analyzeV1 = vi.fn().mockResolvedValue({
-      detectedSize: 'MEDIUM',
-      sizeConfidence: 0.98,
-      detectedDetail: 'LIGHT',
-      detailConfidence: 0.98,
-      tattooOnSkin: true,
-      tattooOnSkinConfidence: 0.98,
-      referenceAnalyzable: true,
-      analyzabilityConfidence: 0.98,
-      ambiguityLevel: ImageAmbiguityLevel.NONE,
-    });
     function result() {
       const value = visionResult();
       Object.assign(value.observations, {
         style: styleCode,
         referenceAreaCm2: 50,
         referenceMainDimensionCm: 10,
+        compositionFillRatio: 1,
         colorCoverage: 0.5,
         referenceEssentiallyBlack: false,
       });
@@ -109,6 +100,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
     }
     beforeAll(async () => {
       const local = parse(readFileSync('.env', 'utf8'));
+      database = await isolatedDatabase();
       const module = await Test.createTestingModule({
         imports: [
           ConfigModule.forRoot({
@@ -121,7 +113,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
                   DATABASE_URL: local.DATABASE_URL,
                   AI_MODE: 'mock',
                   STORAGE_MODE: 'memory',
-                  NITA_DEFAULT_FLOW_VERSION: 'V1',
+
                   CRON_SECRET: appSecret.repeat(3),
                   WHATSAPP_BUSINESS_ACCOUNT_ID: 'test-business',
                   META_APP_SECRET: appSecret,
@@ -135,6 +127,8 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       })
         .overrideProvider(WhatsAppJobDispatcher)
         .useValue({ wake: vi.fn() })
+        .overrideProvider(PrismaService)
+        .useValue(database.prisma)
         .overrideProvider(WhatsAppCloudApiClient)
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)
@@ -143,7 +137,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .useValue({
           providerName: 'controlled-test',
           analyzeTattooImageV2: analyzeV2,
-          analyzeTattooImage: analyzeV1,
         })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
@@ -165,11 +158,10 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
             channel: { create: { phoneNumberId: channels[index], phoneNumber: channels[index] } },
           },
         });
-    }, 30_000);
+    }, 120_000);
     beforeEach(async () => {
-      app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', 'V1');
       analyzeV2.mockReset().mockResolvedValue(result());
-      analyzeV1.mockClear();
+
       cloud.sendMessage.mockReset().mockResolvedValue(undefined);
       cloud.downloadImage.mockClear();
       await prisma.pricingModelVersion.createMany({
@@ -192,6 +184,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       if (!prisma) return;
       // Only generated account IDs are touched; Quote/delivery rows cascade with these leads.
       await prisma.whatsAppJob.deleteMany({ where: { accountId: { in: accounts } } });
+      await prisma.whatsAppJob.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.lead.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.conversation.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.customer.deleteMany({ where: { accountId: { in: accounts } } });
@@ -201,12 +194,12 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       });
       await prisma.pricingModelVersion.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.calibrationCase.deleteMany({ where: { styleId } });
-      await prisma.pricingRule.deleteMany({ where: { accountId: { in: accounts } } });
+
       await prisma.tattooArtistAccount.updateMany({
         where: { id: { in: accounts } },
         data: { adjustmentPercent: 10, isActive: true },
       });
-    }, 30_000);
+    }, 120_000);
     afterAll(async () => {
       if (prisma) {
         await prisma.artistStyle.deleteMany({ where: { accountId: { in: accounts } } });
@@ -215,7 +208,8 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         await prisma.tattooStyle.deleteMany({ where: { id: styleId } });
       }
       if (app) await app.close();
-    }, 30_000);
+      if (database) await database.close();
+    }, 120_000);
 
     async function seed(
       options: {
@@ -223,10 +217,12 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         ready?: boolean;
         color?: ColorDeclaration;
         observation?: ReturnType<typeof visionResult>;
+        targetSizeCm?: number | null;
       } = {},
     ) {
       const index = options.index ?? 0,
         accountId = accounts[index];
+      const targetSizeCm = options.targetSizeCm === undefined ? 10 : options.targetSizeCm;
       const customer = await prisma.customer.upsert({
         where: { accountId_phoneNumber: { accountId, phoneNumber: phone } },
         update: {},
@@ -243,10 +239,10 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         data: {
           accountId,
           customerId: customer.id,
-          flowVersion: 'V2',
           currentState: options.ready ? 'READY_FOR_PRICING' : 'ASK_BODY_PART',
           firstTattoo: true,
           sameSizeAsReference: true,
+          targetSizeCm,
           colorDeclaration: options.color ?? 'MOSTLY_COLOR',
           bodyPart: options.ready ? 'Brazo' : null,
           lead: {
@@ -256,6 +252,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
               customerId: customer.id,
               firstTattoo: true,
               sameSizeAsReference: true,
+              targetSizeCm,
               colorDeclaration: options.color ?? 'MOSTLY_COLOR',
               bodyPart: options.ready ? 'Brazo' : null,
               images: { create: { storagePath: path } },
@@ -268,7 +265,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         const analysis = await prisma.aiAnalysis.create({
           data: {
             leadId,
-            analysisVersion: 'V2',
             ...observation.observations,
             provider: observation.provider,
             model: observation.model,
@@ -343,7 +339,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
     it.each(['AFTER_COMPLETION', 'ALREADY_QUEUED'])(
       'completes INVALID_REFERENCE without pricing or reviews, preserves the image and starts a clean V2 on the next message (%s)',
       async (timing) => {
-        app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', 'V2');
         const invalid = result();
         Object.assign(invalid.observations, {
           validTattooReference: false,
@@ -379,7 +374,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           aiAnalysis: {
             validTattooReference: false,
             referenceValidationConfidence: 0.99,
-            schemaVersion: 'VISION_V2_4',
+            schemaVersion: 'VISION_V2_5',
           },
         });
         expect(pricing).not.toHaveBeenCalled();
@@ -416,7 +411,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         });
         expect(fresh.id).not.toBe(f.id);
         expect(fresh).toMatchObject({
-          flowVersion: 'V2',
           currentState: 'ASK_FIRST_TATTOO',
           firstTattoo: null,
           sameSizeAsReference: null,
@@ -496,7 +490,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(recovered.deliveries[0].sentAt).not.toBeNull();
     });
 
-    it.each(['NONE', 'BODY_CONTEXT'] as const)(
+    it.each(['EXPLICIT_REFERENCE', 'NONE', 'BODY_CONTEXT'] as const)(
       'asks once for SAME_SIZE with %s and quotes after client size without rerunning Vision',
       async (scaleReferenceType) => {
         const observation = result();
@@ -508,7 +502,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           compositionFillRatio: 0.7,
         });
         analyzeV2.mockResolvedValue(observation);
-        const f = await seed();
+        const f = await seed({ targetSizeCm: null });
         const firstId = randomUUID();
         await inbound(0, 'Brazo', firstId);
         expect(await work()).toMatchObject({ status: 'COMPLETED' });
@@ -598,7 +592,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         const observation = result();
         observation.observations.scaleReferenceType = 'BODY_CONTEXT';
         analyzeV2.mockResolvedValue(observation);
-        const f = await seed();
+        const f = await seed({ targetSizeCm: null });
         const id = randomUUID();
         await inbound(0, 'Brazo', id);
         cloud.sendMessage.mockImplementation(
@@ -898,16 +892,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .expect(200);
       expect(cloud.sendMessage).toHaveBeenCalledTimes(2);
     });
-    it('keeps V1 as the default for a new customer without queuing or running V2', async () => {
-      expect((await inbound(0, 'hola')).status).toBe(200);
-      const conversation = await prisma.conversation.findFirstOrThrow({
-        where: { accountId: accounts[0] },
-      });
-      expect(conversation).toMatchObject({ flowVersion: 'V1', currentState: 'ASK_SIZE' });
-      expect(await prisma.whatsAppJob.count({ where: { accountId: accounts[0] } })).toBe(0);
-      expect(analyzeV2).not.toHaveBeenCalled();
-      expect(cloud.sendMessage).toHaveBeenCalledTimes(2);
-    });
     it('serializes successive inputs until the earlier job completes', async () => {
       const f = await seed();
       await prisma.conversation.update({
@@ -959,7 +943,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         where: { accountId: accounts[0], status: 'ACTIVE' },
       });
       expect(fresh).toMatchObject({
-        flowVersion: 'V2',
         currentState: 'ASK_FIRST_TATTOO',
         firstTattoo: null,
         sameSizeAsReference: null,

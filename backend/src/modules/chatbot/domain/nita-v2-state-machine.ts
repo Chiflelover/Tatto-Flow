@@ -1,5 +1,7 @@
+import { Injectable } from '@nestjs/common';
 import { ColorDeclaration, ConversationState } from '../../../generated/prisma/client.js';
 import { V2_TARGET_SIZE_AFTER_ANALYSIS_QUESTION } from './nita-v2-messages.js';
+import { isExplicitColorDeclaration } from './nita-v2-color.js';
 import type {
   ChatbotDecision,
   ChatbotInput,
@@ -15,7 +17,7 @@ const SAME_SIZE_QUESTION =
   '¿El tatuaje que te vas a hacer tendrá el mismo tamaño que la referencia?';
 const SIZE_QUESTION =
   '¿Aproximadamente cuánto quieres que ocupe el tatuaje en tu cuerpo?\n\nPuedes indicarme una medida aproximada, por ejemplo: 8 cm. No tiene que ser exacta.';
-const COLOR_QUESTION = '¿Tu tatuaje llevará color?';
+const COLOR_QUESTION = '¿Qué nivel de color quieres para tu tatuaje?';
 const PLACEMENT_QUESTION = '¿En qué parte del cuerpo quieres hacerte el tatuaje?';
 
 const YES_NO: ChatbotOption[] = [
@@ -23,9 +25,10 @@ const YES_NO: ChatbotOption[] = [
   { value: 'NO', label: 'No' },
 ];
 export const V2_COLOR_OPTIONS: ChatbotOption[] = [
-  { value: ColorDeclaration.BLACK_ONLY, label: 'Solo negro' },
-  { value: ColorDeclaration.BLACK_WITH_SOME_COLOR, label: 'Negro con algunos colores' },
-  { value: ColorDeclaration.MOSTLY_COLOR, label: 'Principalmente a color' },
+  { value: ColorDeclaration.BLACK_ONLY, label: 'Negro' },
+  { value: ColorDeclaration.LOW_COLOR, label: 'Poco color' },
+  { value: ColorDeclaration.MEDIUM_COLOR, label: 'Color medio' },
+  { value: ColorDeclaration.FULL_COLOR, label: 'Full color' },
 ];
 
 const PROMPTS: Partial<Record<ConversationState, string>> = {
@@ -48,11 +51,18 @@ function normalizedText(value: string): string {
 
 function textColor(value: string): ColorDeclaration | undefined {
   switch (normalizedText(value)) {
+    case 'negro':
     case 'solo negro':
     case 'black & grey':
     case 'black and grey':
     case 'negro y gris':
       return ColorDeclaration.BLACK_ONLY;
+    case 'poco color':
+      return ColorDeclaration.LOW_COLOR;
+    case 'color medio':
+      return ColorDeclaration.MEDIUM_COLOR;
+    case 'full color':
+      return ColorDeclaration.FULL_COLOR;
     case 'negro con algunos colores':
       return ColorDeclaration.BLACK_WITH_SOME_COLOR;
     case 'principalmente a color':
@@ -69,6 +79,7 @@ export function parseTargetSizeCm(value: string): number | null {
   return Number.isFinite(size) && size > 0 ? size : null;
 }
 
+@Injectable()
 export class NitaV2StateMachine {
   begin(): ChatbotDecision {
     return {
@@ -124,9 +135,7 @@ export class NitaV2StateMachine {
         const next =
           state === ConversationState.ASK_FIRST_TATTOO
             ? ConversationState.WAITING_IMAGE
-            : answer
-              ? ConversationState.ASK_COLOR
-              : ConversationState.ASK_DESIRED_SIZE_CM;
+            : ConversationState.ASK_DESIRED_SIZE_CM;
         return {
           update:
             state === ConversationState.ASK_FIRST_TATTOO
@@ -177,7 +186,7 @@ export class NitaV2StateMachine {
             : input.type === 'text'
               ? textColor(input.value)
               : undefined;
-        if (!color || !Object.values(ColorDeclaration).includes(color))
+        if (!isExplicitColorDeclaration(color))
           return this.retry(context, 'Elige una de las opciones de color.');
         return {
           update: { colorDeclaration: color, currentState: ConversationState.ASK_BODY_PART },

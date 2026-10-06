@@ -1,17 +1,10 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
-import {
-  WhatsAppAdapter,
-  type WhatsAppInboundMessage,
-} from '../chatbot/whatsapp/whatsapp.adapter.js';
-import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
 import { getRequiredWhatsAppValue } from './whatsapp.config.js';
-import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
 import type { WhatsAppChannel } from '../../generated/prisma/client.js';
-import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
 import { WhatsAppJobRepository, type WhatsAppJobInput } from './whatsapp-job.repository.js';
 import { WhatsAppJobDispatcher } from './whatsapp-job-dispatcher.service.js';
 
@@ -58,16 +51,8 @@ export class WhatsAppWebhookService {
     private readonly config: ConfigService,
     @Inject(WhatsAppSignatureService)
     private readonly signatures: WhatsAppSignatureService,
-    @Inject(WhatsAppInboundMessageRepository)
-    private readonly messages: WhatsAppInboundMessageRepository,
-    @Inject(WhatsAppAdapter)
-    private readonly adapter: WhatsAppAdapter,
-    @Inject(WhatsAppCloudApiClient)
-    private readonly cloudApi: WhatsAppCloudApiClient,
     @Inject(WhatsAppChannelService)
     private readonly channels: WhatsAppChannelService,
-    @Inject(WhatsAppV2DeliveryService)
-    private readonly v2Delivery: WhatsAppV2DeliveryService,
     @Inject(WhatsAppJobRepository) private readonly jobs: WhatsAppJobRepository,
     @Inject(WhatsAppJobDispatcher) private readonly dispatcher: WhatsAppJobDispatcher,
   ) {}
@@ -197,124 +182,14 @@ export class WhatsAppWebhookService {
 
     const input = this.jobInput(message);
     if (!input) return;
-    const queued = await this.jobs.enqueueIfV2(messageId, channel, customerIdentifier, input);
-    if (queued.queued && queued.customerId) {
+    const queued = await this.jobs.enqueue(messageId, channel, customerIdentifier, input);
+    if (queued.customerId) {
       this.logger.info('whatsapp.message.queued', {
         whatsappMessageId: messageId,
         accountId: channel.accountId,
       });
       this.dispatcher.wake(channel.accountId, queued.customerId);
       return;
-    }
-
-    if (!(await this.messages.claim(messageId))) {
-      await this.adapter.resumePendingV2Analysis(channel.accountId, customerIdentifier);
-      await this.v2Delivery.deliverForCustomer(
-        channel.accountId,
-        channel.phoneNumberId,
-        customerIdentifier,
-      );
-      this.logger.info('whatsapp.message.duplicate_ignored', { whatsappMessageId: messageId });
-      return;
-    }
-
-    this.logger.info('whatsapp.message.accepted', {
-      whatsappMessageId: messageId,
-      messageType: typeof message.type === 'string' ? message.type : 'unknown',
-    });
-
-    let chatbotProcessed = false;
-
-    try {
-      const inbound = await this.toInboundMessage(
-        message,
-        channel.accountId,
-        channel.phoneNumberId,
-        customerIdentifier,
-      );
-
-      if (!inbound) {
-        return;
-      }
-
-      const outbound = await this.adapter.handleIncoming(inbound);
-      chatbotProcessed = true;
-
-      for (const response of outbound) {
-        await this.cloudApi.sendMessage(channel.phoneNumberId, customerIdentifier, response);
-        this.logger.info('whatsapp.response.sent', {
-          whatsappMessageId: messageId,
-          responseType: response.type,
-        });
-      }
-      await this.v2Delivery.deliverForCustomer(
-        channel.accountId,
-        channel.phoneNumberId,
-        customerIdentifier,
-      );
-    } catch (error) {
-      if (!chatbotProcessed) {
-        await this.messages.release(messageId);
-      }
-
-      this.logger.error('whatsapp.message.failed', {
-        whatsappMessageId: messageId,
-        stage: chatbotProcessed ? 'response' : 'processing',
-      });
-
-      throw error;
-    }
-  }
-
-  private async toInboundMessage(
-    message: MetaMessage,
-    accountId: string,
-    phoneNumberId: string,
-    customerIdentifier: string,
-  ): Promise<WhatsAppInboundMessage | null> {
-    switch (message.type) {
-      case 'text':
-        return {
-          type: 'text',
-          accountId,
-          customerIdentifier,
-          text: this.requiredString(message.text?.body, 'texto', 1_000),
-        };
-      case 'image':
-        return {
-          type: 'image',
-          accountId,
-          customerIdentifier,
-          image: await this.cloudApi.downloadImage(
-            phoneNumberId,
-            this.requiredString(message.image?.id, 'media ID'),
-          ),
-        };
-      case 'interactive': {
-        const interactive = message.interactive;
-
-        if (interactive?.type === 'button_reply') {
-          return {
-            type: 'button_reply',
-            accountId,
-            customerIdentifier,
-            buttonId: this.requiredString(interactive.button_reply?.id, 'button reply'),
-          };
-        }
-
-        if (interactive?.type === 'list_reply') {
-          return {
-            type: 'button_reply',
-            accountId,
-            customerIdentifier,
-            buttonId: this.requiredString(interactive.list_reply?.id, 'list reply'),
-          };
-        }
-
-        return null;
-      }
-      default:
-        return null;
     }
   }
 

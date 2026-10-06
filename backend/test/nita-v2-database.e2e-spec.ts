@@ -1,5 +1,8 @@
+import { WhatsAppJobDispatcher } from '../src/modules/whatsapp/whatsapp-job-dispatcher.service.js';
+import { WhatsAppJobProcessor } from '../src/modules/whatsapp/whatsapp-job-processor.service.js';
+import { isolatedDatabase } from './helpers/isolated-database.js';
 import type { INestApplication } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { Server } from 'node:http';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -14,25 +17,23 @@ import { NitaBusinessHoursService } from '../src/modules/chatbot/nita-business-h
 import { NitaV2IntakeService } from '../src/modules/chatbot/nita-v2-intake.service.js';
 import { NitaV2AnalysisService } from '../src/modules/chatbot/nita-v2-analysis.service.js';
 import { NitaV2CompletionService } from '../src/modules/chatbot/nita-v2-completion.service.js';
-import { WhatsAppV2DeliveryService } from '../src/modules/whatsapp/whatsapp-v2-delivery.service.js';
 import { WHATSAPP_BUTTON_IDS as Buttons } from '../src/modules/chatbot/whatsapp/whatsapp.adapter.js';
 import { ConversationAbandonmentService } from '../src/modules/conversations/conversation-abandonment.service.js';
-import { ImageAnalysisWorkflowService } from '../src/modules/image-analysis/image-analysis-workflow.service.js';
 import { ImageAnalysisV2Service } from '../src/modules/image-analysis/image-analysis-v2.service.js';
 import { ImageManagementService } from '../src/modules/image-management/image-management.service.js';
 import { StorageService } from '../src/modules/storage/storage.service.js';
 import { WhatsAppCloudApiClient } from '../src/modules/whatsapp/whatsapp-cloud-api.client.js';
 import { WhatsAppModule } from '../src/modules/whatsapp/whatsapp.module.js';
-import { WhatsAppJobRepository } from '../src/modules/whatsapp/whatsapp-job.repository.js';
 import { VISION_IMAGE } from './fixtures/vision-v2.js';
 
 // Explicit opt-in for the configured development DB. All test rows are isolated and removed.
 describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
-  'Nita V2 with development DB and simulated WhatsApp (e2e)',
-  { timeout: 30_000 },
+  'Nita V2 with isolated DB and simulated WhatsApp (e2e)',
+  { timeout: 120_000 },
   () => {
     let app: INestApplication<Server>;
     let prisma: PrismaService;
+    let database: Awaited<ReturnType<typeof isolatedDatabase>>;
     const accountA = randomUUID();
     const accountB = randomUUID();
     const accounts = [accountA, accountB];
@@ -45,11 +46,12 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       sendMessage: vi.fn().mockResolvedValue(undefined),
       downloadImage: vi.fn().mockResolvedValue(VISION_IMAGE),
     };
-    const v1Analysis = vi.fn();
+
     const v2Analysis = vi.fn();
 
     beforeAll(async () => {
       const local = parse(readFileSync('.env', 'utf8'));
+      database = await isolatedDatabase();
       const module = await Test.createTestingModule({
         imports: [
           ConfigModule.forRoot({
@@ -62,7 +64,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
                   DATABASE_URL: local.DATABASE_URL,
                   AI_MODE: 'mock',
                   STORAGE_MODE: 'memory',
-                  NITA_DEFAULT_FLOW_VERSION: 'V2',
+
                   WHATSAPP_BUSINESS_ACCOUNT_ID: 'test-business',
                   META_APP_SECRET: appSecret,
                 }),
@@ -72,9 +74,11 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           WhatsAppModule,
         ],
       })
-        // Earlier phase suites isolate their synchronous services; durable ingress is tested separately.
-        .overrideProvider(WhatsAppJobRepository)
-        .useValue({ enqueueIfV2: vi.fn().mockResolvedValue({ queued: false }) })
+        // Drain the real queue explicitly in each test.
+        .overrideProvider(WhatsAppJobDispatcher)
+        .useValue({ wake: vi.fn() })
+        .overrideProvider(PrismaService)
+        .useValue(database.prisma)
         .overrideProvider(WhatsAppCloudApiClient)
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)
@@ -92,8 +96,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
             prisma.conversation.findFirstOrThrow({ where: { id, accountId } }),
           resumePendingForCustomer: vi.fn().mockResolvedValue(undefined),
         })
-        .overrideProvider(WhatsAppV2DeliveryService)
-        .useValue({ deliverForCustomer: vi.fn().mockResolvedValue(undefined) })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
       app.setGlobalPrefix('api');
@@ -114,20 +116,16 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           },
         });
       }
-      vi.spyOn(
-        app.get(ImageAnalysisWorkflowService),
-        'analyzeConversationImage',
-      ).mockImplementation(v1Analysis);
       vi.spyOn(app.get(ImageAnalysisV2Service), 'analyzeReference').mockImplementation(v2Analysis);
-    }, 30_000);
+    }, 120_000);
 
     afterEach(async () => {
       if (!prisma) return;
       try {
-        expect(v1Analysis).not.toHaveBeenCalled();
         expect(v2Analysis).not.toHaveBeenCalled();
       } finally {
         // Cleanup is scoped to generated test account IDs; reference files live only in memory.
+        await prisma.whatsAppJob.deleteMany({ where: { accountId: { in: accounts } } });
         await prisma.lead.deleteMany({ where: { accountId: { in: accounts } } });
         await prisma.conversation.deleteMany({ where: { accountId: { in: accounts } } });
         await prisma.customer.deleteMany({ where: { accountId: { in: accounts } } });
@@ -139,19 +137,19 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           data: { isActive: true },
         });
         vi.clearAllMocks();
-        app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', 'V2');
       }
-    }, 30_000);
+    }, 120_000);
     afterAll(async () => {
       if (prisma) {
         await prisma.whatsAppChannel.deleteMany({ where: { accountId: { in: accounts } } });
         await prisma.tattooArtistAccount.deleteMany({ where: { id: { in: accounts } } });
       }
       if (app) await app.close();
-    }, 30_000);
+      if (database) await database.close();
+    }, 120_000);
 
     async function inbound(
-      type: 'text' | 'button' | 'image',
+      type: 'text' | 'button' | 'list' | 'image',
       value: string,
       receivingPhone = phoneA,
       id = randomUUID(),
@@ -160,12 +158,14 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       const message = {
         id,
         from: customerPhone,
-        type: type === 'button' ? 'interactive' : type,
+        type: type === 'button' || type === 'list' ? 'interactive' : type,
         ...(type === 'text'
           ? { text: { body: value } }
           : type === 'image'
             ? { image: { id: value } }
-            : { interactive: { type: 'button_reply', button_reply: { id: value } } }),
+            : type === 'list'
+              ? { interactive: { type: 'list_reply', list_reply: { id: value } } }
+              : { interactive: { type: 'button_reply', button_reply: { id: value } } }),
       };
       const body = JSON.stringify({
         object: 'whatsapp_business_account',
@@ -188,11 +188,15 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .set('X-Hub-Signature-256', signature)
         .send(body)
         .expect(200);
+      const accountId = receivingPhone === phoneA ? accountA : accountB;
+      while ((await app.get(WhatsAppJobProcessor).runNext(accountId)).processed) {
+        // Drain the durable queue without starting background workers.
+      }
     }
     async function current(accountId = accountA) {
       return prisma.conversation.findFirstOrThrow({
         where: { accountId },
-        include: { lead: { include: { images: true, aiAnalysis: true, evaluation: true } } },
+        include: { lead: { include: { images: true, aiAnalysis: true } } },
       });
     }
     async function reference(sameSize: boolean) {
@@ -205,26 +209,45 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       await inbound('button', sameSize ? Buttons.SAME_SIZE_YES : Buttons.SAME_SIZE_NO);
     }
 
-    it.each([Buttons.COLOR_BLACK_ONLY, Buttons.COLOR_SOME, Buttons.COLOR_MOSTLY])(
+    it.each([
+      [Buttons.COLOR_BLACK_ONLY, 'BLACK_ONLY'],
+      [Buttons.COLOR_LOW, 'LOW_COLOR'],
+      [Buttons.COLOR_MEDIUM, 'MEDIUM_COLOR'],
+      [Buttons.COLOR_FULL, 'FULL_COLOR'],
+    ] as const)(
       'completes SAME_SIZE and persists %s without AI or pricing',
-      async (button) => {
+      async (button, color) => {
         await reference(true);
+        expect((await current()).currentState).toBe('ASK_DESIRED_SIZE_CM');
+        expect((await current()).targetSizeCm).toBeNull();
+        await inbound('list', button);
+        expect((await current()).currentState).toBe('ASK_DESIRED_SIZE_CM');
+        await inbound('text', '12.5 cm');
         expect((await current()).currentState).toBe('ASK_COLOR');
-        await inbound('button', button);
+        expect(cloud.sendMessage).toHaveBeenLastCalledWith(
+          phoneA,
+          customerPhone,
+          {
+            type: 'interactive_list',
+            body: '¿Qué nivel de color quieres para tu tatuaje?',
+            button: 'Elegir color',
+            rows: [
+              { id: Buttons.COLOR_BLACK_ONLY, title: 'Negro' },
+              { id: Buttons.COLOR_LOW, title: 'Poco color' },
+              { id: Buttons.COLOR_MEDIUM, title: 'Color medio' },
+              { id: Buttons.COLOR_FULL, title: 'Full color' },
+            ],
+          },
+          expect.any(AbortSignal),
+        );
+        await inbound('list', button);
         await inbound('text', 'Antebrazo izquierdo');
         const conversation = await current();
-        const color =
-          button === Buttons.COLOR_BLACK_ONLY
-            ? 'BLACK_ONLY'
-            : button === Buttons.COLOR_SOME
-              ? 'BLACK_WITH_SOME_COLOR'
-              : 'MOSTLY_COLOR';
         expect(conversation).toMatchObject({
-          flowVersion: 'V2',
           currentState: 'READY_FOR_ANALYSIS',
           firstTattoo: false,
           sameSizeAsReference: true,
-          targetSizeCm: null,
+          targetSizeCm: 12.5,
           colorDeclaration: color,
           bodyPart: 'Antebrazo izquierdo',
         });
@@ -232,14 +255,10 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           accountId: accountA,
           firstTattoo: false,
           sameSizeAsReference: true,
-          targetSizeCm: null,
+          targetSizeCm: 12.5,
           colorDeclaration: color,
           bodyPart: 'Antebrazo izquierdo',
           aiAnalysis: null,
-          evaluation: null,
-          calculatedMinPrice: null,
-          calculatedMaxPrice: null,
-          pricingRuleId: null,
         });
         expect(conversation.lead?.images).toHaveLength(1);
         expect(await app.get(StorageService).exists(conversation.lead!.images[0].storagePath)).toBe(
@@ -249,11 +268,13 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
     );
     it('completes DIFFERENT_SIZE after invalid retries and textual Black & Grey fallback', async () => {
       await reference(false);
+      expect((await current()).currentState).toBe('ASK_DESIRED_SIZE_CM');
       for (const value of ['0', '-8', '8 x 10 cm', '8 pulgadas']) {
         await inbound('text', value);
         expect((await current()).currentState).toBe('ASK_DESIRED_SIZE_CM');
       }
       await inbound('text', '12.5 cm');
+      expect((await current()).currentState).toBe('ASK_COLOR');
       await inbound('text', 'Black & Grey');
       await inbound('text', 'Espalda superior derecha');
       expect((await current()).lead).toMatchObject({
@@ -297,10 +318,16 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       await inbound('text', 'Hola');
       await inbound('button', Buttons.FIRST_TATTOO_YES);
       vi.spyOn(app.get(StorageService), 'upload').mockRejectedValueOnce(new Error('test failure'));
-      await inbound('image', 'failed-reference');
+      const imageId = randomUUID();
+      await inbound('image', 'failed-reference', phoneA, imageId);
       expect((await current()).currentState).toBe('WAITING_IMAGE');
       expect((await current()).lead).toBeNull();
-      await inbound('image', 'retry');
+      // Preserve queue ordering and retry the same durable event after its backoff.
+      await prisma.whatsAppJob.updateMany({
+        where: { inboundMessageId: imageId, status: 'RETRYABLE' },
+        data: { availableAt: new Date(Date.now() - 1000) },
+      });
+      await inbound('image', 'failed-reference', phoneA, imageId);
       expect((await current()).lead?.images).toHaveLength(1);
     });
     it('resolves two channels and isolates the same customer phone across accounts', async () => {
@@ -339,26 +366,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect((await current(accountA)).currentState).toBe('ASK_FIRST_TATTOO');
       expect(await prisma.conversation.count({ where: { accountId: accountB } })).toBe(0);
     });
-    it('keeps an existing V1 conversation in V1 even when new conversations default to V2', async () => {
-      const customer = await prisma.customer.create({
-        data: { accountId: accountA, phoneNumber: customerPhone },
-      });
-      await prisma.conversation.create({
-        data: {
-          accountId: accountA,
-          customerId: customer.id,
-          flowVersion: 'V1',
-          currentState: 'ASK_SIZE',
-        },
-      });
-      await inbound('button', Buttons.SIZE_SMALL);
-      expect(await current()).toMatchObject({
-        flowVersion: 'V1',
-        currentState: 'ASK_DETAIL',
-        selectedSize: 'SMALL',
-      });
-    });
-    it('abandons partial V2 intake without deleting the image or scoring it as V1', async () => {
+    it('abandons partial V2 intake without deleting the image', async () => {
       await reference(false);
       await inbound('text', '8 cm');
       const conversation = await current();
@@ -373,117 +381,109 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect(abandoned.lead).toMatchObject({
         targetSizeCm: 8,
         firstTattoo: false,
-        evaluation: null,
+
         aiAnalysis: null,
       });
       expect(abandoned.lead?.images[0]?.deletedAt).toBeNull();
     });
 
-    it.each(['V2', 'V1'] as const)(
-      'restarts abandoned V2 from zero with global default=%s, retains its ADMIN image and ignores retries',
-      async (defaultFlow) => {
-        await reference(false);
-        await inbound('text', '12.5 cm');
-        await inbound('button', Buttons.COLOR_SOME);
-        await inbound('text', 'Antebrazo izquierdo');
-        const original = await current();
-        expect(original.currentState).toBe('READY_FOR_ANALYSIS');
-        expect(original.lead?.images).toHaveLength(1);
-        const retainedImage = original.lead!.images[0];
-        const later = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        const abandonment = app.get(ConversationAbandonmentService);
-        expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(1);
-        expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(0);
-        const history = await prisma.conversation.findUniqueOrThrow({
+    it('restarts abandoned intake from zero, retains its ADMIN image and ignores retries', async () => {
+      await reference(false);
+      await inbound('text', '12.5 cm');
+      await inbound('list', Buttons.COLOR_LOW);
+      await inbound('text', 'Antebrazo izquierdo');
+      const original = await current();
+      expect(original.currentState).toBe('READY_FOR_ANALYSIS');
+      expect(original.lead?.images).toHaveLength(1);
+      const retainedImage = original.lead!.images[0];
+      const later = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const abandonment = app.get(ConversationAbandonmentService);
+      expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(1);
+      expect(await abandonment.abandonInactiveForCustomer(original.customerId, later)).toBe(0);
+      const history = await prisma.conversation.findUniqueOrThrow({
+        where: { id: original.id },
+        include: { lead: { include: { images: true } } },
+      });
+      expect(history).toMatchObject({
+        status: 'ABANDONED',
+        firstTattoo: false,
+        sameSizeAsReference: false,
+        targetSizeCm: 12.5,
+        colorDeclaration: 'LOW_COLOR',
+        bodyPart: 'Antebrazo izquierdo',
+      });
+      expect(
+        await app
+          .get(NitaV2IntakeService)
+          .applyTransition(accountA, original.id, original.currentState, {
+            currentState: 'ASK_FIRST_TATTOO',
+          }),
+      ).toMatchObject({ applied: false });
+      expect(
+        await app.get(NitaV2IntakeService).storeReference(accountA, original.id, VISION_IMAGE),
+      ).toMatchObject({ applied: false });
+
+      const returnId = randomUUID();
+      await Promise.all([
+        inbound('text', 'Hola otra vez', phoneA, returnId),
+        inbound('text', 'Hola otra vez', phoneA, returnId),
+      ]);
+      await inbound('text', 'Hola otra vez');
+      const fresh = await prisma.conversation.findFirstOrThrow({
+        where: { accountId: accountA, status: 'ACTIVE' },
+        include: { lead: { include: { images: true } } },
+      });
+      expect(fresh.id).not.toBe(original.id);
+      expect(fresh).toMatchObject({
+        currentState: 'ASK_FIRST_TATTOO',
+        firstTattoo: null,
+        sameSizeAsReference: null,
+        targetSizeCm: null,
+        colorDeclaration: null,
+        bodyPart: null,
+        lead: null,
+      });
+      expect(await prisma.conversation.count({ where: { accountId: accountA } })).toBe(2);
+      expect(
+        await prisma.conversation.count({ where: { accountId: accountA, status: 'ACTIVE' } }),
+      ).toBe(1);
+      expect(await prisma.lead.count({ where: { accountId: accountA } })).toBe(1);
+
+      const storage = app.get(StorageService);
+      const images = new ImageManagementService(prisma, storage);
+      expect(await storage.exists(retainedImage.storagePath)).toBe(true);
+      const visible = await images.listAll({ accountId: accountA, page: 1, pageSize: 50 });
+      expect(visible.images).toHaveLength(1);
+      expect(visible.images[0]).toMatchObject({
+        id: retainedImage.id,
+        leadId: original.lead!.id,
+      });
+      expect(visible.images[0]?.previewUrl).toEqual(expect.any(String));
+
+      await inbound('button', Buttons.FIRST_TATTOO_YES);
+      const newImageMessage = randomUUID();
+      await inbound('image', 'new-reference', phoneA, newImageMessage);
+      await inbound('image', 'new-reference', phoneA, newImageMessage);
+      const newLead = await prisma.lead.findUniqueOrThrow({
+        where: { conversationId: fresh.id },
+        include: { images: true },
+      });
+      expect(newLead.images).toHaveLength(1);
+      expect(newLead.images[0]?.id).not.toBe(retainedImage.id);
+      expect(newLead.images[0]?.storagePath).not.toBe(retainedImage.storagePath);
+      expect(await prisma.lead.count({ where: { accountId: accountA } })).toBe(2);
+      expect(
+        await prisma.conversation.findUniqueOrThrow({
           where: { id: original.id },
           include: { lead: { include: { images: true } } },
-        });
-        expect(history).toMatchObject({
-          status: 'ABANDONED',
-          firstTattoo: false,
-          sameSizeAsReference: false,
-          targetSizeCm: 12.5,
-          colorDeclaration: 'BLACK_WITH_SOME_COLOR',
-          bodyPart: 'Antebrazo izquierdo',
-        });
-        expect(
-          await app
-            .get(NitaV2IntakeService)
-            .applyTransition(accountA, original.id, original.currentState, {
-              currentState: 'ASK_FIRST_TATTOO',
-            }),
-        ).toMatchObject({ applied: false });
-        expect(
-          await app.get(NitaV2IntakeService).storeReference(accountA, original.id, VISION_IMAGE),
-        ).toMatchObject({ applied: false });
-
-        app.get(ConfigService).set('NITA_DEFAULT_FLOW_VERSION', defaultFlow);
-        const returnId = randomUUID();
-        await Promise.all([
-          inbound('text', 'Hola otra vez', phoneA, returnId),
-          inbound('text', 'Hola otra vez', phoneA, returnId),
-        ]);
-        await inbound('text', 'Hola otra vez');
-        const fresh = await prisma.conversation.findFirstOrThrow({
-          where: { accountId: accountA, status: 'ACTIVE' },
-          include: { lead: { include: { images: true } } },
-        });
-        expect(fresh.id).not.toBe(original.id);
-        expect(fresh).toMatchObject({
-          flowVersion: 'V2',
-          currentState: 'ASK_FIRST_TATTOO',
-          firstTattoo: null,
-          sameSizeAsReference: null,
-          targetSizeCm: null,
-          colorDeclaration: null,
-          bodyPart: null,
-          selectedSize: null,
-          selectedDetail: null,
-          lead: null,
-        });
-        expect(await prisma.conversation.count({ where: { accountId: accountA } })).toBe(2);
-        expect(
-          await prisma.conversation.count({ where: { accountId: accountA, status: 'ACTIVE' } }),
-        ).toBe(1);
-        expect(await prisma.lead.count({ where: { accountId: accountA } })).toBe(1);
-
-        const storage = app.get(StorageService);
-        const images = new ImageManagementService(prisma, storage);
-        expect(await storage.exists(retainedImage.storagePath)).toBe(true);
-        const visible = await images.listAll({ accountId: accountA, page: 1, pageSize: 50 });
-        expect(visible.images).toHaveLength(1);
-        expect(visible.images[0]).toMatchObject({
-          id: retainedImage.id,
-          leadId: original.lead!.id,
-        });
-        expect(visible.images[0]?.previewUrl).toEqual(expect.any(String));
-
-        await inbound('button', Buttons.FIRST_TATTOO_YES);
-        const newImageMessage = randomUUID();
-        await inbound('image', 'new-reference', phoneA, newImageMessage);
-        await inbound('image', 'new-reference', phoneA, newImageMessage);
-        const newLead = await prisma.lead.findUniqueOrThrow({
-          where: { conversationId: fresh.id },
-          include: { images: true },
-        });
-        expect(newLead.images).toHaveLength(1);
-        expect(newLead.images[0]?.id).not.toBe(retainedImage.id);
-        expect(newLead.images[0]?.storagePath).not.toBe(retainedImage.storagePath);
-        expect(await prisma.lead.count({ where: { accountId: accountA } })).toBe(2);
-        expect(
-          await prisma.conversation.findUniqueOrThrow({
-            where: { id: original.id },
-            include: { lead: { include: { images: true } } },
-          }),
-        ).toEqual(history);
-        expect(await storage.exists(retainedImage.storagePath)).toBe(true);
-        expect(
-          (await images.listAll({ accountId: accountA, page: 1, pageSize: 50 })).images.map(
-            (image) => image.id,
-          ),
-        ).toContain(retainedImage.id);
-      },
-      60_000,
-    );
+        }),
+      ).toEqual(history);
+      expect(await storage.exists(retainedImage.storagePath)).toBe(true);
+      expect(
+        (await images.listAll({ accountId: accountA, page: 1, pageSize: 50 })).images.map(
+          (image) => image.id,
+        ),
+      ).toContain(retainedImage.id);
+    }, 180_000);
   },
 );

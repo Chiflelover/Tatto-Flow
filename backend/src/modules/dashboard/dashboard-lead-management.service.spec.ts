@@ -1,18 +1,10 @@
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { ConflictException } from '@nestjs/common';
-import {
-  ConversationStatus,
-  DetailLevel,
-  LeadStatus,
-  Prisma,
-  ReadinessStatus,
-  TattooSize,
-} from '../../generated/prisma/client.js';
+import { ConversationStatus, LeadStatus, Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { DashboardService } from './dashboard.service.js';
-import type { LeadListQueryDto, LeadSortField } from './dto/dashboard.dto.js';
+import type { LeadListQueryDto } from './dto/dashboard.dto.js';
 
 const LEAD_ID = '290f2044-e63c-4e49-8847-067cd62426e4';
 const CONVERSATION_ID = 'a459f257-b03c-48f4-9091-2dc37871ef81';
@@ -30,11 +22,7 @@ function query(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto {
 }
 
 function createService(prismaShape: object, storageShape: object = {}) {
-  return new DashboardService(
-    prismaShape as PrismaService,
-    {} as PricingService,
-    storageShape as StorageService,
-  );
+  return new DashboardService(prismaShape as PrismaService, storageShape as StorageService);
 }
 
 function completeLeadDetail(archivedAt: Date | null = null) {
@@ -45,35 +33,19 @@ function completeLeadDetail(archivedAt: Date | null = null) {
     accountId: ACCOUNT_ID,
     customerId: crypto.randomUUID(),
     conversationId: CONVERSATION_ID,
-    selectedSize: TattooSize.SMALL,
-    selectedDetail: DetailLevel.LIGHT,
     bodyPart: 'Brazo',
     status: LeadStatus.ANALYZING,
-    reviewReasons: [],
     manualFinalPrice: null,
-    calculatedMinPrice: null,
-    calculatedMaxPrice: null,
-    pricingRuleId: null,
-    pricingRuleVersion: null,
-    priceSentAt: null,
     archivedAt,
     createdAt: now,
     updatedAt: now,
     customer: { phoneNumber: '+51999999999' },
     aiAnalysis: null,
-    evaluation: {
-      id: crypto.randomUUID(),
-      leadId: LEAD_ID,
-      rawScore: 25,
-      maxPositiveScore: 250,
-      readinessScore: new Prisma.Decimal(10),
-      readinessStatus: ReadinessStatus.INCOMPLETO,
-      rulesVersion: 1,
-      contributions: [],
-      blockers: [],
-      evaluatedAt: now,
-      updatedAt: now,
-    },
+    quote: null,
+    conversation: { status: ConversationStatus.ABANDONED },
+    targetSizeCm: null,
+    v2Preparation: null,
+    bookingIntent: null,
   };
 }
 
@@ -93,7 +65,7 @@ describe('DashboardService lead management', () => {
     );
   });
 
-  it('orders the normal inbox by LISTO, REVISAR, INCOMPLETO and then score descending', async () => {
+  it('orders the normal inbox by most recent leads', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const service = createService({
       lead: { findMany, count: vi.fn().mockResolvedValue(0) },
@@ -103,77 +75,15 @@ describe('DashboardService lead management', () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderBy: [
-          { evaluation: { readinessStatus: 'asc' } },
-          { evaluation: { readinessScore: 'desc' } },
-        ],
+        orderBy: [{ createdAt: 'desc' }],
       }),
     );
-  });
-
-  it.each<[LeadSortField, Prisma.LeadOrderByWithRelationInput]>([
-    ['readinessScore', { evaluation: { readinessScore: 'asc' } }],
-    ['price', { calculatedMinPrice: 'asc' }],
-    ['createdAt', { createdAt: 'asc' }],
-    ['size', { selectedSize: 'asc' }],
-    ['detail', { selectedDetail: 'asc' }],
-    ['status', { evaluation: { readinessStatus: 'asc' } }],
-  ])('supports sorting by %s', async (sortBy, expectedOrder) => {
-    const findMany = vi.fn().mockResolvedValue([]);
-    const service = createService({
-      lead: { findMany, count: vi.fn().mockResolvedValue(0) },
-    });
-
-    await service.listLeads(ACCOUNT_ID, query({ sortBy, sortOrder: 'asc' }));
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: [expectedOrder, { createdAt: 'desc' }] }),
-    );
-  });
-
-  it('combines readiness, phone search and pagination without loading the whole table', async () => {
-    const findMany = vi.fn().mockResolvedValue([]);
-    const count = vi.fn().mockResolvedValue(31);
-    const service = createService({ lead: { findMany, count } });
-
-    const result = await service.listLeads(
-      ACCOUNT_ID,
-      query({
-        status: ReadinessStatus.REVISAR,
-        size: TattooSize.MEDIUM,
-        detail: DetailLevel.DETAILED,
-        search: '+5199',
-        page: 2,
-        pageSize: 10,
-      }),
-    );
-
-    const where = {
-      accountId: ACCOUNT_ID,
-      archivedAt: null,
-      OR: [
-        { evaluation: { is: { readinessStatus: ReadinessStatus.REVISAR } } },
-        {
-          conversation: { flowVersion: 'V2' },
-          status: { in: ['REQUIRES_REVIEW', 'SPECIAL_REVIEW'] },
-        },
-      ],
-      selectedSize: TattooSize.MEDIUM,
-      selectedDetail: DetailLevel.DETAILED,
-      customer: { is: { phoneNumber: { contains: '+5199' } } },
-    };
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 10, take: 10 }));
-    expect(count).toHaveBeenCalledWith({ where });
-    expect(result.pagination).toEqual({ page: 2, pageSize: 10, total: 31, totalPages: 4 });
   });
 
   it('exposes finalized leads as deletable so the frontend follows backend policy', async () => {
     const finalizedLead = {
       ...completeLeadDetail(),
       status: LeadStatus.COMPLETED,
-      calculatedMinPrice: new Prisma.Decimal(150),
-      calculatedMaxPrice: new Prisma.Decimal(200),
-      priceSentAt: new Date('2026-09-20T12:00:00.000Z'),
     };
     const service = createService({
       lead: {
@@ -216,7 +126,7 @@ describe('DashboardService lead management', () => {
     });
   });
 
-  it('deletes an INCOMPLETO lead, its abandoned conversation and its storage objects', async () => {
+  it('deletes an abandoned incomplete lead, its abandoned conversation and its storage objects', async () => {
     const storagePath = `leads/${LEAD_ID}/${crypto.randomUUID()}.png`;
     const deleteObject = vi.fn().mockResolvedValue('deleted');
     const deleteLead = vi.fn().mockResolvedValue({ id: LEAD_ID });
@@ -237,10 +147,7 @@ describe('DashboardService lead management', () => {
             conversationId: CONVERSATION_ID,
             status: LeadStatus.ANALYZING,
             manualFinalPrice: null,
-            calculatedMinPrice: null,
-            calculatedMaxPrice: null,
-            priceSentAt: null,
-            evaluation: { readinessStatus: ReadinessStatus.INCOMPLETO },
+            conversation: { status: ConversationStatus.ABANDONED },
             images: [{ storagePath }],
           }),
         },
@@ -275,7 +182,7 @@ describe('DashboardService lead management', () => {
     });
   });
 
-  it('deletes a finalized lead regardless of its previous readiness and quoted price', async () => {
+  it('deletes a finalized lead regardless of its previous status and manual price', async () => {
     const storagePath = `leads/${LEAD_ID}/${crypto.randomUUID()}.webp`;
     const deleteObject = vi.fn().mockResolvedValue('deleted');
     const deleteLead = vi.fn().mockResolvedValue({ id: LEAD_ID });
@@ -296,10 +203,6 @@ describe('DashboardService lead management', () => {
             conversationId: CONVERSATION_ID,
             status: LeadStatus.COMPLETED,
             manualFinalPrice: new Prisma.Decimal(175),
-            calculatedMinPrice: new Prisma.Decimal(150),
-            calculatedMaxPrice: new Prisma.Decimal(200),
-            priceSentAt: new Date('2026-09-20T12:00:00.000Z'),
-            evaluation: { readinessStatus: ReadinessStatus.REVISAR },
             images: [{ storagePath }],
           }),
         },
@@ -326,9 +229,9 @@ describe('DashboardService lead management', () => {
     expect(deleteCustomer).toHaveBeenCalledOnce();
   });
 
-  it.each([ReadinessStatus.LISTO, ReadinessStatus.REVISAR])(
-    'rejects deletion when readiness is %s',
-    async (readinessStatus) => {
+  it.each([LeadStatus.AUTO_QUOTED, LeadStatus.REQUIRES_REVIEW, LeadStatus.ANALYZING])(
+    'rejects deletion when status is %s',
+    async (status) => {
       const deleteObject = vi.fn();
       const transaction = vi.fn();
       const service = createService(
@@ -339,12 +242,9 @@ describe('DashboardService lead management', () => {
               accountId: ACCOUNT_ID,
               customerId: CUSTOMER_ID,
               conversationId: CONVERSATION_ID,
-              status: LeadStatus.ANALYZING,
+              status: status,
               manualFinalPrice: null,
-              calculatedMinPrice: null,
-              calculatedMaxPrice: null,
-              priceSentAt: null,
-              evaluation: { readinessStatus },
+              conversation: { status: ConversationStatus.ACTIVE },
               images: [],
             }),
           },

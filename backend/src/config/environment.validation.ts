@@ -100,7 +100,6 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
 
   return {
     ...environment,
-    NITA_DEFAULT_FLOW_VERSION: parseFlowVersion(environment.NITA_DEFAULT_FLOW_VERSION),
     AI_MODE: aiMode,
     AI_FALLBACK_PROVIDER: aiFallbackProvider,
     GEMINI_API_KEY:
@@ -147,14 +146,6 @@ export function validateEnvironment(environment: Record<string, unknown>): Recor
         }
       : {}),
   };
-}
-
-function parseFlowVersion(value: unknown): 'V1' | 'V2' {
-  const version = parseString('NITA_DEFAULT_FLOW_VERSION', value, 'V1');
-  if (version !== 'V1' && version !== 'V2') {
-    throw new Error('NITA_DEFAULT_FLOW_VERSION debe ser "V1" o "V2".');
-  }
-  return version;
 }
 
 function parseRequiredProviderString(name: string, value: unknown, reason: string): string {

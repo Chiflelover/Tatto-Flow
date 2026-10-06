@@ -13,11 +13,20 @@ import { AdminGuard } from '../auth/role.guard.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
 import { CreateCaseDto, CreateStyleDto, UpdateCaseDto, UpdateStyleDto } from './calibration.dto.js';
 import { CatalogService } from './catalog.service.js';
+import { CatalogImportService } from './catalog-import.service.js';
 
 @Controller('admin/catalog')
 @UseGuards(SessionAuthGuard, AdminGuard)
 export class CatalogController {
-  constructor(@Inject(CatalogService) private readonly catalog: CatalogService) {}
+  constructor(
+    @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(CatalogImportService) private readonly importer: CatalogImportService,
+  ) {}
+
+  @Post('import')
+  importManifest(@Body() manifest: unknown) {
+    return this.importer.import(manifest);
+  }
 
   @Get('styles')
   listStyles() {

@@ -5,17 +5,14 @@ const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import {
   ConversationState,
   ConversationStatus,
-  DetailLevel,
-  TattooSize,
   type Conversation,
   type Customer,
 } from '../../generated/prisma/client.js';
 import { ConfigService } from '@nestjs/config';
 import { ConversationsService } from '../conversations/conversations.service.js';
 import { CustomersService } from '../customers/customers.service.js';
-import { ImageAnalysisWorkflowService } from '../image-analysis/image-analysis-workflow.service.js';
 import { ChatbotService } from './chatbot.service.js';
-import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaV2StateMachine } from './domain/nita-v2-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 
 const OUT_OF_HOURS_MESSAGE =
@@ -41,17 +38,14 @@ function createFixture(options: FixtureOptions = {}) {
     id: 'a459f257-b03c-48f4-9091-2dc37871ef81',
     customerId: customer.id,
     accountId: ACCOUNT_ID,
-    flowVersion: 'V1',
     v2AnalysisClaimId: null,
     v2AnalysisLeaseUntil: null,
     firstTattoo: null,
     sameSizeAsReference: null,
     targetSizeCm: null,
     colorDeclaration: null,
-    currentState: ConversationState.ASK_DETAIL,
+    currentState: ConversationState.ASK_COLOR,
     status: ConversationStatus.ACTIVE,
-    selectedSize: TattooSize.SMALL,
-    selectedDetail: null,
     bodyPart: null,
     lastActivityAt: new Date('2026-09-15T02:30:00.000Z'),
     createdAt: now,
@@ -61,7 +55,6 @@ function createFixture(options: FixtureOptions = {}) {
   const advancedConversation: Conversation = {
     ...conversation,
     currentState: ConversationState.ASK_BODY_PART,
-    selectedDetail: DetailLevel.LIGHT,
   };
   const findOrCreateByPhoneNumber = vi.fn().mockResolvedValue(customer);
   const claimOutOfHoursNotice = vi.fn().mockResolvedValue(true);
@@ -84,11 +77,10 @@ function createFixture(options: FixtureOptions = {}) {
       getOrCreateActive,
       applyTransition,
     } as unknown as ConversationsService,
-    new NitaStateMachine(),
-    {} as ImageAnalysisWorkflowService,
+    new NitaV2StateMachine(),
     new NitaBusinessHoursService(),
     new ConfigService({ BUSINESS_HOURS_TEST_PHONE: businessHoursTestPhone }),
-    {} as NitaV2IntakeService,
+    { applyTransition } as unknown as NitaV2IntakeService,
     {} as NitaV2AnalysisService,
     {} as NitaV2CompletionService,
   );
@@ -123,13 +115,13 @@ describe('ChatbotService business-hour gating', () => {
       ACCOUNT_ID,
       fixture.customer.phoneNumber,
       {
-        stage: 'detail',
-        value: DetailLevel.LIGHT,
+        stage: 'color',
+        value: 'BLACK_ONLY',
       },
     );
 
     expect(response).toEqual({
-      state: ConversationState.ASK_DETAIL,
+      state: ConversationState.ASK_COLOR,
       messages: [{ type: 'text', text: OUT_OF_HOURS_MESSAGE }],
       options: [],
     });
@@ -148,18 +140,19 @@ describe('ChatbotService business-hour gating', () => {
       ACCOUNT_ID,
       fixture.customer.phoneNumber,
       {
-        stage: 'detail',
-        value: DetailLevel.LIGHT,
+        stage: 'color',
+        value: 'BLACK_ONLY',
       },
     );
 
     expect(fixture.getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(
+      ACCOUNT_ID,
       fixture.conversation.id,
-      ConversationState.ASK_DETAIL,
+      ConversationState.ASK_COLOR,
       {
-        selectedDetail: DetailLevel.LIGHT,
         currentState: ConversationState.ASK_BODY_PART,
+        colorDeclaration: 'BLACK_ONLY',
       },
     );
     expect(fixture.findCurrentForCustomer).not.toHaveBeenCalled();
@@ -181,8 +174,8 @@ describe('ChatbotService business-hour gating', () => {
       ACCOUNT_ID,
       fixture.customer.phoneNumber,
       {
-        stage: 'detail',
-        value: DetailLevel.LIGHT,
+        stage: 'color',
+        value: 'BLACK_ONLY',
       },
     );
 
@@ -243,8 +236,8 @@ describe('ChatbotService business-hour gating', () => {
     vi.setSystemTime(new Date('2026-09-15T03:00:00.000Z'));
 
     await fixture.service.processOptionSelection(ACCOUNT_ID, fixture.customer.phoneNumber, {
-      stage: 'detail',
-      value: DetailLevel.LIGHT,
+      stage: 'color',
+      value: 'BLACK_ONLY',
     });
 
     vi.setSystemTime(new Date('2026-09-15T11:00:00.000Z'));
@@ -252,18 +245,19 @@ describe('ChatbotService business-hour gating', () => {
       ACCOUNT_ID,
       fixture.customer.phoneNumber,
       {
-        stage: 'detail',
-        value: DetailLevel.LIGHT,
+        stage: 'color',
+        value: 'BLACK_ONLY',
       },
     );
 
     expect(fixture.getOrCreateActive).toHaveBeenCalledWith(ACCOUNT_ID, fixture.customer.id);
     expect(fixture.applyTransition).toHaveBeenCalledWith(
+      ACCOUNT_ID,
       fixture.conversation.id,
-      ConversationState.ASK_DETAIL,
+      ConversationState.ASK_COLOR,
       {
-        selectedDetail: DetailLevel.LIGHT,
         currentState: ConversationState.ASK_BODY_PART,
+        colorDeclaration: 'BLACK_ONLY',
       },
     );
     expect(response.state).toBe(ConversationState.ASK_BODY_PART);

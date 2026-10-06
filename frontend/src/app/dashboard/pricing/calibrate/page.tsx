@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   activateCalibration,
   dashboardErrorMessage,
-  getCalibrationDraft,
   getCalibrationStyles,
   getGeneralAdjustment,
   getPricingModels,
@@ -88,13 +87,12 @@ export default function CalibratePage() {
     }
   }
 
-  async function selectStyle(styleId: string) {
+  async function selectStyle(styleId: string, catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR') {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const existing = await getCalibrationDraft(styleId);
-      const next = existing ?? (await startCalibrationDraft(styleId));
+      const next = await startCalibrationDraft(styleId, catalog);
       setSelectedStyleId(styleId);
       setDraft(next);
       const first = next.cases.findIndex((item) => item.pricePen === null);
@@ -221,17 +219,28 @@ export default function CalibratePage() {
                       {style.activeVersion
                         ? `Modelo activo v${style.activeVersion}`
                         : 'Sin modelo activo'}{' '}
-                      · {style.caseCount} referencias disponibles
+                      · {style.caseCount + style.catalogCaseCount} referencias disponibles
                     </small>
-                    <button
-                      type="button"
-                      disabled={busy || style.caseCount === 0}
-                      onClick={() => void selectStyle(style.id)}
-                    >
-                      {style.activeVersion ? 'Recalibrar' : 'Calibrar'}
-                    </button>
-                    {style.caseCount === 0 && (
+                    {(style.caseCount > 0 || style.catalogCaseCount === 0) && (
+                      <button
+                        type="button"
+                        disabled={busy || style.caseCount === 0}
+                        onClick={() => void selectStyle(style.id)}
+                      >
+                        {style.activeVersion ? 'Recalibrar' : 'Calibrar'}
+                      </button>
+                    )}
+                    {style.caseCount + style.catalogCaseCount === 0 && (
                       <small>Las imágenes de este estilo aún no están cargadas.</small>
+                    )}
+                    {style.catalogCaseCount > 0 && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void selectStyle(style.id, 'PHASED')}
+                      >
+                        Responder referencias ({style.catalogCaseCount})
+                      </button>
                     )}
                   </div>
                 )}
@@ -247,6 +256,12 @@ export default function CalibratePage() {
           <p>
             Referencia {position + 1} de {draft.totalCount} · {draft.answeredCount} respondidas
           </p>
+          {!draft.canActivate && (
+            <p>
+              {draft.calibrationError ??
+                'Tus precios se guardan. Completa las referencias para activar tu modelo.'}
+            </p>
+          )}
           <div className={styles.imageWrap}>
             <Image
               src={current.imageUrl}
@@ -300,7 +315,7 @@ export default function CalibratePage() {
               Siguiente
             </button>
           </div>
-          {draft.answeredCount === draft.totalCount && (
+          {draft.canActivate && draft.answeredCount === draft.totalCount && (
             <button type="button" disabled={busy} onClick={() => void activate()}>
               Activar modelo de {draft.styleName}
             </button>

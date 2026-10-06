@@ -47,23 +47,36 @@ describe('AI Vision V2 providers', () => {
     expect(gemini).toMatchObject({
       provider: 'gemini',
       model: 'gemini-server-version',
-      promptVersion: 4,
-      schemaVersion: 'VISION_V2_4',
+      promptVersion: 5,
+      schemaVersion: 'VISION_V2_5',
       rawResponse: { response: f.geminiRaw, outputText: f.geminiRaw.text },
     });
     expect(openai).toMatchObject({
       provider: 'openai',
       model: 'openai-server-version',
-      promptVersion: 4,
-      schemaVersion: 'VISION_V2_4',
+      promptVersion: 5,
+      schemaVersion: 'VISION_V2_5',
       rawResponse: { response: f.openaiRaw, outputText: f.openaiRaw.output_text },
     });
     const g = f.generateContent.mock.calls[0]?.[0] as Record<string, unknown>;
     const o = f.create.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(g.config).toMatchObject({
-      responseJsonSchema: { additionalProperties: false, required: Object.keys(VISION_RESPONSE) },
+      responseJsonSchema: {
+        additionalProperties: false,
+        required: Object.keys(VISION_RESPONSE),
+        properties: { estimated_density: { type: 'number', minimum: 0, maximum: 100 } },
+      },
     });
-    expect(o.text).toMatchObject({ format: { name: 'tattoo_image_analysis_v2', strict: true } });
+    expect(o.text).toMatchObject({
+      format: {
+        name: 'tattoo_image_analysis_v2',
+        strict: true,
+        schema: {
+          required: Object.keys(VISION_RESPONSE),
+          properties: { estimated_density: { type: 'number', minimum: 0, maximum: 100 } },
+        },
+      },
+    });
     expect(JSON.stringify(o)).not.toContain('detectedDetail');
     expect(JSON.stringify(g)).not.toContain('detectedSize');
   });
@@ -108,7 +121,6 @@ describe('AI Vision V2 providers', () => {
     });
     const primary = vi.fn().mockRejectedValue(error);
     const fallback = vi.fn().mockResolvedValue(visionResult('openai'));
-    const v1 = vi.fn();
     const sleep = vi.fn().mockResolvedValue(undefined);
     const service = new ResilientImageAnalysisService(
       new ConfigService({
@@ -118,11 +130,9 @@ describe('AI Vision V2 providers', () => {
       }),
       {
         analyzeTattooImageV2: primary,
-        analyzeTattooImage: v1,
       } as unknown as GeminiImageAnalysisService,
       {
         analyzeTattooImageV2: fallback,
-        analyzeTattooImage: v1,
       } as unknown as OpenAIImageAnalysisService,
       sleep,
       () => 0,
@@ -133,6 +143,41 @@ describe('AI Vision V2 providers', () => {
     expect(primary).toHaveBeenCalledTimes(2);
     expect(fallback).toHaveBeenCalledWith(VISION_IMAGE, VISION_STYLES);
     expect(sleep).toHaveBeenCalledOnce();
-    expect(v1).not.toHaveBeenCalled();
+  });
+
+  it('uses the new shared schema when the real OpenAI adapter is selected as fallback', async () => {
+    const f = providers();
+    f.generateContent.mockRejectedValue(
+      Object.assign(new Error('timeout'), { name: 'TimeoutError' }),
+    );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const service = new ResilientImageAnalysisService(
+      new ConfigService({
+        AI_FALLBACK_PROVIDER: 'openai',
+        GEMINI_MODEL: 'gemini-test-model',
+        OPENAI_MODEL: 'openai-test-model',
+      }),
+      f.gemini,
+      f.openai,
+      sleep,
+      () => 0,
+    );
+    const result = await service.analyzeTattooImageV2(VISION_IMAGE, VISION_STYLES);
+    expect(result).toMatchObject({
+      provider: 'openai',
+      schemaVersion: 'VISION_V2_5',
+      observations: { estimatedDensity: 34.5 },
+    });
+    expect(f.create).toHaveBeenCalledOnce();
+    expect(f.create.mock.calls[0]?.[0]).toMatchObject({
+      text: {
+        format: {
+          schema: {
+            required: Object.keys(VISION_RESPONSE),
+            properties: { estimated_density: { type: 'number', minimum: 0, maximum: 100 } },
+          },
+        },
+      },
+    });
   });
 });

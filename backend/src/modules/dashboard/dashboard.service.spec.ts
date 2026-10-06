@@ -1,20 +1,13 @@
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 import { ConflictException } from '@nestjs/common';
 import {
-  DetailLevel,
   LeadStatus,
   Prisma,
-  ReadinessStatus,
-  ReviewReason,
-  TattooSize,
   type AiAnalysis,
   type Lead,
-  type LeadEvaluation,
   type LeadImage,
-  type PricingRule,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { DashboardService } from './dashboard.service.js';
 import type { LeadListQueryDto } from './dto/dashboard.dto.js';
@@ -23,12 +16,11 @@ import { persistedVision } from '../../../test/fixtures/vision-v2.js';
 type DashboardLead = Lead & {
   customer: { phoneNumber: string };
   aiAnalysis: AiAnalysis | null;
-  evaluation: LeadEvaluation | null;
   images: LeadImage[];
+  quote: null;
 };
 
 const LEAD_ID = '290f2044-e63c-4e49-8847-067cd62426e4';
-const USER_ID = 'bb8bf7d2-e17c-44da-b456-b7240d30daf2';
 
 function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
   const now = new Date('2026-09-14T12:00:00.000Z');
@@ -38,8 +30,6 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     accountId: ACCOUNT_ID,
     customerId: '24d0e8b1-4dd8-4231-8b91-f52734d6bf5e',
     conversationId: 'a459f257-b03c-48f4-9091-2dc37871ef81',
-    selectedSize: TattooSize.MEDIUM,
-    selectedDetail: DetailLevel.DETAILED,
     bodyPart: 'Brazo',
     firstTattoo: null,
     sameSizeAsReference: null,
@@ -47,62 +37,14 @@ function makeLead(overrides: Partial<DashboardLead> = {}): DashboardLead {
     colorDeclaration: null,
     v2Preparation: null,
     bookingIntent: null,
-    status: LeadStatus.VERIFIED,
-    reviewReasons: [],
+    status: LeadStatus.AUTO_QUOTED,
     manualFinalPrice: null,
-    calculatedMinPrice: new Prisma.Decimal(500),
-    calculatedMaxPrice: new Prisma.Decimal(700),
-    pricingRuleId: 'ce16a85c-cc5b-43de-8a56-1b2ef568fd39',
-    pricingRuleVersion: 1,
-    priceSentAt: null,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
     customer: { phoneNumber: '+51 999999999' },
-    aiAnalysis: {
-      analysisVersion: 'V1',
-      style: null,
-      styleConfidence: null,
-      compositionAspectRatio: null,
-      validTattooReference: null,
-      referenceValidationConfidence: null,
-      compositionFillRatio: null,
-      scaleReferenceType: null,
-      scaleConfidence: null,
-      referenceMainDimensionCm: null,
-      referenceAreaCm2: null,
-      areaConfidence: null,
-      colorCoverage: null,
-      colorConfidence: null,
-      overallConfidence: null,
-      referenceEssentiallyBlack: null,
-      extensiveBodyCoverage: null,
-      promptVersion: null,
-      schemaVersion: null,
-      provider: null,
-      model: null,
-      id: 'c29080d9-49de-4d6e-bea2-6017cbe109f8',
-      leadId: LEAD_ID,
-      detectedSize: TattooSize.MEDIUM,
-      sizeConfidence: new Prisma.Decimal('0.950'),
-      detectedDetail: DetailLevel.DETAILED,
-      detailConfidence: new Prisma.Decimal('0.960'),
-      rawResponse: null,
-      createdAt: now,
-    },
-    evaluation: {
-      id: '4a0ec352-1674-45e1-b6af-41748736da76',
-      leadId: LEAD_ID,
-      rawScore: 250,
-      maxPositiveScore: 250,
-      readinessScore: new Prisma.Decimal(100),
-      readinessStatus: ReadinessStatus.LISTO,
-      rulesVersion: 1,
-      contributions: [],
-      blockers: [],
-      evaluatedAt: now,
-      updatedAt: now,
-    },
+    aiAnalysis: persistedVision(),
+    quote: null,
     images: [],
     ...overrides,
   };
@@ -119,21 +61,80 @@ function leadQuery(overrides: Partial<LeadListQueryDto> = {}): LeadListQueryDto 
   };
 }
 
-function serviceWith(prismaShape: object, pricingShape: object = {}, storageShape: object = {}) {
+function serviceWith(prismaShape: object, storageShape: object = {}) {
   const prisma = prismaShape as PrismaService;
-  const pricing = pricingShape as PricingService;
   const storage = storageShape as StorageService;
 
-  return { service: new DashboardService(prisma, pricing, storage) };
+  return { service: new DashboardService(prisma, storage) };
 }
 
 describe('DashboardService', () => {
-  it('does not display V2 observations as V1 size, detail or their confidences', async () => {
-    const findFirst = vi.fn().mockResolvedValue(makeLead({ aiAnalysis: persistedVision() }));
-    const { service } = serviceWith({ lead: { findFirst } });
+  it.each(['price', 'targetSizeCm'] as const)(
+    'sorts current leads by %s within the account',
+    async (sortBy) => {
+      const findMany = vi.fn().mockResolvedValue([]);
+      const { service } = serviceWith({ lead: { findMany, count: vi.fn().mockResolvedValue(0) } });
+      await service.listLeads(
+        ACCOUNT_ID,
+        leadQuery({ sortBy, sortOrder: 'asc', status: LeadStatus.SPECIAL_REVIEW }),
+      );
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            accountId: ACCOUNT_ID,
+            archivedAt: null,
+            AND: [{ status: LeadStatus.SPECIAL_REVIEW }],
+          },
+          orderBy: [
+            sortBy === 'price' ? { quote: { amount: 'asc' } } : { targetSizeCm: 'asc' },
+            { createdAt: 'desc' },
+          ],
+        }),
+      );
+    },
+  );
+
+  it('exposes declared centimeters and persisted density without creating a price', async () => {
+    const lead = makeLead({ targetSizeCm: 12.5, aiAnalysis: persistedVision() });
+    const { service } = serviceWith({ lead: { findFirst: vi.fn().mockResolvedValue(lead) } });
     const result = await service.getLead(ACCOUNT_ID, LEAD_ID);
-    expect(result.analysis).toBeNull();
-    expect(result.confidence).toBeNull();
+    expect(result).toMatchObject({
+      targetSizeCm: 12.5,
+      quote: null,
+      manualFinalPrice: null,
+      visionV2: { estimatedDensity: 34.5 },
+    });
+  });
+
+  it.each([LeadStatus.ANALYZING, LeadStatus.AUTO_QUOTED, LeadStatus.READY_TO_COORDINATE])(
+    'does not allow manual pricing in %s',
+    async (status) => {
+      const update = vi.fn();
+      const { service } = serviceWith({
+        lead: { findFirst: vi.fn().mockResolvedValue({ status, quote: null }), update },
+      });
+      await expect(service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 500)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves an existing Quote when a lead is under review', async () => {
+    const update = vi.fn();
+    const { service } = serviceWith({
+      lead: {
+        findFirst: vi.fn().mockResolvedValue({
+          status: LeadStatus.REQUIRES_REVIEW,
+          quote: { id: 'current-quote' },
+        }),
+        update,
+      },
+    });
+    await expect(service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 500)).rejects.toThrow(
+      ConflictException,
+    );
+    expect(update).not.toHaveBeenCalled();
   });
   it('counts only complete Lead records and returns recent orders', async () => {
     const count = vi
@@ -143,7 +144,7 @@ describe('DashboardService', () => {
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(12);
     const findMany = vi.fn().mockResolvedValue([makeLead()]);
-    const conversationFindMany = vi.fn().mockResolvedValue([{ currentState: 'ASK_DETAIL' }]);
+    const conversationFindMany = vi.fn().mockResolvedValue([{ currentState: 'ASK_COLOR' }]);
     const { service } = serviceWith({
       lead: { count, findMany },
       conversation: { findMany: conversationFindMany },
@@ -162,7 +163,7 @@ describe('DashboardService', () => {
   });
 
   it.each([
-    ['verified' as const, LeadStatus.VERIFIED, 'Verificado'],
+    ['verified' as const, LeadStatus.AUTO_QUOTED, 'Cotización automática lista'],
     ['requires-review' as const, LeadStatus.REQUIRES_REVIEW, 'Requiere revisión'],
   ])('lists the %s lead filter', async (filter, status, expectedLabel) => {
     const findMany = vi.fn().mockResolvedValue([makeLead({ status })]);
@@ -179,26 +180,19 @@ describe('DashboardService', () => {
           status: {
             in:
               filter === 'verified'
-                ? ['VERIFIED', 'AUTO_QUOTED', 'READY_TO_COORDINATE']
+                ? ['AUTO_QUOTED', 'READY_TO_COORDINATE']
                 : ['REQUIRES_REVIEW', 'SPECIAL_REVIEW'],
           },
         },
         include: expect.objectContaining({
           customer: { select: { phoneNumber: true } },
-          evaluation: true,
           aiAnalysis: {
             select: {
-              analysisVersion: true,
-              sizeConfidence: true,
-              detailConfidence: true,
               style: true,
             },
           },
         }) as unknown,
-        orderBy: [
-          { evaluation: { readinessStatus: 'asc' } },
-          { evaluation: { readinessScore: 'desc' } },
-        ],
+        orderBy: [{ createdAt: 'desc' }],
         skip: 0,
         take: 20,
       }),
@@ -206,37 +200,7 @@ describe('DashboardService', () => {
     expect(result.leads[0]?.statusLabel).toBe(expectedLabel);
   });
 
-  it('returns the complete lead detail with translated review reasons', async () => {
-    const lead = makeLead({
-      status: LeadStatus.REQUIRES_REVIEW,
-      reviewReasons: [ReviewReason.SIZE_MISMATCH, ReviewReason.LOW_DETAIL_CONFIDENCE],
-      calculatedMinPrice: null,
-      calculatedMaxPrice: null,
-      pricingRuleId: null,
-      pricingRuleVersion: null,
-    });
-    const { service } = serviceWith({
-      lead: { findFirst: vi.fn().mockResolvedValue(lead) },
-    });
-
-    const result = await service.getLead(ACCOUNT_ID, LEAD_ID);
-
-    expect(result.customerPhoneNumber).toBe('+51 999999999');
-    expect(result.analysis).toMatchObject({
-      detectedSizeLabel: 'Mediano',
-      sizeConfidence: 0.95,
-      detectedDetailLabel: 'Detallado',
-      detailConfidence: 0.96,
-    });
-    expect(result.reviewMessages).toEqual([
-      'El tamaño detectado no coincide con lo indicado por el cliente.',
-      'La IA no tuvo suficiente confianza al identificar el nivel de detalle.',
-    ]);
-    expect(result.reviewMessages.join(' ')).not.toContain('SIZE_MISMATCH');
-    expect(result).not.toHaveProperty('priceSentAt');
-  });
-
-  it('serializes manual and automatic prices separately', async () => {
+  it('serializes manual prices and preserves pending quotes', async () => {
     const findMany = vi
       .fn()
       .mockResolvedValue([
@@ -251,11 +215,9 @@ describe('DashboardService', () => {
 
     expect(result.leads[0]).toMatchObject({
       manualFinalPrice: '650.00',
-      price: { minimum: '500', maximum: '700' },
     });
     expect(result.leads[1]).toMatchObject({
       manualFinalPrice: null,
-      price: { minimum: '500', maximum: '700' },
     });
   });
 
@@ -276,7 +238,6 @@ describe('DashboardService', () => {
           }),
         },
       },
-      {},
       { exists, createSignedUrl },
     );
 
@@ -300,7 +261,6 @@ describe('DashboardService', () => {
           findFirst: vi.fn().mockResolvedValue({ id: LEAD_ID, images: [] }),
         },
       },
-      {},
       { exists, createSignedUrl },
     );
 
@@ -333,7 +293,6 @@ describe('DashboardService', () => {
           }),
         },
       },
-      {},
       { exists, createSignedUrl },
     );
 
@@ -347,7 +306,7 @@ describe('DashboardService', () => {
     const completedLead = makeLead({ status: LeadStatus.COMPLETED });
     const findFirst = vi
       .fn()
-      .mockResolvedValueOnce({ status: LeadStatus.VERIFIED })
+      .mockResolvedValueOnce({ status: LeadStatus.AUTO_QUOTED })
       .mockResolvedValueOnce(completedLead);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const { service } = serviceWith({ lead: { findFirst, updateMany } });
@@ -360,7 +319,6 @@ describe('DashboardService', () => {
         accountId: ACCOUNT_ID,
         status: {
           in: [
-            LeadStatus.VERIFIED,
             LeadStatus.REQUIRES_REVIEW,
             LeadStatus.HANDOFF_TO_TATTOO_ARTIST,
             LeadStatus.AUTO_QUOTED,
@@ -393,20 +351,10 @@ describe('DashboardService', () => {
     const updatedLead = makeLead({
       status: LeadStatus.REQUIRES_REVIEW,
       manualFinalPrice: new Prisma.Decimal('650.00'),
-      calculatedMinPrice: null,
-      calculatedMaxPrice: null,
-      evaluation: {
-        ...makeLead().evaluation!,
-        readinessStatus: ReadinessStatus.REVISAR,
-      },
     });
     const findFirst = vi
       .fn()
-      .mockResolvedValueOnce({
-        calculatedMinPrice: null,
-        calculatedMaxPrice: null,
-        evaluation: { readinessStatus: ReadinessStatus.REVISAR },
-      })
+      .mockResolvedValueOnce({ status: LeadStatus.REQUIRES_REVIEW, quote: null })
       .mockResolvedValueOnce(updatedLead);
     const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
     const { service } = serviceWith({ lead: { findFirst, update } });
@@ -423,7 +371,6 @@ describe('DashboardService', () => {
     expect(result).toMatchObject({
       status: LeadStatus.REQUIRES_REVIEW,
       manualFinalPrice: '650.00',
-      price: null,
     });
   });
 
@@ -431,20 +378,10 @@ describe('DashboardService', () => {
     const updatedLead = makeLead({
       status: LeadStatus.REQUIRES_REVIEW,
       manualFinalPrice: new Prisma.Decimal('725.50'),
-      calculatedMinPrice: null,
-      calculatedMaxPrice: null,
-      evaluation: {
-        ...makeLead().evaluation!,
-        readinessStatus: ReadinessStatus.REVISAR,
-      },
     });
     const findFirst = vi
       .fn()
-      .mockResolvedValueOnce({
-        calculatedMinPrice: null,
-        calculatedMaxPrice: null,
-        evaluation: { readinessStatus: ReadinessStatus.REVISAR },
-      })
+      .mockResolvedValueOnce({ status: LeadStatus.REQUIRES_REVIEW, quote: null })
       .mockResolvedValueOnce(updatedLead);
     const update = vi.fn().mockResolvedValue({ id: LEAD_ID });
     const { service } = serviceWith({ lead: { findFirst, update } });
@@ -453,25 +390,6 @@ describe('DashboardService', () => {
       manualFinalPrice: '725.50',
       status: LeadStatus.REQUIRES_REVIEW,
     });
-  });
-
-  it('does not allow a manual final price when an automatic range exists', async () => {
-    const update = vi.fn();
-    const { service } = serviceWith({
-      lead: {
-        findFirst: vi.fn().mockResolvedValue({
-          calculatedMinPrice: new Prisma.Decimal(500),
-          calculatedMaxPrice: new Prisma.Decimal(700),
-          evaluation: { readinessStatus: ReadinessStatus.REVISAR },
-        }),
-        update,
-      },
-    });
-
-    await expect(service.saveManualFinalPrice(ACCOUNT_ID, LEAD_ID, 650)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-    expect(update).not.toHaveBeenCalled();
   });
 
   it('does not finalize a lead while image analysis is still running', async () => {
@@ -504,67 +422,5 @@ describe('DashboardService', () => {
     expect(result.leads).toEqual([]);
     expect(findMany).toHaveBeenCalledOnce();
     expect(conversationFindMany).not.toHaveBeenCalled();
-  });
-
-  it('returns friendly pricing labels without exposing versions', async () => {
-    const rule: PricingRule = {
-      id: '00000000-0000-4000-8000-000000000001',
-      accountId: ACCOUNT_ID,
-      size: TattooSize.SMALL,
-      detail: DetailLevel.LIGHT,
-      minPrice: new Prisma.Decimal(70),
-      maxPrice: new Prisma.Decimal(80),
-      isActive: true,
-      version: 4,
-      updatedAt: new Date('2026-09-14T12:00:00.000Z'),
-    };
-    const listActiveRules = vi.fn().mockResolvedValue([rule]);
-    const { service } = serviceWith({}, { listActiveRules });
-
-    const result = await service.getPricingRules(ACCOUNT_ID);
-
-    expect(result.rules[0]).toEqual({
-      id: rule.id,
-      size: TattooSize.SMALL,
-      sizeLabel: 'Pequeño',
-      sizeRange: '4–6 cm',
-      detail: DetailLevel.LIGHT,
-      detailLabel: 'Ligero',
-      minPrice: '70',
-      maxPrice: '80',
-    });
-    expect(result.rules[0]).not.toHaveProperty('version');
-  });
-
-  it('passes only price changes and the authenticated user to PricingService', async () => {
-    const update = {
-      pricingRuleId: '00000000-0000-4000-8000-000000000001',
-      minPrice: 75,
-      maxPrice: 85,
-    };
-    const updatedRule: PricingRule = {
-      id: update.pricingRuleId,
-      accountId: ACCOUNT_ID,
-      size: TattooSize.SMALL,
-      detail: DetailLevel.LIGHT,
-      minPrice: new Prisma.Decimal(update.minPrice),
-      maxPrice: new Prisma.Decimal(update.maxPrice),
-      isActive: true,
-      version: 2,
-      updatedAt: new Date('2026-09-14T12:00:00.000Z'),
-    };
-    const updateActiveRules = vi.fn().mockResolvedValue({
-      rules: [updatedRule],
-      updatedCount: 1,
-    });
-    const { service } = serviceWith({}, { updateActiveRules });
-
-    const result = await service.updatePricingRules(ACCOUNT_ID, [update], USER_ID);
-
-    expect(updateActiveRules).toHaveBeenCalledWith(ACCOUNT_ID, [update], USER_ID);
-    expect(result).toMatchObject({
-      updatedCount: 1,
-      message: 'Precios actualizados correctamente.',
-    });
   });
 });

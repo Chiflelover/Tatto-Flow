@@ -68,6 +68,21 @@ export class WhatsAppCloudApiClient {
       return;
     }
 
+    if (message.type === 'interactive_list') {
+      try {
+        await this.sendList(phoneNumberId, normalizedRecipient, message, signal);
+      } catch (error) {
+        if (!(error instanceof WhatsAppCloudApiError) || error.status !== 400) throw error;
+        await this.sendText(
+          phoneNumberId,
+          normalizedRecipient,
+          `${message.body}\n\n${message.rows.map(({ title }) => `- ${title}`).join('\n')}`,
+          signal,
+        );
+      }
+      return;
+    }
+
     if (message.headerImageUrl) {
       try {
         await this.sendButtons(
@@ -228,6 +243,39 @@ export class WhatsAppCloudApiClient {
               reply: { id, title },
             })),
           },
+        },
+      },
+      signal,
+    );
+  }
+
+  private async sendList(
+    phoneNumberId: string,
+    recipient: string,
+    message: Extract<WhatsAppOutboundMessage, { type: 'interactive_list' }>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (
+      !message.body.trim() ||
+      !message.button.trim() ||
+      message.button.length > 20 ||
+      message.rows.length < 1 ||
+      message.rows.length > 10 ||
+      new Set(message.rows.map(({ id }) => id)).size !== message.rows.length ||
+      message.rows.some(({ id, title }) => !id || id.length > 200 || !title || title.length > 24)
+    )
+      throw new BadRequestException('La lista interactiva de WhatsApp no es válida.');
+    await this.postMessage(
+      phoneNumberId,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: message.body },
+          action: { button: message.button, sections: [{ rows: message.rows }] },
         },
       },
       signal,

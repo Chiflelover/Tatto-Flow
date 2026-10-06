@@ -4,11 +4,12 @@ import { CalibrationController } from './calibration.controller.js';
 import { CalibrationService } from './calibration.service.js';
 import { CatalogController } from './catalog.controller.js';
 import { CatalogService } from './catalog.service.js';
+import { CatalogImportService } from './catalog-import.service.js';
 
 @Module({
   imports: [AuthModule],
   controllers: [CalibrationController, CatalogController],
-  providers: [CalibrationService, CatalogService],
+  providers: [CalibrationService, CatalogService, CatalogImportService],
   exports: [CalibrationService],
 })
 export class CalibrationModule {}

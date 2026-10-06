@@ -1,6 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { PricingService } from '../pricing/pricing.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { DashboardService } from './dashboard.service.js';
 
@@ -24,7 +23,6 @@ describe('DashboardService account isolation', () => {
     const createSignedUrl = vi.fn();
     const service = new DashboardService(
       { lead: { findFirst } } as unknown as PrismaService,
-      {} as PricingService,
       { exists, createSignedUrl } as unknown as StorageService,
     );
 
@@ -49,7 +47,7 @@ describe('DashboardService account isolation', () => {
       .mockResolvedValue(0);
     const service = new DashboardService(
       { lead: { findMany, count } } as unknown as PrismaService,
-      {} as PricingService,
+
       {} as StorageService,
     );
     const query = {

@@ -28,7 +28,7 @@ export class NitaV2CompletionService {
     const conversation = await this.prisma.conversation.findFirst({
       where: {
         accountId,
-        flowVersion: 'V2',
+
         status: 'ACTIVE',
         currentState: { in: [...PREPARABLE_STATES] },
         customer: { phoneNumber },
@@ -47,8 +47,6 @@ export class NitaV2CompletionService {
       });
       if (!conversation)
         throw new NotFoundException('Conversación no disponible para esta cuenta.');
-      if (conversation.flowVersion !== 'V2')
-        throw new ConflictException('El cierre solo admite V2.');
       if (!conversation.account.isActive)
         throw new ConflictException('La cuenta está desactivada.');
       if (
@@ -126,7 +124,7 @@ export class NitaV2CompletionService {
     return this.prisma.$transaction(async (tx) => {
       await this.lock(tx, accountId, conversationId);
       const conversation = await tx.conversation.findFirst({
-        where: { id: conversationId, accountId, customerId, flowVersion: 'V2' },
+        where: { id: conversationId, accountId, customerId },
         include: { lead: { include: { quote: true } }, account: { select: { isActive: true } } },
       });
       if (!conversation)

@@ -14,7 +14,7 @@ import { ImageAnalysisV2Service } from '../src/modules/image-analysis/image-anal
 import { StorageModule } from '../src/modules/storage/storage.module.js';
 import { VISION_IMAGE, VISION_STYLES } from './fixtures/vision-v2.js';
 
-describe('AI_MODE=mock with V1 and controlled V2 (e2e)', () => {
+describe('AI_MODE=mock with current Vision (e2e)', () => {
   let app: INestApplication<Server>;
   beforeEach(async () => {
     const module = await Test.createTestingModule({
@@ -48,8 +48,8 @@ describe('AI_MODE=mock with V1 and controlled V2 (e2e)', () => {
     expect(app.get(OPENAI_CLIENT)).toBeNull();
     expect(result).toMatchObject({
       provider: 'mock',
-      promptVersion: 4,
-      schemaVersion: 'VISION_V2_4',
+      promptVersion: 5,
+      schemaVersion: 'VISION_V2_5',
       observations: {
         validTattooReference: false,
         referenceValidationConfidence: 0,
@@ -58,18 +58,14 @@ describe('AI_MODE=mock with V1 and controlled V2 (e2e)', () => {
         scaleConfidence: 0,
         referenceMainDimensionCm: null,
         referenceAreaCm2: null,
+        estimatedDensity: 0,
         colorCoverage: null,
         overallConfidence: 0,
       },
     });
   });
 
-  it('still supports V1 analysis and exposes no public V2 testing endpoint', async () => {
-    expect(await app.get(ImageAnalysisService).analyzeTattooImage(VISION_IMAGE)).toMatchObject({
-      detectedSize: 'MEDIUM',
-      detectedDetail: 'LIGHT',
-      sizeConfidence: 0,
-    });
+  it('exposes no public Vision testing endpoint', async () => {
     await request(app.getHttpServer()).post('/api/vision-v2').send({}).expect(404);
   });
 });

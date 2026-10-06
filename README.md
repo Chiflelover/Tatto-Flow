@@ -2,7 +2,7 @@
 
 Tatuoflow es un MVP para gestionar solicitudes y cotizaciones de tatuajes recibidas por WhatsApp. Nita recopila la información del cliente, almacena temporalmente la imagen de referencia, solicita un análisis visual y prepara el lead para que el tatuador lo atienda desde un dashboard privado.
 
-La IA aporta observaciones sobre la referencia, pero no decide el precio ni el estado final por sí sola. El backend aplica reglas explicables de scoring, gates de seguridad y una matriz determinística de precios.
+La IA aporta observaciones sobre la referencia, pero no decide el precio ni el estado final por sí sola. El backend aplica la preparación del caso y el modelo de precios calibrado del tatuador.
 
 ## Estado actual del MVP
 
@@ -11,10 +11,10 @@ El proyecto incluye:
 - recepción y respuesta mediante WhatsApp Cloud API;
 - flujo conversacional de Nita exclusivo de WhatsApp;
 - análisis visual con Gemini como proveedor principal y OpenAI como fallback técnico opcional;
-- scoring explicable y versionado con estados `LISTO`, `REVISAR` e `INCOMPLETO`;
+- preparación con cotización automática, revisión ordinaria o revisión especial;
 - precios determinísticos calculados únicamente en el backend;
 - revisión y envío manual de precio cuando el análisis requiere intervención;
-- dashboard privado para gestionar leads y reglas de precios;
+- dashboard privado para gestionar leads y calibración de precios;
 - almacenamiento privado de referencias en Supabase Storage;
 - autenticación del tatuador y sesiones persistentes;
 - administración global de cuentas de tatuador y números de Nita separados;
@@ -25,16 +25,15 @@ No existe un chat web para Nita. El canal de atención automatizada es WhatsApp.
 
 ## Arquitectura
 
-| Capa         | Tecnología               | Responsabilidad                                                        |
-| ------------ | ------------------------ | ---------------------------------------------------------------------- |
-| Frontend     | Next.js + TypeScript     | Login y dashboard responsive/mobile-first del tatuador                 |
-| Backend      | NestJS + TypeScript      | Webhook, reglas de negocio, autenticación, scoring y precios           |
-| Persistencia | PostgreSQL + Prisma 7    | Clientes, conversaciones, leads, evaluaciones, precios y sesiones      |
-| Archivos     | Supabase Storage privado | Imágenes de referencia con acceso mediante URLs firmadas               |
-| IA visual    | Gemini + OpenAI          | Gemini principal y OpenAI como fallback ante fallos técnicos elegibles |
-| Mensajería   | WhatsApp Cloud API       | Entrada de texto, botones e imágenes; salida de texto y botones        |
-| Reglas       | `json-rules-engine`      | Evaluación explicable y versionada de la preparación del lead          |
-| Despliegue   | Vercel Services          | Next.js y NestJS dentro de un único proyecto                           |
+| Capa         | Tecnología               | Responsabilidad                                                                 |
+| ------------ | ------------------------ | ------------------------------------------------------------------------------- |
+| Frontend     | Next.js + TypeScript     | Login y dashboard responsive/mobile-first del tatuador                          |
+| Backend      | NestJS + TypeScript      | Webhook, reglas de negocio, autenticación, preparación y precios                |
+| Persistencia | PostgreSQL + Prisma 7    | Clientes, conversaciones, leads, análisis, cotizaciones y sesiones              |
+| Archivos     | Supabase Storage privado | Imágenes de referencia con acceso mediante URLs firmadas                        |
+| IA visual    | Gemini + OpenAI          | Gemini principal y OpenAI como fallback ante fallos técnicos elegibles          |
+| Mensajería   | WhatsApp Cloud API       | Entrada de texto, botones, listas e imágenes; salida de texto, botones y listas |
+| Despliegue   | Vercel Services          | Next.js y NestJS dentro de un único proyecto                                    |
 
 Flujo principal:
 
@@ -43,7 +42,7 @@ WhatsApp Cloud API
         ↓
 Webhook firmado + resolución del número receptor + idempotencia por message ID
         ↓
-WhatsAppAdapter
+WhatsAppJob / WhatsAppJobProcessor / WhatsAppAdapter
         ↓
 ChatbotService / ConversationService
         ↓
@@ -51,9 +50,9 @@ Supabase Storage privado
         ↓
 Gemini ──fallo técnico elegible──> OpenAI
         ↓
-LeadScoringService
+NitaV2AnalysisService / Decision Engine
         ↓
-PricingService o revisión humana
+QuoteV2Service o revisión humana
         ↓
 Dashboard + entrega al tatuador
 ```
@@ -66,18 +65,14 @@ El endpoint público es `/api/whatsapp/webhook`:
 - `POST` valida `X-Hub-Signature-256` con `META_APP_SECRET`;
 - los IDs de mensajes entrantes se registran para evitar reprocesamientos;
 - el adapter convierte texto, `button_reply`, `list_reply` e imágenes a entradas del dominio sin contener lógica de estados;
-- las respuestas estructuradas del chatbot se convierten en texto o botones interactivos de WhatsApp.
+- las respuestas estructuradas del chatbot se convierten en texto, botones o listas interactivas de WhatsApp.
 
 Cada `phone_number_id` registrado en el panel ADMIN identifica una cuenta de tatuador. Los clientes se distinguen por cuenta y teléfono; un mismo remitente puede escribir a dos números de Nita sin mezclar conversaciones. Los canales registrados usan las credenciales de la misma integración de Meta configurada en el backend.
 
-La fase 1 mantiene el flujo de preguntas y precios v0.1. Todas las conversaciones existentes y nuevas usan `flowVersion=V1`; `V2` todavía no está activo.
-
-Nita solicita, en orden:
-
-1. tamaño mediante botones con IDs estables;
-2. nivel de detalle mediante botones con IDs estables;
-3. zona corporal como texto libre de 1 a 10 caracteres;
-4. una imagen de referencia JPEG, PNG o WEBP de hasta 5 MB.
+Solo existe la Nita actual. Solicita primer tatuaje, imagen de referencia, mismo tamaño,
+tamaño objetivo en centímetros (tanto con YES como con NO), color y ubicación.
+`targetSizeCm` es siempre el tamaño declarado por el cliente; la medida de referencia
+es contexto y nunca lo sustituye ni se promedia con él.
 
 La conversación incompleta se conserva durante dos horas de actividad efectiva. Al completarse el procesamiento, la conversación pasa a `COMPLETED` y `HANDOFF_TO_TATTOO_ARTIST`; Nita deja de responder automáticamente mientras el lead siga en atención.
 
@@ -89,45 +84,24 @@ El horario normal se evalúa siempre en `America/Lima`: desde las 06:00 inclusiv
 
 Gemini es el proveedor principal. Ante un fallo técnico elegible, el backend puede realizar un único intento con OpenAI si `AI_FALLBACK_PROVIDER=openai` y sus credenciales están configuradas. Una respuesta válida con baja confianza o discrepancias no activa el fallback.
 
-Ambos proveedores mantienen el contrato V1 para las conversaciones actuales: tamaño y detalle detectados, confidencias, presencia del tatuaje sobre piel, analizabilidad y ambigüedad. La IA no calcula el score, no clasifica el lead y no calcula precios.
+Gemini, OpenAI y mock comparten el contrato `VISION_V2_5` y el prompt 5.
+`estimatedDensity` es un número continuo entre 0 y 100, con decimales, independiente
+del estilo, color, tamaño y precio. La columna nullable conserva la lectura de Vision
+V2_4 y versiones anteriores sin reconstruir datos. Proveedor/modelo, versiones de
+prompt/schema y respuesta original permanecen en `AiAnalysis`.
 
-La fase 3 agrega el contrato visual V2, independiente de las respuestas del cliente: estilo del catálogo activo o `null`, dimensión y área compositiva de referencia o `null`, cobertura cromática o `null`, cinco confidencias y observaciones de referencia esencialmente negra y cobertura corporal extensa. Las medidas requieren escala suficiente. No hay decisiones comerciales V2 en esta fase.
+`ImageAnalysisV2Service` verifica pertenencia a la cuenta y reutiliza los análisis
+persistidos. No existe un endpoint público para probar Vision. El mock devuelve una
+referencia inválida sin evidencia visual ni medidas físicas inventadas.
 
-El contrato `VISION_V2_2` (prompt 2) identifica el origen de escala: `EXPLICIT_REFERENCE`, `BODY_CONTEXT` o `NONE`. La anatomía es una referencia aproximada, no una escala física validada. `scaleConfidence` solo expresa confianza en la conversión a medidas físicas. Con `NONE`, el backend normaliza obligatoriamente dimensión y área a `null`, conservando la respuesta original del proveedor. No se aplica un umbral adicional ni se decide todavía si una estimación anatómica puede cotizarse.
+## Preparación y precios
 
-`ImageAnalysisV2Service.analyzeReference` es una entrada interna para pruebas controladas; no persiste ni envía mensajes. `analyzeAndPersistLeadReference` exige un lead de la cuenta indicada con conversación V2 y conserva cualquier análisis histórico V1. No existe un endpoint público V2 y las conversaciones nuevas siguen siendo V1.
-
-Los análisis V2 conservan `analysisVersion`, proveedor/modelo efectivo, versiones de prompt/schema y respuesta original del proveedor. Los datos históricos V1 no se reinterpretan como V2.
-
-`AI_MODE=mock` permite probar ambos contratos sin API keys ni consumo de IA. El mock V2 devuelve observaciones insuficientes con medidas, estilo y cobertura `null`, confidencias cero y booleanos falsos. No estima realmente la imagen. El modo por defecto es `real`; el valor heredado `gemini` se normaliza a `real`. No se utilizan variables `AI_MOCK_*`.
-
-## Scoring y estados
-
-La preparación del lead se guarda en una evaluación separada del estado operativo del lead. El motor de reglas registra:
-
-- score bruto y score normalizado;
-- versión de reglas;
-- contribuciones que explican los puntos;
-- blockers y gates activados;
-- fecha de evaluación.
-
-Estados de preparación:
-
-- `LISTO`: información consistente y suficiente para continuar automáticamente;
-- `REVISAR`: requiere revisión humana por discrepancias, baja confianza o fallo del proveedor de IA;
-- `INCOMPLETO`: faltan datos esenciales, la conversación fue abandonada o se activa un gate duro.
-
-Los gates tienen prioridad sobre los thresholds. Un error de IA con todos los datos del cliente presentes produce `REVISAR`, nunca `INCOMPLETO`, y no genera precio automático.
-
-Estos estados no reemplazan el ciclo operativo del lead (`ANALYZING`, `VERIFIED`, `REQUIRES_REVIEW`, `HANDOFF_TO_TATTOO_ARTIST`, `COMPLETED`, entre otros).
-
-## Precios
-
-`PricingService` es la única fuente del precio automático. El cálculo se realiza en el backend a partir de la combinación de tamaño y nivel de detalle, utilizando reglas versionadas almacenadas en PostgreSQL.
-
-El frontend no puede decidir `VERIFIED` ni establecer un precio automático. Cada lead conserva el precio y la versión de la regla utilizados en su cotización, por lo que cambios posteriores no alteran precios históricos.
-
-Cuando un lead requiere revisión, el tatuador puede definir un rango válido y enviarlo mediante el servicio de mensajería. El envío es idempotente y queda registrado.
+El Decision Engine usa el intake y las observaciones para preparar cotización o revisión.
+`QuoteV2Service` calcula el precio en el backend con los modelos calibrados del tatuador.
+`Quote` conserva el importe y el snapshot inmutable del modelo. El modelo A/B usa la
+densidad estimada y el color objetivo declarado por el cliente; los modelos anteriores
+conservan su algoritmo. Los pedidos de revisión sin Quote admiten precio final manual.
+Los detalles del algoritmo actual y su calibración se describen más abajo.
 
 ## Storage y privacidad
 
@@ -211,7 +185,7 @@ WhatsApp:
 
 - `WHATSAPP_ACCESS_TOKEN`
 - `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_NITA_NUMBER`: número de Nita de la cuenta heredada, necesario para registrar automáticamente el canal v0.1 cuando llega su primer webhook después de migrar.
+- `WHATSAPP_NITA_NUMBER`: número de Nita para registrar automáticamente el canal de la cuenta inicial cuando llega su primer webhook. Los demás canales se resuelven mediante `WhatsAppChannel`.
 - `WHATSAPP_BUSINESS_ACCOUNT_ID`
 - `WHATSAPP_VERIFY_TOKEN`
 - `META_APP_SECRET`
@@ -257,32 +231,32 @@ npm --workspace backend run admin:create
 
 El panel `/admin` permite crear cuentas de tatuador, asignar su número de Nita y `phone_number_id`, cambiar contraseña o estado y copiar su URL `wa.me`. Si la cuenta heredada no tiene canal, asígnale ambos valores desde el panel antes de recibir mensajes; también puede registrarse automáticamente con `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_NITA_NUMBER` configurados. Una cuenta inactiva conserva sus datos y no procesa nuevos mensajes ni admite sesiones del tatuador.
 
-### Precios por estilo (Fase 2)
+### Precios por estilo
 
-`/dashboard/pricing/calibrate` permite habilitar estilos, responder los casos de calibración y activar un modelo por estilo. El ajuste general crea versiones nuevas sin modificar respuestas ni parámetros anteriores. Este pricing todavía no participa en las conversaciones ni en las cotizaciones de Nita; la matriz v0.1 sigue activa.
+`/dashboard/pricing/calibrate` permite habilitar estilos, responder los casos de calibración y activar un modelo por estilo. El ajuste general crea versiones nuevas sin modificar respuestas ni parámetros anteriores. Nita utiliza estos modelos mediante `QuoteV2Service`.
 
-El algoritmo `AREA_COLOR_SEPARABLE_V1` interpola una curva base de precio por área con los casos `AREA` y una curva de factores propios del tatuador y estilo con los casos `COLOR`. El factor en cobertura cero es 1. Fuera de los rangos calibrados no entrega precio. El importe se calcula con precisión decimal y después se aplica el ajuste general.
+El catálogo Fine Line contiene 20 casos A (5 tamaños × 4 coberturas de color, con densidad 60) y 5 casos B (11 cm, negro, densidades 20/40/60/80/100, basados en `FL_A_09`). Sus imágenes fijas se sirven desde `/calibration-assets/v1/Fine_Line/`; las referencias privadas de clientes siguen en Storage. El tatuador ve estilo, imagen, progreso, precio y navegación, sin la metadata interna del caso.
 
-Los ocho estilos iniciales se cargan con la migración. Los casos se administran mediante `/api/admin/catalog/styles` y `/api/admin/catalog/styles/:id/cases`, usando referencias HTTPS duraderas, separadas de `LeadImage`. No se cargan casos ficticios: las imágenes y sus metadatos internos deben prepararse antes de calibrar cada estilo. El sistema usa cuantos casos activos haya al iniciar cada borrador; la configuración inicial prevista es cinco `AREA` y cuatro `COLOR` por estilo.
+Los borradores A/B empiezan en `CATALOG_AB_PENDING`. Al responder los 25 precios válidos, se construye `CATALOG_AB_BILINEAR_DENSITY_V1` y el tatuador puede activarlo para ese estilo y cuenta. El precio es `surfaceA(sizeCm, colorCoverage) × B(estimatedDensity) / B(60) × (1 + generalAdjustmentPercent / 100)`, con interpolación bilineal en A y lineal en B. No extrapola fuera del catálogo: Fine Line admite tamaño 4–30 cm, color 0–1 y densidad 20–100. Se calcula con precisión decimal y se guarda en céntimos sin redondeo comercial adicional.
 
-Regla de producto para el flujo futuro: **Black & Grey = BLACK_ONLY**. Todavía no interviene en este pricing ni en la conversación v0.1.
+`AREA_COLOR_SEPARABLE_V1` sigue disponible para los modelos anteriores: interpola una curva base por área con los casos `AREA` y una curva de factores aprendidos con los casos `COLOR`. El factor en cobertura cero es 1. Fuera de los rangos calibrados no entrega precio. Los modelos y snapshots históricos, incluidos los identificados con `IDW_CONVEX_HULL_V1`, se conservan.
+
+Los ocho estilos iniciales se cargan con la migración. Los casos globales se administran mediante `/api/admin/catalog/styles`, `/api/admin/catalog/styles/:id/cases` y `/api/admin/catalog/import`; las respuestas y modelos pertenecen a cada cuenta. El importador acepta referencias HTTPS duraderas o rutas públicas relativas del frontend, separadas de `LeadImage`. Cada borrador congela los casos activos del catálogo elegido. Fine Line es el único catálogo A/B real disponible por ahora.
+
+Nita pregunta **Negro / Poco color / Color medio / Full color**, que producen `targetColorCoverage` **0 / 0.25 / 0.5 / 1**. **Black & Grey = BLACK_ONLY** sigue siendo una respuesta textual válida para Negro. Vision describe el color observado y permite contrastar intención y referencia, sin elegir el color objetivo. Las declaraciones históricas ambiguas se conservan y requieren una elección explícita para una nueva cotización; las cotizaciones existentes no cambian.
 
 ## Tests y build
 
 ### Nita V2 — intake (Fase 4A)
 
-`NITA_DEFAULT_FLOW_VERSION=V1` mantiene el flujo actual. En un entorno de desarrollo
-aislado se puede configurar `V2` para nuevas conversaciones. El valor persistido en
-las conversaciones existentes nunca se cambia por esta configuración. También se
-puede iniciar V2 explícitamente mediante el servicio interno de conversaciones en tests.
-
-El intake V2 recopila primer tatuaje, referencia privada, mismo tamaño o dimensión principal
+El intake V2 recopila primer tatuaje, referencia privada, mismo tamaño y dimensión principal
 en cm, color y ubicación, hasta `READY_FOR_ANALYSIS`. Las respuestas temporales viven en `Conversation`;
 el candidato se crea al guardar la imagen y recibe los datos consolidados al completar
 el intake. `bodyPart` se reutiliza para ubicación (máximo 120 caracteres).
 
-La prueba E2E con BD requiere la migración aplicada y una `.env` local de desarrollo.
-Usa cuentas aisladas, Storage en memoria y WhatsApp simulado; elimina sus filas al terminar:
+Las pruebas E2E con BD requieren una `.env` local y permisos para crear esquemas temporales.
+Ejecutan todas las migraciones en un esquema separado por suite y lo eliminan al terminar.
+Usan Storage en memoria y WhatsApp simulado:
 
 ```powershell
 $env:RUN_NITA_V2_DB_TESTS = "1"
@@ -294,8 +268,8 @@ Remove-Item Env:RUN_NITA_V2_DB_TESTS
 
 Al completar el intake, V2 procesa `READY_FOR_ANALYSIS → ANALYZING` y termina internamente
 en `READY_FOR_PRICING`, `HUMAN_REVIEW` o `SPECIAL_REVIEW`. Reutiliza AI Vision V2 y su fallback.
-Esta etapa de preparación no calcula precios ni selecciona modelos, genera cotizaciones V2
-o ejecuta scoring V2. La Fase 5 continúa con el resultado y su comunicación.
+Esta etapa de preparación no calcula precios; consulta el algoritmo activo para validar
+las entradas necesarias. La cotización y su comunicación se realizan después.
 El acuse de recepción del intake se conserva.
 
 `AiAnalysis` mantiene las observaciones y metadata originales. `Lead.v2Preparation` guarda
@@ -303,14 +277,16 @@ una estructura versionada con decisión, diagnósticos, las dos señales especia
 de color y datos derivados. Las medidas y el factor se calculan con Decimal (40 dígitos)
 y se serializan como strings para conservar precisión. No se crean tablas nuevas.
 
-SAME_SIZE copia medidas suficientes de la referencia; DIFFERENT_SIZE aplica el cociente
-de dimensiones y escala el área con su cuadrado. Solo EXPLICIT_REFERENCE permite continuar;
-BODY_CONTEXT conserva estimaciones y requiere revisión, y NONE no produce un área objetivo.
+El tamaño objetivo siempre procede del cliente, independientemente de SAME_SIZE.
+El modelo por área usa el tamaño declarado y la geometría compositiva observada;
+el modelo A/B usa directamente `targetSizeCm` y no requiere un área estimada.
+`ASK_TARGET_SIZE_AFTER_ANALYSIS` conserva la recuperación de conversaciones históricas
+sin tamaño objetivo, sin copiar ni inventar medidas de la referencia.
 La única regla comercial de confianza sigue siendo `overallConfidence >= 0.90`.
 
-Para BLACK_ONLY, la cobertura objetivo es 0. Cuando la referencia ya tiene color y el cliente
-mantiene color se conserva su cobertura observada, sin porcentajes fijos por opción. Añadir
-color a una referencia esencialmente negra exige revisión especial sin inventar cobertura.
+La cobertura objetivo procede de la elección explícita del cliente: 0, 0.25, 0.5 o 1.
+Añadir color a una referencia esencialmente negra exige revisión especial y conserva
+el nivel elegido. Las diferencias con una referencia coloreada se registran como modificación.
 La otra señal especial es cobertura corporal extensa; ambas pueden guardarse juntas.
 
 El procesamiento usa un claim persistido de 120 s con ID de intento, transacciones breves
@@ -322,7 +298,7 @@ Los fallos definitivos de análisis terminan en HUMAN_REVIEW. Los resultados tar
 intento sustituido no alteran la decisión ni el histórico. No se añade un cron en esta fase.
 
 El desacoplamiento del webhook se implementa en Fase 6A. Su ejecución después del ACK
-todavía debe comprobarse en el despliegue real antes de activar V2.
+debe comprobarse también en el despliegue real.
 
 La suite `nita-v2-database` comprueba el intake con preparación sustituida por un stub.
 `nita-v2-preparation` comprueba el pipeline completo por webhook con la BD de desarrollo,
@@ -331,14 +307,15 @@ cuentas y estilo aislados, IA/Storage/WhatsApp simulados, y limpieza posterior.
 ### Nita V2 — cotización y avance (Fase 5)
 
 `READY_FOR_PRICING` selecciona el modelo ACTIVE de la misma cuenta y estilo habilitado.
-El servicio de pricing reutiliza `AREA_COLOR_SEPARABLE_V1`; acepta las medidas Decimal
-preparadas y no extrapola área ni color. Sin modelo aplicable, el caso pasa a revisión ordinaria
+`QuoteV2Service` despacha por `algorithmVersion`: los modelos A/B usan tamaño declarado,
+color elegido y densidad observada; los modelos por área usan las medidas preparadas.
+Sin entradas suficientes o modelo aplicable, el caso pasa a revisión ordinaria
 con diagnóstico `PRICING_MODEL_NOT_AVAILABLE` o `MODEL_NOT_APPLICABLE`.
 
 `Quote` conserva un único importe en PEN por lead, modelo/version/algoritmo, entradas,
 ajuste general y snapshot de curvas y casos. La base de datos bloquea actualizaciones
 de Quote. Los cambios de calibración o ajuste afectan nuevos casos; los reintentos reutilizan
-la Quote existente. Los rangos y precios manuales históricos de V1 siguen separados.
+la Quote existente.
 
 La cotización queda en `PRICE_READY` mientras se entrega un precio aproximado único
 y la pregunta de avance. Tras registrar el envío de la pregunta, pasa a `ASK_ADVANCE_INTENT`.
@@ -353,7 +330,7 @@ no se repite. Un fallo confirmado antes del envío o un rechazo explícito permi
 el trabajo sin recalcular la Quote. Los envíos V2
 utilizan un límite HTTP de 30 s y un claim de 60 s, con procesamiento fuera de las transacciones.
 Desde Fase 6A, el job V2 orquesta estos envíos. El dashboard muestra Quote, estado V2, estilo,
-área/color objetivo, revisión e intención, sin calcular scoring V2.
+área/color objetivo, revisión e intención.
 
 La suite `nita-v2-completion` comprueba pricing, histórico inmutable, aislamiento,
 concurrencia, fallos de entrega y ambas intenciones con BD de desarrollo y proveedores
@@ -371,8 +348,7 @@ No se ofrece una garantía absoluta de entrega exactamente una vez.
 
 El webhook V2 valida firma, cuenta/canal y mensaje. En una transacción registra el ID
 inbound y un `WhatsAppJob` único; responde sin descargar imágenes, ejecutar Vision,
-calcular Quote ni enviar respuestas. V1 conserva su procesamiento anterior y
-`NITA_DEFAULT_FLOW_VERSION=V1` sigue siendo el valor predeterminado.
+calcular Quote ni enviar respuestas. Es el único recorrido del webhook.
 
 `waitUntil` de `@vercel/functions` inicia el procesador después del trabajo mínimo
 del webhook, sin esperar su resultado para responder. Se configura un máximo de
@@ -428,9 +404,9 @@ ni se resuelve automáticamente. Los logs incluyen job, cuenta, conversación, e
 intento, timestamps y códigos de error resumidos, sin contenido del cliente.
 
 La suite `whatsapp-jobs` prueba el ACK independiente del pipeline, duplicados, claims,
-recuperación, retries, Quote inmutable, delivery, aislamiento, abandono y V1 con la BD
-de desarrollo y proveedores simulados. Las suites de fases anteriores aíslan sus
-servicios síncronos; esta suite prueba la ruta durable de producción.
+recuperación, retries, Quote inmutable, delivery, aislamiento y abandono en PostgreSQL
+aislado con proveedores simulados. Las suites de intake, preparación y cierre también
+utilizan el ingreso durable de producción.
 
 Backend:
 
@@ -462,8 +438,7 @@ Los smoke tests reales de proveedores requieren credenciales locales y una image
 - `/login`: acceso del tatuador;
 - `/dashboard`: resumen privado;
 - `/dashboard/leads`: bandeja, búsqueda, filtros, sorting y paginación;
-- `/dashboard/leads/[id]`: detalle, evaluación explicable y acciones del lead;
-- `/dashboard/pricing`: matriz de precios;
+- `/dashboard/leads/[id]`: detalle, análisis visual, preparación y acciones del lead;
 - `/dashboard/pricing/calibrate`: selección de estilos y calibración de precios v0.2;
 - `/admin`: administración básica de cuentas y canales de Nita;
 - `/admin/images`: imágenes de clientes de todas las cuentas y eliminación manual;
@@ -500,7 +475,6 @@ tatto-flow/
 │   ├── src/modules/chatbot/
 │   ├── src/modules/dashboard/
 │   ├── src/modules/image-analysis/
-│   ├── src/modules/lead-scoring/
 │   ├── src/modules/pricing/
 │   ├── src/modules/storage/
 │   └── test/

@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAX_CHAT_IMAGE_SIZE_BYTES } from '../chatbot/chatbot.constants.js';
 import { WHATSAPP_BUTTON_IDS } from '../chatbot/whatsapp/whatsapp.adapter.js';
@@ -13,8 +13,8 @@ const TEST_CONFIGURATION = {
   WHATSAPP_BUSINESS_ACCOUNT_ID: '0987654321',
   WHATSAPP_GRAPH_API_VERSION: 'v99.0',
 };
-const SIZE_GUIDE_URL = 'https://tatuoflow.example/nita-size-guide.png';
-const DETAIL_GUIDE_URL = 'https://tatuoflow.example/nita-detail-guide.png';
+const SIZE_GUIDE_URL = 'https://tatuoflow.example/test-header.png';
+const DETAIL_GUIDE_URL = 'https://tatuoflow.example/test-header.png';
 
 function createClient() {
   return new WhatsAppCloudApiClient(new ConfigService(TEST_CONFIGURATION));
@@ -119,9 +119,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
-        { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
-        { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Pequeño' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Mediano' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Grande' },
       ],
     });
 
@@ -140,9 +140,9 @@ describe('WhatsAppCloudApiClient', () => {
       image: { link: SIZE_GUIDE_URL },
     });
     expect(body.interactive.action.buttons).toEqual([
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' } },
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' } },
-      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Pequeño' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Mediano' } },
+      { type: 'reply', reply: { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Grande' } },
     ]);
   });
 
@@ -155,6 +155,52 @@ describe('WhatsAppCloudApiClient', () => {
       .catch((value: unknown) => value);
     expect(isConfirmedWhatsAppSendFailure(error)).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  const colorList = {
+    type: 'interactive_list' as const,
+    body: '¿Qué nivel de color quieres para tu tatuaje?',
+    button: 'Elegir color',
+    rows: [
+      { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Negro' },
+      { id: WHATSAPP_BUTTON_IDS.COLOR_LOW, title: 'Poco color' },
+      { id: WHATSAPP_BUTTON_IDS.COLOR_MEDIUM, title: 'Color medio' },
+      { id: WHATSAPP_BUTTON_IDS.COLOR_FULL, title: 'Full color' },
+    ],
+  };
+  it('sends the four client colors through an interactive list', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(successfulResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    await createClient().sendMessage('1234567890', '51999999999', colorList);
+    expect(parseRequestBody(fetchMock.mock.calls[0]?.[1])).toMatchObject({
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: colorList.body },
+        action: { button: 'Elegir color', sections: [{ rows: colorList.rows }] },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+  it('preserves all four choices in text after a confirmed list rejection', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 400 }))
+      .mockResolvedValueOnce(successfulResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    await createClient().sendMessage('1234567890', '51999999999', colorList);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(parseRequestBody(fetchMock.mock.calls[1]?.[1])).toMatchObject({
+      type: 'text',
+      text: { body: `${colorList.body}\n\n- Negro\n- Poco color\n- Color medio\n- Full color` },
+    });
+  });
+  it('does not retry a list after an ambiguous transport failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('Connection lost'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      createClient().sendMessage('1234567890', '51999999999', colorList),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it.each([400, 429, 408, 500])(
@@ -198,9 +244,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué tamaño aproximado tendrá tu tatuaje?\n\n(Las imágenes son solo ejemplos para comparar tamaños)',
       headerImageUrl: SIZE_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
-        { id: WHATSAPP_BUTTON_IDS.SIZE_MEDIUM, title: 'Mediano' },
-        { id: WHATSAPP_BUTTON_IDS.SIZE_LARGE, title: 'Grande' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Pequeño' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Mediano' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Grande' },
       ],
     });
 
@@ -229,9 +275,9 @@ describe('WhatsAppCloudApiClient', () => {
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       headerImageUrl: DETAIL_GUIDE_URL,
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Ligero' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Medio' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Detallado' },
       ],
     });
 
@@ -266,9 +312,9 @@ describe('WhatsAppCloudApiClient', () => {
       type: 'interactive_buttons',
       body: '¿Qué nivel de detalle buscas para tu tatuaje?\n\n(Piensa en cuánto detalle, líneas, sombras y tinta quieres que tenga.)',
       buttons: [
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_LIGHT, title: 'Ligero' },
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_MEDIUM, title: 'Medio' },
-        { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_BLACK_ONLY, title: 'Ligero' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_SOME, title: 'Medio' },
+        { id: WHATSAPP_BUTTON_IDS.COLOR_MOSTLY, title: 'Detallado' },
       ],
     });
 

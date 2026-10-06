@@ -1,3 +1,7 @@
+import { WhatsAppJobDispatcher } from '../src/modules/whatsapp/whatsapp-job-dispatcher.service.js';
+import { WhatsAppJobProcessor } from '../src/modules/whatsapp/whatsapp-job-processor.service.js';
+import { WhatsAppV2DeliveryService } from '../src/modules/whatsapp/whatsapp-v2-delivery.service.js';
+import { isolatedDatabase } from './helpers/isolated-database.js';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -22,24 +26,19 @@ import {
 } from '../src/modules/chatbot/domain/nita-v2-messages.js';
 import { DashboardService } from '../src/modules/dashboard/dashboard.service.js';
 import { ImageAnalysisService } from '../src/modules/image-analysis/image-analysis.service.js';
-import { ImageAmbiguityLevel } from '../src/modules/image-analysis/domain/image-analysis.types.js';
-import { PricingService } from '../src/modules/pricing/pricing.service.js';
 import { QuoteV2Service } from '../src/modules/pricing/quote-v2.service.js';
 import { StorageService } from '../src/modules/storage/storage.service.js';
-import {
-  WhatsAppCloudApiClient,
-  WhatsAppSendNotAcceptedError,
-} from '../src/modules/whatsapp/whatsapp-cloud-api.client.js';
+import { WhatsAppCloudApiClient } from '../src/modules/whatsapp/whatsapp-cloud-api.client.js';
 import { WhatsAppModule } from '../src/modules/whatsapp/whatsapp.module.js';
-import { WhatsAppJobRepository } from '../src/modules/whatsapp/whatsapp-job.repository.js';
 import { VISION_IMAGE, visionResult } from './fixtures/vision-v2.js';
 
 describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
-  'Nita V2 pricing, quote and delivery with development DB (e2e)',
+  'Nita V2 pricing, quote and delivery with isolated DB (e2e)',
   { timeout: 60_000 },
   () => {
     let app: INestApplication<Server>;
     let prisma: PrismaService;
+    let database: Awaited<ReturnType<typeof isolatedDatabase>>;
     let storage: StorageService;
     const accounts = [randomUUID(), randomUUID()];
     const modelIds = [randomUUID(), randomUUID()];
@@ -54,23 +53,13 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       downloadImage: vi.fn().mockResolvedValue(VISION_IMAGE),
     };
     const analyzeV2 = vi.fn();
-    const analyzeV1 = vi.fn().mockResolvedValue({
-      detectedSize: 'MEDIUM',
-      sizeConfidence: 0.98,
-      detectedDetail: 'LIGHT',
-      detailConfidence: 0.98,
-      tattooOnSkin: true,
-      tattooOnSkinConfidence: 0.98,
-      referenceAnalyzable: true,
-      analyzabilityConfidence: 0.98,
-      ambiguityLevel: ImageAmbiguityLevel.NONE,
-    });
     function result() {
       const value = visionResult();
       Object.assign(value.observations, {
         style: styleCode,
         referenceAreaCm2: 50,
         referenceMainDimensionCm: 10,
+        compositionFillRatio: 1,
         colorCoverage: 0.5,
         referenceEssentiallyBlack: false,
       });
@@ -103,6 +92,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
     }
     beforeAll(async () => {
       const local = parse(readFileSync('.env', 'utf8'));
+      database = await isolatedDatabase();
       const module = await Test.createTestingModule({
         imports: [
           ConfigModule.forRoot({
@@ -115,7 +105,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
                   DATABASE_URL: local.DATABASE_URL,
                   AI_MODE: 'mock',
                   STORAGE_MODE: 'memory',
-                  NITA_DEFAULT_FLOW_VERSION: 'V2',
+
                   WHATSAPP_BUSINESS_ACCOUNT_ID: 'test-business',
                   META_APP_SECRET: appSecret,
                 }),
@@ -126,9 +116,11 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
           CalibrationModule,
         ],
       })
-        // Earlier phase suites isolate their synchronous services; durable ingress is tested separately.
-        .overrideProvider(WhatsAppJobRepository)
-        .useValue({ enqueueIfV2: vi.fn().mockResolvedValue({ queued: false }) })
+        // Drain the real queue explicitly in each test.
+        .overrideProvider(WhatsAppJobDispatcher)
+        .useValue({ wake: vi.fn() })
+        .overrideProvider(PrismaService)
+        .useValue(database.prisma)
         .overrideProvider(WhatsAppCloudApiClient)
         .useValue(cloud)
         .overrideProvider(NitaBusinessHoursService)
@@ -137,7 +129,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         .useValue({
           providerName: 'controlled-test',
           analyzeTattooImageV2: analyzeV2,
-          analyzeTattooImage: analyzeV1,
         })
         .compile();
       app = module.createNestApplication<INestApplication<Server>>({ rawBody: true });
@@ -159,10 +150,10 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
             channel: { create: { phoneNumberId: channels[index], phoneNumber: channels[index] } },
           },
         });
-    }, 30_000);
+    }, 120_000);
     beforeEach(async () => {
       analyzeV2.mockReset().mockResolvedValue(result());
-      analyzeV1.mockClear();
+
       cloud.sendMessage.mockReset().mockResolvedValue(undefined);
       await prisma.pricingModelVersion.createMany({
         data: accounts.map((accountId, index) => ({
@@ -183,6 +174,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       vi.restoreAllMocks();
       if (!prisma) return;
       // Only generated account IDs are touched; Quote/delivery rows cascade with these leads.
+      await prisma.whatsAppJob.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.lead.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.conversation.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.customer.deleteMany({ where: { accountId: { in: accounts } } });
@@ -192,12 +184,12 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       });
       await prisma.pricingModelVersion.deleteMany({ where: { accountId: { in: accounts } } });
       await prisma.calibrationCase.deleteMany({ where: { styleId } });
-      await prisma.pricingRule.deleteMany({ where: { accountId: { in: accounts } } });
+
       await prisma.tattooArtistAccount.updateMany({
         where: { id: { in: accounts } },
         data: { adjustmentPercent: 10 },
       });
-    }, 30_000);
+    }, 120_000);
     afterAll(async () => {
       if (prisma) {
         await prisma.artistStyle.deleteMany({ where: { accountId: { in: accounts } } });
@@ -206,7 +198,8 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         await prisma.tattooStyle.deleteMany({ where: { id: styleId } });
       }
       if (app) await app.close();
-    }, 30_000);
+      if (database) await database.close();
+    }, 120_000);
 
     async function seed(
       options: {
@@ -214,6 +207,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         ready?: boolean;
         color?: ColorDeclaration;
         observation?: ReturnType<typeof visionResult>;
+        targetSizeCm?: number;
       } = {},
     ) {
       const index = options.index ?? 0,
@@ -234,11 +228,11 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         data: {
           accountId,
           customerId: customer.id,
-          flowVersion: 'V2',
           currentState: options.ready ? 'READY_FOR_PRICING' : 'ASK_BODY_PART',
           firstTattoo: true,
           sameSizeAsReference: true,
-          colorDeclaration: options.color ?? 'MOSTLY_COLOR',
+          targetSizeCm: options.targetSizeCm ?? 10,
+          colorDeclaration: options.color ?? 'MEDIUM_COLOR',
           bodyPart: options.ready ? 'Brazo' : null,
           lead: {
             create: {
@@ -247,7 +241,8 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
               customerId: customer.id,
               firstTattoo: true,
               sameSizeAsReference: true,
-              colorDeclaration: options.color ?? 'MOSTLY_COLOR',
+              targetSizeCm: options.targetSizeCm ?? 10,
+              colorDeclaration: options.color ?? 'MEDIUM_COLOR',
               bodyPart: options.ready ? 'Brazo' : null,
               images: { create: { storagePath: path } },
             },
@@ -259,7 +254,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         const analysis = await prisma.aiAnalysis.create({
           data: {
             leadId,
-            analysisVersion: 'V2',
             ...observation.observations,
             provider: observation.provider,
             model: observation.model,
@@ -309,18 +303,22 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         ],
       });
       const signature = `sha256=${createHmac('sha256', appSecret).update(body).digest('hex')}`;
-      return request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .post('/api/whatsapp/webhook')
         .set('Content-Type', 'application/json')
         .set('x-hub-signature-256', signature)
         .send(body);
+      while ((await app.get(WhatsAppJobProcessor).runNext(accounts[index])).processed) {
+        // Drain the durable queue without starting background workers.
+      }
+      return response;
     }
     const read = (id: string) =>
       prisma.lead.findUniqueOrThrow({
         where: { id },
         include: { quote: true, conversation: true, deliveries: true, aiAnalysis: true },
       });
-    const dashboard = () => new DashboardService(prisma, new PricingService(prisma), storage);
+    const dashboard = () => new DashboardService(prisma, storage);
 
     it('completes intake through Vision, creates the exact quote and sends one price plus the intent question', async () => {
       const f = await seed();
@@ -329,15 +327,15 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       const lead = await read(f.leadId);
       expect(lead.quote?.amount.toFixed(2)).toBe('825.00');
       expect(lead.quote?.pricingModelVersionId).toBe(modelIds[0]);
-      expect(lead.quote?.targetAreaCm2.toString()).toBe('50');
+      expect(lead.quote?.targetAreaCm2?.toString()).toBe('50');
       expect(lead.quote?.targetColorCoverage.toString()).toBe('0.5');
       expect(lead.status).toBe('AUTO_QUOTED');
       expect(lead.conversation?.currentState).toBe('ASK_ADVANCE_INTENT');
       expect(lead.bookingIntent).toBeNull();
-      expect(lead.calculatedMinPrice).toBeNull();
+
       expect(lead.manualFinalPrice).toBeNull();
       expect(analyzeV2).toHaveBeenCalledOnce();
-      expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_4');
+      expect(lead.aiAnalysis?.schemaVersion).toBe('VISION_V2_5');
       const messages = cloud.sendMessage.mock.calls
         .map((call) => JSON.stringify(call[2]))
         .join('\n');
@@ -415,8 +413,7 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       'routes an input outside the calibrated %s domain to ordinary review',
       async (dimension) => {
         const observation = result();
-        if (dimension === 'AREA') observation.observations.referenceAreaCm2 = 101;
-        else {
+        if (dimension === 'COLOR') {
           const model = parameters();
           model.colorCurve[1].colorCoverage = 0.4;
           await prisma.pricingModelVersion.update({
@@ -424,7 +421,11 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
             data: { modelParameters: model as unknown as Prisma.InputJsonValue },
           });
         }
-        const f = await seed({ ready: true, observation });
+        const f = await seed({
+          ready: true,
+          observation,
+          targetSizeCm: dimension === 'AREA' ? 15 : 10,
+        });
         expect((await inbound()).status).toBe(200);
         const lead = await read(f.leadId);
         expect(lead.quote).toBeNull();
@@ -469,60 +470,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
         ).toBe(true);
       },
     );
-    it('preserves quote/model/adjustment across a failed result send and later model replacement', async () => {
-      const f = await seed({ ready: true });
-      const id = randomUUID();
-      cloud.sendMessage.mockRejectedValueOnce(new WhatsAppSendNotAcceptedError());
-      expect((await inbound(0, 'continuar', id)).status).toBe(503);
-      const original = (await read(f.leadId)).quote;
-      expect(original?.amount.toFixed(2)).toBe('825.00');
-      await app.get(CalibrationService).setAdjustment(accounts[0], 50);
-      await expect(
-        prisma.quote.update({ where: { id: original!.id }, data: { amount: 1 } }),
-      ).rejects.toThrow();
-      expect((await inbound(0, 'continuar', id)).status).toBe(200);
-      const delivered = await read(f.leadId);
-      expect(delivered.quote).toEqual(original);
-      expect(delivered.deliveries.find((item) => item.kind === 'RESULT')).toMatchObject({
-        attemptCount: 2,
-        lastErrorCode: null,
-      });
-      expect(
-        cloud.sendMessage.mock.calls.filter((call) =>
-          JSON.stringify(call[2]).includes('S/ 825.00'),
-        ),
-      ).toHaveLength(2);
-      expect(JSON.stringify(cloud.sendMessage.mock.calls)).not.toContain('S/ 1125.00');
-      const count = cloud.sendMessage.mock.calls.length;
-      expect((await inbound(0, 'continuar', id)).status).toBe(200);
-      expect(cloud.sendMessage).toHaveBeenCalledTimes(count);
-    });
-    it('retries only the booking question after price delivery succeeded', async () => {
-      const f = await seed({ ready: true });
-      const id = randomUUID();
-      let fail = true;
-      cloud.sendMessage.mockImplementation(
-        (_channel: string, _recipient: string, message: { type: string }) => {
-          if (message.type === 'interactive_buttons' && fail) {
-            fail = false;
-            return Promise.reject(new WhatsAppSendNotAcceptedError());
-          }
-          return Promise.resolve();
-        },
-      );
-      expect((await inbound(0, 'continuar', id)).status).toBe(503);
-      const original = (await read(f.leadId)).quote;
-      expect((await read(f.leadId)).conversation?.currentState).toBe('PRICE_READY');
-      expect((await inbound(0, 'continuar', id)).status).toBe(200);
-      const lead = await read(f.leadId);
-      expect(lead.quote).toEqual(original);
-      expect(lead.conversation?.currentState).toBe('ASK_ADVANCE_INTENT');
-      expect(
-        cloud.sendMessage.mock.calls.filter((call) => JSON.stringify(call[2]).includes('S/')),
-      ).toHaveLength(1);
-      expect(lead.deliveries.find((item) => item.kind === 'RESULT')?.attemptCount).toBe(1);
-      expect(lead.deliveries.find((item) => item.kind === 'ADVANCE_INTENT')?.attemptCount).toBe(2);
-    });
     it('blocks price retries and the booking question after an ambiguous transport result', async () => {
       const f = await seed({ ready: true });
       const id = randomUUID();
@@ -572,6 +519,11 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
             data: { leaseUntil: new Date(Date.now() - 1000) },
           });
         } else expect(delivery.lastErrorCode).toBe('DELIVERY_UNKNOWN');
+        if (diagnosticFails) {
+          await app
+            .get(WhatsAppV2DeliveryService)
+            .deliverForCustomer(accounts[0], channels[0], phone);
+        }
         expect((await inbound(0, 'continuar', id)).status).toBe(200);
         expect((await inbound(0, 'continuar', id)).status).toBe(200);
         const recovered = await read(f.leadId);
@@ -603,6 +555,10 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       const initial = await read(f.leadId);
       expect(initial.deliveries.find((item) => item.kind === 'RESULT')?.sentAt).not.toBeNull();
       expect(initial.conversation?.currentState).toBe('PRICE_READY');
+      await prisma.whatsAppJob.updateMany({
+        where: { inboundMessageId: id, status: 'RETRYABLE' },
+        data: { availableAt: new Date(Date.now() - 1000) },
+      });
       expect((await inbound(0, 'continuar', id)).status).toBe(200);
       const lead = await read(f.leadId);
       expect(lead.quote).toEqual(initial.quote);
@@ -705,31 +661,6 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       expect((await read(f.leadId)).quote).toEqual(original);
       expect(await prisma.quote.count({ where: { leadId: f.leadId } })).toBe(1);
     });
-    it('fences concurrent duplicate webhook delivery without a second quote or recorded price send', async () => {
-      const f = await seed({ ready: true });
-      const id = randomUUID();
-      let start!: () => void, finish!: () => void;
-      const started = new Promise<void>((resolve) => {
-        start = resolve;
-      });
-      const delayed = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-      cloud.sendMessage.mockImplementationOnce(() => {
-        start();
-        return delayed;
-      });
-      const first = inbound(0, 'continuar', id).then((response) => response);
-      await started;
-      expect((await inbound(0, 'continuar', id)).status).toBe(503);
-      finish();
-      expect((await first).status).toBe(200);
-      expect((await inbound(0, 'continuar', id)).status).toBe(200);
-      const lead = await read(f.leadId);
-      expect(await prisma.quote.count({ where: { leadId: f.leadId } })).toBe(1);
-      expect(lead.deliveries.find((item) => item.kind === 'RESULT')?.attemptCount).toBe(1);
-      expect(cloud.sendMessage).toHaveBeenCalledTimes(2);
-    });
     it('isolates prices, dashboard reads and booking ownership for two artists sharing a customer phone', async () => {
       const a = await seed({ ready: true }),
         b = await seed({ index: 1, ready: true });
@@ -784,49 +715,12 @@ describe.runIf(process.env.RUN_NITA_V2_DB_TESTS === '1')(
       });
       expect(conversations).toHaveLength(2);
       expect(conversations[0]).toMatchObject({
-        flowVersion: 'V2',
         currentState: 'ASK_FIRST_TATTOO',
         firstTattoo: null,
         sameSizeAsReference: null,
       });
       expect((await read(f.leadId)).quote).toEqual(original);
       expect(await storage.exists(f.path)).toBe(true);
-    });
-    it('keeps V1 range pricing and does not create a V2 quote despite active V2 models', async () => {
-      const customer = await prisma.customer.create({
-        data: { accountId: accounts[0], phoneNumber: phone },
-      });
-      await prisma.pricingRule.create({
-        data: {
-          accountId: accounts[0],
-          size: 'MEDIUM',
-          detail: 'LIGHT',
-          minPrice: 300,
-          maxPrice: 500,
-        },
-      });
-      await prisma.conversation.create({
-        data: {
-          accountId: accounts[0],
-          customerId: customer.id,
-          flowVersion: 'V1',
-          currentState: 'WAITING_IMAGE',
-          selectedSize: 'MEDIUM',
-          selectedDetail: 'LIGHT',
-          bodyPart: 'Brazo',
-        },
-      });
-      expect((await inbound(0, 'simulated-media', randomUUID(), 'image')).status).toBe(200);
-      const lead = await prisma.lead.findFirstOrThrow({
-        where: { accountId: accounts[0] },
-        include: { quote: true },
-      });
-      expect(lead.quote).toBeNull();
-      expect(lead.calculatedMinPrice?.toFixed(2)).toBe('300.00');
-      expect(lead.calculatedMaxPrice?.toFixed(2)).toBe('500.00');
-      expect(analyzeV1).toHaveBeenCalledOnce();
-      expect(analyzeV2).not.toHaveBeenCalled();
-      expect(JSON.stringify(cloud.sendMessage.mock.calls)).toContain('entre S/300 y S/500');
     });
   },
 );

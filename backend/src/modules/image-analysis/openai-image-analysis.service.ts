@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
 import { AIProviderError, type AIProviderErrorCategory } from './ai-provider.error.js';
-import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { TattooImageInput } from './domain/image-analysis.types.js';
 import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 import {
   createImageAnalysisV2Schema,
@@ -15,12 +15,7 @@ import {
   createImageAnalysisV2Prompt,
   IMAGE_ANALYSIS_V2_PROMPT_VERSION,
 } from './image-analysis-v2.prompt.js';
-import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.prompt.js';
-import {
-  InvalidImageAnalysisResponseError,
-  parseImageAnalysisResponse,
-} from './image-analysis-response.js';
-import { IMAGE_ANALYSIS_RESPONSE_SCHEMA } from './image-analysis.schema.js';
+import { InvalidImageAnalysisResponseError } from './image-analysis-response.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
 
 export const OPENAI_TIMEOUT_MS = 20_000;
@@ -35,18 +30,6 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
     @Inject(OPENAI_CLIENT) private readonly client: OpenAI | null,
   ) {
     super();
-  }
-
-  async analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
-    return (
-      await this.requestAnalysis(
-        image,
-        IMAGE_ANALYSIS_PROMPT,
-        IMAGE_ANALYSIS_RESPONSE_SCHEMA,
-        'tattoo_image_analysis',
-        parseImageAnalysisResponse,
-      )
-    ).result;
   }
 
   async analyzeTattooImageV2(
@@ -105,7 +88,7 @@ export class OpenAIImageAnalysisService extends ImageAnalysisService {
         {
           model: this.configService.getOrThrow<string>('OPENAI_MODEL'),
           store: false,
-          max_output_tokens: schemaName === 'tattoo_image_analysis' ? 512 : 1024,
+          max_output_tokens: 1024,
           input: [
             {
               role: 'user',

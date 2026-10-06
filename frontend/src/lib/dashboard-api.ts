@@ -2,7 +2,6 @@ const DASHBOARD_API_BASE = '/api';
 
 export type LeadStatus =
   | 'ANALYZING'
-  | 'VERIFIED'
   | 'REQUIRES_REVIEW'
   | 'HANDOFF_TO_TATTOO_ARTIST'
   | 'COMPLETED'
@@ -27,42 +26,19 @@ export interface V2LeadPreparation {
   specialReviewTypes: string[];
 }
 
-export type ReadinessStatus = 'LISTO' | 'REVISAR' | 'INCOMPLETO';
-export type TattooSize = 'SMALL' | 'MEDIUM' | 'LARGE';
-export type DetailLevel = 'LIGHT' | 'MEDIUM' | 'DETAILED';
-export type LeadSortField = 'readinessScore' | 'price' | 'createdAt' | 'size' | 'detail' | 'status';
+export type LeadSortField = 'price' | 'createdAt' | 'targetSizeCm' | 'status';
 export type SortOrder = 'asc' | 'desc';
-
-export interface LeadScoringContribution {
-  ruleId: string;
-  points: number;
-  reason: string;
-}
-
-export interface LeadScoringBlocker {
-  ruleId: string;
-  reason: string;
-}
-
-export interface PriceRange {
-  minimum: string;
-  maximum: string;
-}
 
 export interface LeadSummary {
   id: string;
   customerPhoneNumber: string;
-  selectedSize: TattooSize | null;
-  selectedSizeLabel: string | null;
-  selectedDetail: DetailLevel | null;
-  selectedDetailLabel: string | null;
+  targetSizeCm: number | null;
   bodyPart: string | null;
   status: LeadStatus;
   statusLabel: string;
   createdAt: string;
   archivedAt: string | null;
   manualFinalPrice: string | null;
-  price: PriceRange | null;
   quote: {
     id: string;
     amount: string;
@@ -71,47 +47,20 @@ export interface LeadSummary {
     algorithmVersion: string;
     createdAt: string;
   } | null;
-  v2: V2LeadPreparation | null;
+  v2: V2LeadPreparation;
   deletable: boolean;
-  readiness: {
-    status: ReadinessStatus;
-    score: number;
-    rawScore: number;
-    rulesVersion: number;
-  } | null;
-  confidence: {
-    size: number;
-    detail: number;
-  } | null;
 }
 
 export interface LeadDetail extends LeadSummary {
   visionV2: {
     style: string | null;
+    estimatedDensity: number | null;
     overallConfidence: number | null;
     referenceMainDimensionCm: number | null;
     referenceAreaCm2: number | null;
     scaleReferenceType: 'NONE' | 'BODY_CONTEXT' | 'EXPLICIT_REFERENCE' | null;
     scaleConfidence: number | null;
     colorCoverage: number | null;
-  } | null;
-  analysis: {
-    detectedSize: TattooSize;
-    detectedSizeLabel: string;
-    sizeConfidence: number;
-    detectedDetail: DetailLevel;
-    detectedDetailLabel: string;
-    detailConfidence: number;
-  } | null;
-  evaluation: {
-    rawScore: number;
-    maxPositiveScore: number;
-    readinessScore: number;
-    status: ReadinessStatus;
-    rulesVersion: number;
-    contributions: LeadScoringContribution[];
-    blockers: LeadScoringBlocker[];
-    evaluatedAt: string;
   } | null;
   whatsappUrl: string | null;
 }
@@ -169,23 +118,13 @@ export interface DashboardMetrics {
   recentLeads: LeadSummary[];
 }
 
-export interface PricingRuleView {
-  id: string;
-  size: 'SMALL' | 'MEDIUM' | 'LARGE';
-  sizeLabel: string;
-  sizeRange: string;
-  detail: 'LIGHT' | 'MEDIUM' | 'DETAILED';
-  detailLabel: string;
-  minPrice: string;
-  maxPrice: string;
-}
-
 export interface CalibrationStyleView {
   id: string;
   code: string;
   name: string;
   enabled: boolean;
   caseCount: number;
+  catalogCaseCount: number;
   activeVersion: number | null;
 }
 
@@ -196,7 +135,24 @@ export interface CalibrationDraftView {
   version: number;
   answeredCount: number;
   totalCount: number;
-  cases: { id: string; imageUrl: string; position: number; pricePen: string | null }[];
+  catalogFormat: 'AREA_COLOR' | 'PHASED';
+  canActivate: boolean;
+  calibrationError?: string | null;
+  cases: {
+    id: string;
+    imageUrl: string;
+    position: number;
+    pricePen: string | null;
+    caseKey?: string;
+    phase?: 'A' | 'B';
+    sizeCm?: number;
+    density?: number;
+    colorCoverage: number;
+    colorMetadata?: Record<string, unknown>;
+    densityMetadata?: Record<string, unknown>;
+    catalogVersion?: string;
+    baseCaseKey?: string | null;
+  }[];
 }
 
 export interface PricingModelView {
@@ -211,18 +167,6 @@ export interface PricingModelView {
   sourceVersionId: string | null;
   createdAt: string;
   activatedAt: string | null;
-}
-
-export interface PricingRuleUpdate {
-  pricingRuleId: string;
-  minPrice: number;
-  maxPrice: number;
-}
-
-export interface UpdatePricingRulesResult {
-  rules: PricingRuleView[];
-  updatedCount: number;
-  message: string;
 }
 
 export interface TattooArtistSession {
@@ -258,10 +202,8 @@ export interface UpdateArtistAccountInput {
 }
 
 export interface LeadListQuery {
-  status?: ReadinessStatus;
+  status?: LeadStatus;
   archived?: boolean;
-  size?: TattooSize;
-  detail?: DetailLevel;
   search?: string;
   sortBy?: LeadSortField;
   sortOrder?: SortOrder;
@@ -417,16 +359,6 @@ export function deleteLead(leadId: string): Promise<{ deleted: true; leadId: str
   return jsonRequest(`dashboard/leads/${encodeURIComponent(leadId)}`, 'DELETE');
 }
 
-export function getPricingRules(): Promise<{ rules: PricingRuleView[] }> {
-  return dashboardRequest('dashboard/pricing');
-}
-
-export function updatePricingRules(
-  updates: PricingRuleUpdate[],
-): Promise<UpdatePricingRulesResult> {
-  return jsonRequest('dashboard/pricing', 'PATCH', { updates });
-}
-
 export function getCalibrationStyles(): Promise<CalibrationStyleView[]> {
   return dashboardRequest('dashboard/calibration/styles');
 }
@@ -441,8 +373,13 @@ export function getCalibrationDraft(styleId: string): Promise<CalibrationDraftVi
   return dashboardRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`);
 }
 
-export function startCalibrationDraft(styleId: string): Promise<CalibrationDraftView> {
-  return jsonRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`, 'POST');
+export function startCalibrationDraft(
+  styleId: string,
+  catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR',
+): Promise<CalibrationDraftView> {
+  return jsonRequest(`dashboard/calibration/styles/${encodeURIComponent(styleId)}/draft`, 'POST', {
+    catalog,
+  });
 }
 
 export function saveCalibrationAnswer(

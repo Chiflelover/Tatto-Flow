@@ -1,16 +1,13 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ConversationState,
   ConversationStatus,
-  FlowVersion,
-  LeadStatus,
   type Conversation,
   type Prisma,
 } from '../../generated/prisma/client.js';
 import { ConversationsService } from '../conversations/conversations.service.js';
 import { CustomersService } from '../customers/customers.service.js';
-import { ImageAnalysisWorkflowService } from '../image-analysis/image-analysis-workflow.service.js';
 import { LeadImageStorageException } from '../storage/lead-image.service.js';
 import type {
   ChatbotDecision,
@@ -20,7 +17,7 @@ import type {
   ChatbotResponse,
   DurableV2Input,
 } from './domain/chatbot.types.js';
-import { NitaStateMachine } from './domain/nita-state-machine.js';
+import { NitaV2StateMachine } from './domain/nita-v2-state-machine.js';
 import { NitaBusinessHoursService } from './nita-business-hours.service.js';
 import { NitaV2IntakeService } from './nita-v2-intake.service.js';
 import { NitaV2AnalysisService } from './nita-v2-analysis.service.js';
@@ -28,10 +25,6 @@ import { V2_ANALYSIS_STATES, V2_DECISION_STATES } from './domain/nita-v2-decisio
 import { NitaV2CompletionService } from './nita-v2-completion.service.js';
 import { v2BookingSelection } from './domain/nita-v2-messages.js';
 
-const VERIFIED_MESSAGE = (minimum: string, maximum: string) =>
-  `Por lo que me indicaste y según la referencia enviada, el precio aproximado estaría entre S/${minimum} y S/${maximum}.\n\nEl precio final lo confirma el tatuador del estudio después de revisar el diseño.\n\nSe pondrá en contacto contigo muy pronto para confirmar el precio exacto.`;
-const REQUIRES_REVIEW_MESSAGE =
-  'Perfecto, ya tengo toda la información y tu referencia.\n\nUn tatuador del estudio revisará tu idea para darte el precio exacto.\n\nTu solicitud ya está en revisión y te avisaremos cuando esté lista.';
 const OUT_OF_HOURS_MESSAGE =
   'Hola 👋 En este momento estamos fuera de nuestro horario de atención.\nNuestro horario es de 6:00 a. m. a 10:00 p. m.\nEscríbenos nuevamente dentro de ese horario y Nita te ayudará con tu cotización.';
 
@@ -41,17 +34,13 @@ type ConversationAccess =
 
 @Injectable()
 export class ChatbotService {
-  private readonly logger = new Logger(ChatbotService.name);
-
   constructor(
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(ConversationsService)
     private readonly conversationsService: ConversationsService,
-    @Inject(NitaStateMachine)
-    private readonly stateMachine: NitaStateMachine,
-    @Inject(ImageAnalysisWorkflowService)
-    private readonly imageAnalysisWorkflow: ImageAnalysisWorkflowService,
+    @Inject(NitaV2StateMachine)
+    private readonly stateMachine: NitaV2StateMachine,
     @Inject(NitaBusinessHoursService)
     private readonly businessHours: NitaBusinessHoursService,
     @Inject(ConfigService)
@@ -73,7 +62,7 @@ export class ChatbotService {
 
     const { conversation } = access;
 
-    if (this.isV2ProcessingOrDecided(conversation))
+    if (this.isProcessingOrDecided(conversation))
       return this.silentResponse(conversation.currentState);
 
     if (this.isHandedOff(conversation)) {
@@ -87,7 +76,7 @@ export class ChatbotService {
       });
     }
 
-    return this.applyDecision(conversation, this.stateMachine.begin(conversation.flowVersion));
+    return this.applyDecision(conversation, this.stateMachine.begin());
   }
 
   processOptionSelection(
@@ -137,7 +126,7 @@ export class ChatbotService {
 
     const { conversation } = access;
 
-    if (this.isV2ProcessingOrDecided(conversation))
+    if (this.isProcessingOrDecided(conversation))
       return this.silentResponse(conversation.currentState);
 
     if (this.isHandedOff(conversation)) {
@@ -145,109 +134,33 @@ export class ChatbotService {
     }
 
     const decision = this.stateMachine.process(conversation, { type: 'image', image });
-    if (conversation.flowVersion === FlowVersion.V2) {
-      if (decision.update.currentState !== ConversationState.ASK_SAME_SIZE)
-        return decision.ignored
-          ? decision.response
-          : this.applyDecision(conversation, decision, durable);
-      try {
-        const result = await this.v2Intake.storeReference(
-          accountId,
-          conversation.id,
-          image,
-          durable ? (tx, updated) => durable.checkpoint(tx, updated, decision.response) : undefined,
-        );
-        return result.applied
-          ? decision.response
-          : this.silentResponse(result.conversation.currentState);
-      } catch (error) {
-        if (durable) throw error;
-        if (error instanceof LeadImageStorageException || error instanceof BadRequestException) {
-          return this.applyDecision(conversation, {
-            update: {},
-            response: {
-              state: ConversationState.WAITING_IMAGE,
-              messages: [{ type: 'text', text: error.message }],
-              options: [],
-            },
-          });
-        }
-        throw error;
-      }
-    }
-    const transition = await this.conversationsService.applyTransition(
-      conversation.id,
-      conversation.currentState,
-      decision.update,
-    );
-
-    if (!transition.applied) {
-      if (this.isHandedOff(transition.conversation)) {
-        return this.silentHandoff();
-      }
-
-      return this.silentResponse(transition.conversation.currentState);
-    }
-
-    if (decision.update.currentState !== ConversationState.ANALYZING) {
-      return decision.response;
-    }
-
+    if (decision.update.currentState !== ConversationState.ASK_SAME_SIZE)
+      return decision.ignored
+        ? decision.response
+        : this.applyDecision(conversation, decision, durable);
     try {
-      const completedAnalysis = await this.imageAnalysisWorkflow.analyzeConversationImage(
-        transition.conversation.id,
+      const result = await this.v2Intake.storeReference(
+        accountId,
+        conversation.id,
         image,
+        durable ? (tx, updated) => durable.checkpoint(tx, updated, decision.response) : undefined,
       );
-      const pricingRule = completedAnalysis.quotation.pricingRule;
-      const message =
-        completedAnalysis.quotation.status === LeadStatus.VERIFIED && pricingRule
-          ? VERIFIED_MESSAGE(pricingRule.minPrice, pricingRule.maxPrice)
-          : REQUIRES_REVIEW_MESSAGE;
-
-      return {
-        state: ConversationState.HANDOFF_TO_TATTOO_ARTIST,
-        messages: [{ type: 'text', text: message }],
-        options: [],
-        development: {
-          imageAnalysis: completedAnalysis.analysis,
-          quotation: completedAnalysis.quotation,
-        },
-      };
-    } catch (error: unknown) {
-      this.logger.error(
-        `Image analysis workflow failed for conversation ${transition.conversation.id}.`,
-      );
-
-      if (error instanceof LeadImageStorageException) {
-        try {
-          await this.conversationsService.applyTransition(
-            transition.conversation.id,
-            ConversationState.ANALYZING,
-            { currentState: ConversationState.WAITING_IMAGE },
-          );
-        } catch {
-          this.logger.error(
-            `Could not restore image retry state for conversation ${transition.conversation.id}.`,
-          );
-        }
-
-        return {
-          state: ConversationState.WAITING_IMAGE,
-          messages: [{ type: 'text', text: error.message }],
-          options: [],
-        };
-      }
-
-      return {
-        state: ConversationState.ANALYZING,
-        messages: [
-          {
-            type: 'text',
-            text: 'No pude completar el análisis. Tus datos quedaron guardados para revisión.',
+      return result.applied
+        ? decision.response
+        : this.silentResponse(result.conversation.currentState);
+    } catch (error) {
+      if (durable) throw error;
+      if (error instanceof LeadImageStorageException || error instanceof BadRequestException) {
+        return this.applyDecision(conversation, {
+          update: {},
+          response: {
+            state: ConversationState.WAITING_IMAGE,
+            messages: [{ type: 'text', text: error.message }],
+            options: [],
           },
-        ],
-        options: [],
-      };
+        });
+      }
+      throw error;
     }
   }
 
@@ -265,10 +178,7 @@ export class ChatbotService {
 
     const { conversation } = access;
 
-    if (
-      conversation.flowVersion === FlowVersion.V2 &&
-      conversation.currentState === ConversationState.ASK_ADVANCE_INTENT
-    ) {
+    if (conversation.currentState === ConversationState.ASK_ADVANCE_INTENT) {
       const intent = v2BookingSelection(input);
       if (intent) {
         const handedOff = await this.v2Completion.recordIntent(
@@ -294,7 +204,7 @@ export class ChatbotService {
         : this.silentResponse(conversation.currentState);
     }
 
-    if (this.isV2ProcessingOrDecided(conversation))
+    if (this.isProcessingOrDecided(conversation))
       return this.silentResponse(conversation.currentState);
 
     if (this.isHandedOff(conversation)) {
@@ -345,24 +255,13 @@ export class ChatbotService {
       };
     }
 
-    const defaultVersion = durable
-      ? FlowVersion.V2
-      : (this.configService.get<FlowVersion>('NITA_DEFAULT_FLOW_VERSION') ?? FlowVersion.V1);
-    const access =
-      defaultVersion === FlowVersion.V1
-        ? await this.conversationsService.getOrCreateActive(accountId, customer.id)
-        : await this.conversationsService.getOrCreateActive(accountId, customer.id, defaultVersion);
+    const access = await this.conversationsService.getOrCreateActive(accountId, customer.id);
     let conversation = access.conversation;
 
-    if (
-      !durable &&
-      conversation.flowVersion === FlowVersion.V2 &&
-      V2_ANALYSIS_STATES.some((state) => state === conversation.currentState)
-    )
+    if (!durable && V2_ANALYSIS_STATES.some((state) => state === conversation.currentState))
       conversation = await this.v2Analysis.process(accountId, conversation.id);
     if (
       !durable &&
-      conversation.flowVersion === FlowVersion.V2 &&
       [...V2_DECISION_STATES, 'PRICE_READY'].some((state) => state === conversation.currentState)
     )
       conversation = await this.v2Completion.prepare(accountId, conversation.id);
@@ -380,25 +279,18 @@ export class ChatbotService {
     decision: ChatbotDecision,
     durable?: DurableV2Input,
   ): Promise<ChatbotResponse> {
-    const result =
-      conversation.flowVersion === FlowVersion.V2
-        ? await this.v2Intake.applyTransition(
-            conversation.accountId,
-            conversation.id,
-            conversation.currentState,
-            decision.update,
-            ...(durable
-              ? [
-                  (tx: Prisma.TransactionClient, updated: Conversation) =>
-                    durable.checkpoint(tx, updated, decision.response),
-                ]
-              : []),
-          )
-        : await this.conversationsService.applyTransition(
-            conversation.id,
-            conversation.currentState,
-            decision.update,
-          );
+    const result = await this.v2Intake.applyTransition(
+      conversation.accountId,
+      conversation.id,
+      conversation.currentState,
+      decision.update,
+      ...(durable
+        ? [
+            (tx: Prisma.TransactionClient, updated: Conversation) =>
+              durable.checkpoint(tx, updated, decision.response),
+          ]
+        : []),
+    );
 
     if (!result.applied) {
       if (this.isHandedOff(result.conversation)) {
@@ -408,11 +300,7 @@ export class ChatbotService {
       return this.silentResponse(result.conversation.currentState);
     }
 
-    if (
-      !durable &&
-      result.conversation.flowVersion === FlowVersion.V2 &&
-      result.conversation.currentState === ConversationState.READY_FOR_ANALYSIS
-    ) {
+    if (!durable && result.conversation.currentState === ConversationState.READY_FOR_ANALYSIS) {
       const prepared = await this.v2Analysis.process(conversation.accountId, conversation.id);
       const completed = await this.v2Completion.prepare(conversation.accountId, prepared.id);
       return { ...decision.response, state: completed.currentState };
@@ -420,12 +308,9 @@ export class ChatbotService {
     return decision.response;
   }
 
-  private isV2ProcessingOrDecided(conversation: Conversation): boolean {
-    return (
-      conversation.flowVersion === FlowVersion.V2 &&
-      [...V2_ANALYSIS_STATES, ...V2_DECISION_STATES, 'PRICE_READY', 'ASK_ADVANCE_INTENT'].some(
-        (state) => state === conversation.currentState,
-      )
+  private isProcessingOrDecided(conversation: Conversation): boolean {
+    return [...V2_ANALYSIS_STATES, ...V2_DECISION_STATES, 'PRICE_READY', 'ASK_ADVANCE_INTENT'].some(
+      (state) => state === conversation.currentState,
     );
   }
 

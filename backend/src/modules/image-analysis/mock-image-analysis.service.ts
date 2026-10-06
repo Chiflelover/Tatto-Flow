@@ -1,11 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
-import {
-  ImageAmbiguityLevel,
-  type ImageAnalysisResult,
-  type TattooImageInput,
-} from './domain/image-analysis.types.js';
+import type { TattooImageInput } from './domain/image-analysis.types.js';
 import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 import {
   IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
@@ -17,21 +12,6 @@ import { ImageAnalysisService } from './image-analysis.service.js';
 @Injectable()
 export class MockImageAnalysisService extends ImageAnalysisService {
   readonly providerName = 'mock';
-
-  analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
-    validateLeadImageFile(image);
-    return Promise.resolve({
-      detectedSize: TattooSize.MEDIUM,
-      sizeConfidence: 0,
-      detectedDetail: DetailLevel.LIGHT,
-      detailConfidence: 0,
-      tattooOnSkin: false,
-      tattooOnSkinConfidence: 0,
-      referenceAnalyzable: false,
-      analyzabilityConfidence: 0,
-      ambiguityLevel: ImageAmbiguityLevel.MAJOR,
-    });
-  }
 
   analyzeTattooImageV2(
     image: TattooImageInput,
@@ -45,6 +25,7 @@ export class MockImageAnalysisService extends ImageAnalysisService {
       style: null,
       composition_aspect_ratio: null,
       composition_fill_ratio: null,
+      estimated_density: 0,
       style_confidence: 0,
       scale_reference_type: 'NONE',
       scale_confidence: 0,

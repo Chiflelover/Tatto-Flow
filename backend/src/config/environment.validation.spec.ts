@@ -6,16 +6,6 @@ const BASE_ENVIRONMENT = {
 };
 
 describe('AI environment validation', () => {
-  it('defaults Nita to V1, allows explicit V2 and rejects unknown versions', () => {
-    expect(validateEnvironment(BASE_ENVIRONMENT).NITA_DEFAULT_FLOW_VERSION).toBe('V1');
-    expect(
-      validateEnvironment({ ...BASE_ENVIRONMENT, NITA_DEFAULT_FLOW_VERSION: 'V2' })
-        .NITA_DEFAULT_FLOW_VERSION,
-    ).toBe('V2');
-    expect(() =>
-      validateEnvironment({ ...BASE_ENVIRONMENT, NITA_DEFAULT_FLOW_VERSION: 'V3' }),
-    ).toThrow('NITA_DEFAULT_FLOW_VERSION');
-  });
   it('selects mock without requiring provider credentials, while real remains the default', () => {
     expect(
       validateEnvironment({

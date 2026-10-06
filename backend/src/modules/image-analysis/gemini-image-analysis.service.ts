@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiError, type GenerateContentParameters } from '@google/genai';
 import { validateLeadImageFile } from '../storage/lead-image-file.js';
 import { AIProviderError, type AIProviderErrorCategory } from './ai-provider.error.js';
-import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { TattooImageInput } from './domain/image-analysis.types.js';
 import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 import {
   createImageAnalysisV2Schema,
@@ -15,12 +15,7 @@ import {
   createImageAnalysisV2Prompt,
   IMAGE_ANALYSIS_V2_PROMPT_VERSION,
 } from './image-analysis-v2.prompt.js';
-import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.prompt.js';
-import {
-  InvalidImageAnalysisResponseError,
-  parseImageAnalysisResponse,
-} from './image-analysis-response.js';
-import { IMAGE_ANALYSIS_RESPONSE_SCHEMA } from './image-analysis.schema.js';
+import { InvalidImageAnalysisResponseError } from './image-analysis-response.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
 
 export const GEMINI_TIMEOUT_MS = 20_000;
@@ -55,17 +50,6 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
     @Inject(GEMINI_CLIENT) private readonly client: GeminiClient | null,
   ) {
     super();
-  }
-
-  async analyzeTattooImage(image: TattooImageInput): Promise<ImageAnalysisResult> {
-    return (
-      await this.requestAnalysis(
-        image,
-        IMAGE_ANALYSIS_PROMPT,
-        IMAGE_ANALYSIS_RESPONSE_SCHEMA,
-        parseImageAnalysisResponse,
-      )
-    ).result;
   }
 
   async analyzeTattooImageV2(
@@ -134,7 +118,7 @@ export class GeminiImageAnalysisService extends ImageAnalysisService {
       ],
       config: {
         temperature: 0,
-        maxOutputTokens: schema === IMAGE_ANALYSIS_RESPONSE_SCHEMA ? 512 : 1024,
+        maxOutputTokens: 1024,
         responseMimeType: 'application/json',
         responseJsonSchema: schema,
         httpOptions: {

@@ -10,6 +10,7 @@ test('booking labels describe intent without claiming a reserved appointment', (
 test('ordinary pricing review and both special cases have readable descriptions', () => {
   assert.match(v2ReviewLabel('PRICING_MODEL_NOT_AVAILABLE'), /modelo de precios activo/);
   assert.match(v2ReviewLabel('MODEL_NOT_APPLICABLE'), /sin extrapolar/);
+  assert.match(v2ReviewLabel('TARGET_COLOR_NOT_DECLARED'), /elección explícita.*color/);
   assert.match(v2ReviewLabel('SPECIAL_REVIEW_COLOR_MODIFICATION'), /añadir color/);
   assert.match(v2ReviewLabel('EXTENSIVE_BODY_COVERAGE'), /extensa/);
 });

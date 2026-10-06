@@ -18,7 +18,6 @@ import {
   DashboardLoading,
   EmptyState,
 } from '@/components/dashboard/feedback-state';
-import { ReadinessBadge, ReadinessScore } from '@/components/dashboard/lead-readiness';
 import { StatusBadge } from '@/components/dashboard/lead-card';
 import { bookingIntentLabel } from '@/lib/v2-lead';
 import {
@@ -28,60 +27,47 @@ import {
   isUnauthorized,
   listLeads,
   restoreLead,
-  type DetailLevel,
   type LeadListResult,
   type LeadSortField,
   type LeadSummary,
-  type ReadinessStatus,
+  type LeadStatus,
   type SortOrder,
-  type TattooSize,
 } from '@/lib/dashboard-api';
 import { createSingleFlightRunner } from '@/lib/single-flight';
 import { leadPriceLabel } from '@/lib/lead-price';
 import styles from '@/styles/dashboard.module.css';
 
 const PAGE_SIZE = 20;
-const READINESS_STATUSES: ReadinessStatus[] = ['LISTO', 'REVISAR', 'INCOMPLETO'];
-const TATTOO_SIZES: TattooSize[] = ['SMALL', 'MEDIUM', 'LARGE'];
-const DETAIL_LEVELS: DetailLevel[] = ['LIGHT', 'MEDIUM', 'DETAILED'];
-const SORT_FIELDS: LeadSortField[] = [
-  'readinessScore',
-  'price',
-  'createdAt',
-  'size',
-  'detail',
-  'status',
+const LEAD_STATUSES: LeadStatus[] = [
+  'AUTO_QUOTED',
+  'READY_TO_COORDINATE',
+  'HANDOFF_TO_TATTOO_ARTIST',
+  'REQUIRES_REVIEW',
+  'SPECIAL_REVIEW',
+  'ANALYZING',
+  'COMPLETED',
 ];
+const SORT_FIELDS: LeadSortField[] = ['price', 'createdAt', 'targetSizeCm', 'status'];
 
 const TABS: Array<{
-  key: 'all' | 'archived' | ReadinessStatus;
+  key: 'all' | 'archived' | LeadStatus;
   label: string;
 }> = [
   { key: 'all', label: 'Todos' },
-  { key: 'LISTO', label: 'Listos' },
-  { key: 'REVISAR', label: 'Revisar' },
-  { key: 'INCOMPLETO', label: 'Incompletos' },
+  { key: 'AUTO_QUOTED', label: 'Listos' },
+  { key: 'REQUIRES_REVIEW', label: 'Revisar' },
+  { key: 'ANALYZING', label: 'Incompletos' },
+  { key: 'SPECIAL_REVIEW', label: 'Revisión especial' },
+  { key: 'READY_TO_COORDINATE', label: 'Para coordinar' },
+  { key: 'HANDOFF_TO_TATTOO_ARTIST', label: 'En atención' },
+  { key: 'COMPLETED', label: 'Finalizados' },
   { key: 'archived', label: 'Archivados' },
 ];
 
-const SIZE_LABELS: Record<TattooSize, string> = {
-  SMALL: 'Pequeño',
-  MEDIUM: 'Mediano',
-  LARGE: 'Grande',
-};
-
-const DETAIL_LABELS: Record<DetailLevel, string> = {
-  LIGHT: 'Ligero',
-  MEDIUM: 'Medio',
-  DETAILED: 'Detallado',
-};
-
 const SORT_LABELS: Record<LeadSortField, string> = {
-  readinessScore: 'Confianza',
   price: 'Precio',
   createdAt: 'Fecha',
-  size: 'Tamaño',
-  detail: 'Detalle',
+  targetSizeCm: 'Tamaño objetivo',
   status: 'Estado',
 };
 
@@ -93,9 +79,13 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('es-PE', {
 
 const EMPTY_MESSAGES: Record<(typeof TABS)[number]['key'], string> = {
   all: 'Todavía no hay leads activos para mostrar.',
-  LISTO: 'No hay leads listos.',
-  REVISAR: 'No hay leads pendientes de revisión.',
-  INCOMPLETO: 'No hay cotizaciones incompletas.',
+  AUTO_QUOTED: 'No hay leads listos.',
+  REQUIRES_REVIEW: 'No hay leads pendientes de revisión.',
+  ANALYZING: 'No hay cotizaciones incompletas.',
+  SPECIAL_REVIEW: 'No hay revisiones especiales.',
+  READY_TO_COORDINATE: 'No hay leads para coordinar.',
+  HANDOFF_TO_TATTOO_ARTIST: 'No hay leads en atención.',
+  COMPLETED: 'No hay leads finalizados.',
   archived: 'No hay leads archivados.',
 };
 
@@ -185,9 +175,7 @@ function LeadsWorkspace() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const status = enumValue(searchParams.get('status'), READINESS_STATUSES);
-  const size = enumValue(searchParams.get('size'), TATTOO_SIZES);
-  const detail = enumValue(searchParams.get('detail'), DETAIL_LEVELS);
+  const status = enumValue(searchParams.get('status'), LEAD_STATUSES);
   const sortBy = enumValue(searchParams.get('sortBy'), SORT_FIELDS);
   const sortOrder: SortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
   const archived = searchParams.get('archived') === 'true';
@@ -238,8 +226,6 @@ function LeadsWorkspace() {
     void listLeads({
       status,
       archived,
-      size,
-      detail,
       search: search || undefined,
       sortBy,
       sortOrder,
@@ -271,7 +257,7 @@ function LeadsWorkspace() {
     return () => {
       active = false;
     };
-  }, [archived, currentRequestKey, detail, page, router, search, size, sortBy, sortOrder, status]);
+  }, [archived, currentRequestKey, page, router, search, sortBy, sortOrder, status]);
 
   const pageItems = useMemo(
     () => paginationItems(result?.pagination.page ?? 1, result?.pagination.totalPages ?? 0),
@@ -366,7 +352,7 @@ function LeadsWorkspace() {
         </>
       ) : (
         <>
-          {lead.readiness?.status === 'INCOMPLETO' && (
+          {lead.status === 'ANALYZING' && (
             <button
               type="button"
               onClick={() => void runAction(lead.id, () => archiveLead(lead.id))}
@@ -420,36 +406,6 @@ function LeadsWorkspace() {
         />
 
         <label>
-          <span>Tamaño</span>
-          <select
-            value={size ?? ''}
-            onChange={(event) => navigate({ size: event.target.value || undefined })}
-          >
-            <option value="">Todos</option>
-            {TATTOO_SIZES.map((value) => (
-              <option key={value} value={value}>
-                {SIZE_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Detalle</span>
-          <select
-            value={detail ?? ''}
-            onChange={(event) => navigate({ detail: event.target.value || undefined })}
-          >
-            <option value="">Todos</option>
-            {DETAIL_LEVELS.map((value) => (
-              <option key={value} value={value}>
-                {DETAIL_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
           <span>Ordenar por</span>
           <select
             value={sortBy ?? ''}
@@ -460,7 +416,7 @@ function LeadsWorkspace() {
               })
             }
           >
-            <option value="">Prioridad predeterminada</option>
+            <option value="">Más recientes</option>
             {SORT_FIELDS.map((value) => (
               <option key={value} value={value}>
                 {SORT_LABELS[value]}
@@ -512,37 +468,16 @@ function LeadsWorkspace() {
                   </th>
                   <th
                     aria-sort={
-                      sortBy === 'size'
+                      sortBy === 'targetSizeCm'
                         ? sortOrder === 'asc'
                           ? 'ascending'
                           : 'descending'
                         : 'none'
                     }
                   >
-                    {sortableHeading('size', 'Tamaño / área')}
+                    {sortableHeading('targetSizeCm', 'Tamaño objetivo')}
                   </th>
-                  <th
-                    aria-sort={
-                      sortBy === 'detail'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('detail', 'Detalle / estilo')}
-                  </th>
-                  <th
-                    aria-sort={
-                      sortBy === 'readinessScore'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('readinessScore', 'Confianza')}
-                  </th>
+                  <th>Estilo</th>
                   <th
                     aria-sort={
                       sortBy === 'status'
@@ -581,15 +516,9 @@ function LeadsWorkspace() {
                   >
                     <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
                     <td className={styles.priceCell}>{leadPriceLabel(lead)}</td>
+                    <td>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</td>
                     <td>
-                      {lead.v2
-                        ? lead.v2.targetAreaCm2
-                          ? `${lead.v2.targetAreaCm2} cm²`
-                          : '—'
-                        : (lead.selectedSizeLabel ?? '—')}
-                    </td>
-                    <td>
-                      {lead.v2 ? (
+                      {
                         <>
                           {lead.v2.style ?? '—'}
                           <small>
@@ -598,26 +527,15 @@ function LeadsWorkspace() {
                               : `${Math.round(lead.v2.targetColorCoverage * 100)}% color`}
                           </small>
                         </>
-                      ) : (
-                        (lead.selectedDetailLabel ?? '—')
-                      )}
+                      }
                     </td>
                     <td>
-                      {lead.v2 ? (
-                        '—'
-                      ) : (
-                        <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
-                      )}
-                    </td>
-                    <td>
-                      {lead.v2 ? (
+                      {
                         <>
                           <StatusBadge status={lead.status} label={lead.statusLabel} />
                           <small>{bookingIntentLabel(lead.v2.bookingIntent)}</small>
                         </>
-                      ) : (
-                        <ReadinessBadge status={lead.readiness?.status ?? null} />
-                      )}
+                      }
                     </td>
                     <td className={styles.dateCell}>{dateLabel(lead.createdAt)}</td>
                     <td>{renderActions(lead)}</td>
@@ -640,29 +558,16 @@ function LeadsWorkspace() {
               >
                 <div className={styles.mobileLeadTopline}>
                   <strong>{lead.customerPhoneNumber}</strong>
-                  {lead.v2 ? (
-                    <StatusBadge status={lead.status} label={lead.statusLabel} />
-                  ) : (
-                    <ReadinessBadge status={lead.readiness?.status ?? null} />
-                  )}
+                  <StatusBadge status={lead.status} label={lead.statusLabel} />
                 </div>
-                {!lead.v2 && (
-                  <ReadinessScore readiness={lead.readiness} confidence={lead.confidence} />
-                )}
                 <dl>
                   <div>
-                    <dt>{lead.v2 ? 'Área objetivo' : 'Tamaño'}</dt>
-                    <dd>
-                      {lead.v2
-                        ? lead.v2.targetAreaCm2
-                          ? `${lead.v2.targetAreaCm2} cm²`
-                          : '—'
-                        : (lead.selectedSizeLabel ?? '—')}
-                    </dd>
+                    <dt>Tamaño objetivo</dt>
+                    <dd>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</dd>
                   </div>
                   <div>
-                    <dt>{lead.v2 ? 'Estilo' : 'Detalle'}</dt>
-                    <dd>{lead.v2 ? (lead.v2.style ?? '—') : (lead.selectedDetailLabel ?? '—')}</dd>
+                    <dt>Estilo</dt>
+                    <dd>{lead.v2.style ?? '—'}</dd>
                   </div>
                   <div>
                     <dt>Precio</dt>

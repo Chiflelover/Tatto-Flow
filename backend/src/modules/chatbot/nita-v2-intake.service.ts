@@ -2,14 +2,17 @@ import { ConflictException, ForbiddenException, Inject, Injectable } from '@nest
 import {
   ConversationState,
   ConversationStatus,
-  FlowVersion,
   type Conversation,
   type Prisma,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import type { ConversationTransitionResult } from '../conversations/conversations.service.js';
-import { hasCompleteV2Intake, v2IntakeSnapshot } from '../conversations/conversation-v2-intake.js';
+import {
+  hasCompleteV2Intake,
+  hasV2IntakeAwaitingTargetSize,
+  v2IntakeSnapshot,
+} from '../conversations/conversation-v2-intake.js';
 import { LeadImageService } from '../storage/lead-image.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import type { ChatbotConversationUpdate, ChatbotImageInput } from './domain/chatbot.types.js';
@@ -98,12 +101,17 @@ export class NitaV2IntakeService {
         data: { ...update, lastActivityAt: new Date() },
       });
       if (updated.currentState === ConversationState.READY_FOR_ANALYSIS) {
+        // Existing SAME_SIZE conversations may already be at the placement question.
+        // Let those reach the analysis recovery question without fabricating a size.
+        const awaitingHistoricalSize =
+          expectedState === ConversationState.ASK_BODY_PART &&
+          hasV2IntakeAwaitingTargetSize(updated);
         const lead = await transaction.lead.findUnique({
           where: { conversationId },
           include: { images: { where: { deletedAt: null }, select: { id: true } } },
         });
         if (
-          !hasCompleteV2Intake(updated) ||
+          (!hasCompleteV2Intake(updated) && !awaitingHistoricalSize) ||
           !lead ||
           lead.accountId !== accountId ||
           lead.customerId !== updated.customerId ||
@@ -127,7 +135,7 @@ export class NitaV2IntakeService {
   ): Promise<Conversation> {
     await transaction.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
     const conversation = await transaction.conversation.findFirst({
-      where: { id: conversationId, accountId, flowVersion: FlowVersion.V2 },
+      where: { id: conversationId, accountId },
       include: { account: { select: { isActive: true } } },
     });
     if (!conversation)

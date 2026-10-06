@@ -1,7 +1,8 @@
+import { VISION_RESPONSE, VISION_STYLES, visionResult } from '../../../test/fixtures/vision-v2.js';
 import { ConfigService } from '@nestjs/config';
-import { DetailLevel, TattooSize } from '../../generated/prisma/client.js';
+
 import { AIProviderError } from './ai-provider.error.js';
-import { ImageAmbiguityLevel, type TattooImageInput } from './domain/image-analysis.types.js';
+import { type TattooImageInput } from './domain/image-analysis.types.js';
 import { type GeminiClient, GeminiImageAnalysisService } from './gemini-image-analysis.service.js';
 
 const VALID_PNG: TattooImageInput = {
@@ -10,22 +11,10 @@ const VALID_PNG: TattooImageInput = {
   fileName: 'reference.png',
 };
 
-const VALID_RESPONSE = {
-  detectedSize: TattooSize.MEDIUM,
-  sizeConfidence: 0.91,
-  detectedDetail: DetailLevel.DETAILED,
-  detailConfidence: 0.92,
-  tattooOnSkin: true,
-  tattooOnSkinConfidence: 0.98,
-  referenceAnalyzable: true,
-  analyzabilityConfidence: 0.97,
-  ambiguityLevel: ImageAmbiguityLevel.NONE,
-};
-
 type GeminiResponse = Awaited<ReturnType<GeminiClient['models']['generateContent']>>;
 
 function createFixture(
-  response: GeminiResponse | Error = { text: JSON.stringify(VALID_RESPONSE) },
+  response: GeminiResponse | Error = { text: JSON.stringify(VISION_RESPONSE) },
 ) {
   const generateContent = vi.fn<GeminiClient['models']['generateContent']>();
 
@@ -49,15 +38,15 @@ function providerError(status: number, code = 'PROVIDER_ERROR'): Error {
 
 describe('GeminiImageAnalysisService', () => {
   it('returns the shared normalized contract without making business decisions', async () => {
-    await expect(createFixture().service.analyzeTattooImage(VALID_PNG)).resolves.toEqual(
-      VALID_RESPONSE,
-    );
+    await expect(
+      createFixture().service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
+    ).resolves.toMatchObject({ observations: visionResult().observations });
   });
 
   it('sends the image inline with the shared strict schema, provider timeout and SDK retry disabled', async () => {
     const { service, generateContent } = createFixture();
 
-    await service.analyzeTattooImage(VALID_PNG);
+    await service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES);
 
     expect(generateContent).toHaveBeenCalledOnce();
     const request = generateContent.mock.calls[0]?.[0];
@@ -78,17 +67,17 @@ describe('GeminiImageAnalysisService', () => {
   });
 
   it.each([
-    ['detectedSize', 'EXTRA_LARGE'],
-    ['detectedDetail', 'EXTREME'],
-    ['ambiguityLevel', 'UNKNOWN'],
-    ['sizeConfidence', 1.4],
-    ['detailConfidence', -0.1],
+    ['style', 'UNKNOWN_STYLE'],
+    ['scale_reference_type', 'UNKNOWN'],
+    ['estimated_density', 101],
+    ['style_confidence', 1.4],
+    ['color_confidence', -0.1],
   ])('rejects an invalid structured value in %s', async (field, value) => {
     const { service } = createFixture({
-      text: JSON.stringify({ ...VALID_RESPONSE, [field]: value }),
+      text: JSON.stringify({ ...VISION_RESPONSE, [field]: value }),
     });
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       provider: 'gemini',
       category: 'INVALID_RESPONSE',
       retryable: true,
@@ -100,30 +89,15 @@ describe('GeminiImageAnalysisService', () => {
     const responses = [
       undefined,
       '{bad json',
-      JSON.stringify({ ...VALID_RESPONSE, detectedSize: undefined }),
-      JSON.stringify({ ...VALID_RESPONSE, unexpected: true }),
+      JSON.stringify({ ...VISION_RESPONSE, style_confidence: undefined }),
+      JSON.stringify({ ...VISION_RESPONSE, unexpected: true }),
     ];
 
     for (const text of responses) {
       await expect(
-        createFixture({ text }).service.analyzeTattooImage(VALID_PNG),
+        createFixture({ text }).service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
       ).rejects.toBeInstanceOf(AIProviderError);
     }
-  });
-
-  it('accepts valid low-confidence observations instead of treating them as provider errors', async () => {
-    const result = {
-      ...VALID_RESPONSE,
-      sizeConfidence: 0.3,
-      detailConfidence: 0.4,
-      tattooOnSkin: false,
-      referenceAnalyzable: false,
-      ambiguityLevel: ImageAmbiguityLevel.MAJOR,
-    };
-
-    await expect(
-      createFixture({ text: JSON.stringify(result) }).service.analyzeTattooImage(VALID_PNG),
-    ).resolves.toEqual(result);
   });
 
   it.each([
@@ -137,7 +111,7 @@ describe('GeminiImageAnalysisService', () => {
   ])('classifies HTTP %i as %s', async (status, category, retryable, fallbackEligible) => {
     const { service } = createFixture(providerError(status));
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       category,
       status,
       retryable,
@@ -149,7 +123,7 @@ describe('GeminiImageAnalysisService', () => {
     const networkError = Object.assign(new TypeError('fetch failed'), { code: 'ECONNRESET' });
 
     await expect(
-      createFixture(networkError).service.analyzeTattooImage(VALID_PNG),
+      createFixture(networkError).service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES),
     ).rejects.toMatchObject({
       category: 'NETWORK_ERROR',
       retryable: true,
@@ -162,7 +136,7 @@ describe('GeminiImageAnalysisService', () => {
       candidates: [{ finishReason: 'SAFETY' }],
     });
 
-    await expect(service.analyzeTattooImage(VALID_PNG)).rejects.toMatchObject({
+    await expect(service.analyzeTattooImageV2(VALID_PNG, VISION_STYLES)).rejects.toMatchObject({
       category: 'SAFETY_REJECTION',
       retryable: false,
       fallbackEligible: false,
@@ -173,7 +147,10 @@ describe('GeminiImageAnalysisService', () => {
     const fixture = createFixture();
 
     await expect(
-      fixture.service.analyzeTattooImage({ content: new Uint8Array(), mimeType: 'image/png' }),
+      fixture.service.analyzeTattooImageV2(
+        { content: new Uint8Array(), mimeType: 'image/png' },
+        VISION_STYLES,
+      ),
     ).rejects.toMatchObject({ category: 'IMAGE_UNAVAILABLE' });
     expect(fixture.generateContent).not.toHaveBeenCalled();
   });

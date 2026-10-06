@@ -2,23 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   ConversationState,
   ConversationStatus,
-  FlowVersion,
   LeadStatus,
   Prisma,
   type Conversation,
-  type DetailLevel,
-  type TattooSize,
 } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { ConversationAbandonmentService } from './conversation-abandonment.service.js';
-
-export interface ConversationUpdate {
-  currentState?: ConversationState;
-  selectedSize?: TattooSize;
-  selectedDetail?: DetailLevel;
-  bodyPart?: string;
-}
 
 export interface ConversationTransitionResult {
   applied: boolean;
@@ -44,7 +34,6 @@ export class ConversationsService {
   async getOrCreateActive(
     accountId: string,
     customerId: string,
-    flowVersion: FlowVersion = FlowVersion.V1,
   ): Promise<ActiveConversationResult> {
     const now = new Date();
 
@@ -71,17 +60,15 @@ export class ConversationsService {
         const previousConversation = await transaction.conversation.findFirst({
           where: { accountId, customerId },
           orderBy: { createdAt: 'desc' },
-          select: { flowVersion: true, status: true, currentState: true },
+          select: { status: true, currentState: true },
         });
-        const restartAbandonedV2 =
-          previousConversation?.status === ConversationStatus.ABANDONED &&
-          previousConversation.flowVersion === FlowVersion.V2;
+        const restartAbandoned = previousConversation?.status === ConversationStatus.ABANDONED;
 
         const restartInvalidReference =
           previousConversation?.status === ConversationStatus.COMPLETED &&
           previousConversation.currentState === ConversationState.INVALID_REFERENCE;
         const handedOffConversation =
-          restartAbandonedV2 || restartInvalidReference
+          restartAbandoned || restartInvalidReference
             ? null
             : await transaction.conversation.findFirst({
                 where: {
@@ -106,7 +93,6 @@ export class ConversationsService {
           data: {
             accountId,
             customerId,
-            flowVersion: restartAbandonedV2 ? FlowVersion.V2 : flowVersion,
             currentState: ConversationState.START,
             status: ConversationStatus.ACTIVE,
             lastActivityAt: now,
@@ -186,33 +172,6 @@ export class ConversationsService {
       },
       orderBy: { updatedAt: 'desc' },
     });
-  }
-
-  async applyTransition(
-    conversationId: string,
-    expectedState: ConversationState,
-    update: ConversationUpdate,
-  ): Promise<ConversationTransitionResult> {
-    const result = await this.prisma.conversation.updateMany({
-      where: {
-        id: conversationId,
-        currentState: expectedState,
-        status: ConversationStatus.ACTIVE,
-      },
-      data: {
-        ...update,
-        lastActivityAt: new Date(),
-      },
-    });
-
-    const conversation = await this.prisma.conversation.findUniqueOrThrow({
-      where: { id: conversationId },
-    });
-
-    return {
-      applied: result.count === 1,
-      conversation,
-    };
   }
 
   private findActiveByCustomerId(

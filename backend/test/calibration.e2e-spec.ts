@@ -11,6 +11,7 @@ import { CalibrationController } from '../src/modules/calibration/calibration.co
 import { CalibrationService } from '../src/modules/calibration/calibration.service.js';
 import { CatalogController } from '../src/modules/calibration/catalog.controller.js';
 import { CatalogService } from '../src/modules/calibration/catalog.service.js';
+import { CatalogImportService } from '../src/modules/calibration/catalog-import.service.js';
 
 const styleId = '00000000-0000-4000-8000-000000000010';
 const caseId = '00000000-0000-4000-8000-000000000011';
@@ -22,6 +23,9 @@ describe('calibration routes (e2e)', () => {
   const getDraft = vi.fn().mockResolvedValue(null);
   const saveAnswer = vi.fn().mockResolvedValue(null);
   const createStyle = vi.fn().mockResolvedValue({ id: styleId, code: 'NEW_STYLE' });
+  const listCases = vi.fn().mockResolvedValue([]);
+  const startDraft = vi.fn().mockResolvedValue({ id: 'draft' });
+  const importCatalog = vi.fn().mockResolvedValue({ changedCount: 0 });
   const authenticateSession = vi.fn().mockImplementation((token: string) => {
     if (token === 'admin') return { id: 'admin', role: UserRole.ADMIN, accountId: null };
     if (token === 'A' || token === 'B')
@@ -41,8 +45,9 @@ describe('calibration routes (e2e)', () => {
         TattooArtistGuard,
         AdminGuard,
         { provide: AuthService, useValue: { authenticateSession } },
-        { provide: CalibrationService, useValue: { getDraft, saveAnswer } },
+        { provide: CalibrationService, useValue: { getDraft, saveAnswer, listCases, startDraft } },
         { provide: CatalogService, useValue: { createStyle } },
+        { provide: CatalogImportService, useValue: { import: importCatalog } },
       ],
     }).compile();
     app = fixture.createNestApplication<INestApplication<Server>>();
@@ -111,5 +116,44 @@ describe('calibration routes (e2e)', () => {
     await request(app.getHttpServer())
       .get(`/api/dashboard/calibration/styles/${styleId}/draft`)
       .expect(401);
+  });
+
+  it('selects A/B explicitly and keeps the existing default draft route', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/dashboard/calibration/styles/${styleId}/draft`)
+      .set('Cookie', 'tatto_flow_session=A')
+      .expect(201);
+    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'AREA_COLOR');
+    await request(app.getHttpServer())
+      .post(`/api/dashboard/calibration/styles/${styleId}/draft`)
+      .set('Cookie', 'tatto_flow_session=A')
+      .send({ catalog: 'PHASED' })
+      .expect(201);
+    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'PHASED');
+    await request(app.getHttpServer())
+      .get(`/api/dashboard/calibration/styles/${styleId}/cases?catalog=PHASED`)
+      .set('Cookie', 'tatto_flow_session=B')
+      .expect(200);
+    expect(listCases).toHaveBeenCalledWith(accountB, styleId, 'PHASED');
+    await request(app.getHttpServer())
+      .post(`/api/dashboard/calibration/styles/${styleId}/draft`)
+      .set('Cookie', 'tatto_flow_session=A')
+      .send({ catalog: 'UNKNOWN' })
+      .expect(400);
+  });
+
+  it('allows only ADMIN to import the global catalog', async () => {
+    await request(app.getHttpServer())
+      .post('/api/admin/catalog/import')
+      .set('Cookie', 'tatto_flow_session=A')
+      .send({ cases: [] })
+      .expect(403);
+    expect(importCatalog).not.toHaveBeenCalled();
+    await request(app.getHttpServer())
+      .post('/api/admin/catalog/import')
+      .set('Cookie', 'tatto_flow_session=admin')
+      .send({ cases: [] })
+      .expect(201);
+    expect(importCatalog).toHaveBeenCalledWith({ cases: [] });
   });
 });

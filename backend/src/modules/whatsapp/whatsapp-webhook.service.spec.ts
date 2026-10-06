@@ -1,12 +1,9 @@
 import { ConfigService } from '@nestjs/config';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
-import { WhatsAppAdapter, WHATSAPP_BUTTON_IDS } from '../chatbot/whatsapp/whatsapp.adapter.js';
-import { WhatsAppCloudApiClient } from './whatsapp-cloud-api.client.js';
-import { WhatsAppInboundMessageRepository } from './whatsapp-inbound-message.repository.js';
 import { WhatsAppSignatureService } from './whatsapp-signature.service.js';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service.js';
 import { WhatsAppChannelService } from './whatsapp-channel.service.js';
-import { WhatsAppV2DeliveryService } from './whatsapp-v2-delivery.service.js';
 import { WhatsAppJobRepository } from './whatsapp-job.repository.js';
 import { WhatsAppJobDispatcher } from './whatsapp-job-dispatcher.service.js';
 
@@ -40,16 +37,6 @@ function payload(message: object, overrides: { accountId?: string; phoneId?: str
 
 function createFixture() {
   const assertValidPayload = vi.fn();
-  const claim = vi.fn().mockResolvedValue(true);
-  const release = vi.fn().mockResolvedValue(undefined);
-  const handleIncoming = vi.fn().mockResolvedValue([{ type: 'text', text: 'Respuesta de Nita' }]);
-  const resumePendingV2Analysis = vi.fn().mockResolvedValue(undefined);
-  const sendMessage = vi.fn().mockResolvedValue(undefined);
-  const downloadImage = vi.fn().mockResolvedValue({
-    content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
-    mimeType: 'image/png',
-    fileName: 'whatsapp-reference.png',
-  });
   const resolve = vi
     .fn()
     .mockImplementation((id: string) =>
@@ -57,7 +44,7 @@ function createFixture() {
         id === PHONE_NUMBER_ID ? { accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID } : null,
       ),
     );
-  const enqueueIfV2 = vi.fn().mockResolvedValue({ queued: false });
+  const enqueue = vi.fn().mockResolvedValue({ queued: true, customerId: 'customer-id' });
   const wake = vi.fn();
   const service = new WhatsAppWebhookService(
     new ConfigService({
@@ -65,28 +52,16 @@ function createFixture() {
       WHATSAPP_PHONE_NUMBER_ID: PHONE_NUMBER_ID,
     }),
     { assertValidPayload } as unknown as WhatsAppSignatureService,
-    { claim, release } as unknown as WhatsAppInboundMessageRepository,
-    { handleIncoming, resumePendingV2Analysis } as unknown as WhatsAppAdapter,
-    { sendMessage, downloadImage } as unknown as WhatsAppCloudApiClient,
     { resolve } as unknown as WhatsAppChannelService,
-    {
-      deliverForCustomer: vi.fn().mockResolvedValue(undefined),
-    } as unknown as WhatsAppV2DeliveryService,
-    { enqueueIfV2 } as unknown as WhatsAppJobRepository,
+    { enqueue } as unknown as WhatsAppJobRepository,
     { wake } as unknown as WhatsAppJobDispatcher,
   );
 
   return {
     service,
     assertValidPayload,
-    claim,
-    release,
-    handleIncoming,
-    resumePendingV2Analysis,
-    sendMessage,
-    downloadImage,
     resolve,
-    enqueueIfV2,
+    enqueue,
     wake,
   };
 }
@@ -96,250 +71,97 @@ function observeServiceLogs(service: WhatsAppWebhookService) {
 }
 
 describe('WhatsAppWebhookService', () => {
+  it.each<[object, object]>([
+    [
+      { type: 'text', text: { body: 'Hola' } },
+      { type: 'text', text: 'Hola' },
+    ],
+    [
+      {
+        type: 'interactive',
+        interactive: { type: 'button_reply', button_reply: { id: 'nita_same_size_yes' } },
+      },
+      { type: 'button_reply', buttonId: 'nita_same_size_yes' },
+    ],
+    [
+      {
+        type: 'interactive',
+        interactive: { type: 'list_reply', list_reply: { id: 'nita_color_black_only' } },
+      },
+      { type: 'button_reply', buttonId: 'nita_color_black_only' },
+    ],
+    ...['nita_color_low', 'nita_color_medium', 'nita_color_full'].map((id): [object, object] => [
+      { type: 'interactive', interactive: { type: 'list_reply', list_reply: { id } } },
+      { type: 'button_reply', buttonId: id },
+    ]),
+  ])(
+    'validates signatures and enqueues supported input %# for the receiving account',
+    async (message, input) => {
+      const f = createFixture();
+      const body = payload({ id: MESSAGE_ID, from: CUSTOMER, ...message });
+      await f.service.handleWebhook(body, 'signature');
+      expect(f.assertValidPayload).toHaveBeenCalledWith(body, 'signature');
+      expect(f.enqueue).toHaveBeenCalledWith(
+        MESSAGE_ID,
+        expect.objectContaining({ accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID }),
+        CUSTOMER,
+        input,
+      );
+      expect(f.wake).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('rejects an invalid signature before enqueueing', async () => {
+    const f = createFixture();
+    f.assertValidPayload.mockImplementation(() => {
+      throw new UnauthorizedException();
+    });
+    await expect(
+      f.service.handleWebhook(payload({ id: MESSAGE_ID, from: CUSTOMER }), 'bad'),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(f.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { type: 'text', text: { body: '' } },
+    { type: 'text', text: { body: 'x'.repeat(1001) } },
+    { type: 'image', image: { id: '' } },
+    { from: 'invalid', type: 'text', text: { body: 'Hola' } },
+  ])('rejects invalid incoming input %# without queueing', async (message) => {
+    const f = createFixture();
+    await expect(
+      f.service.handleWebhook(payload({ id: MESSAGE_ID, from: CUSTOMER, ...message }), 'signature'),
+    ).rejects.toThrow(BadRequestException);
+    expect(f.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('propagates persistence errors before acknowledging and waking a worker', async () => {
+    const f = createFixture();
+    f.enqueue.mockRejectedValue(new Error('Database unavailable'));
+    await expect(
+      f.service.handleWebhook(
+        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } }),
+        'signature',
+      ),
+    ).rejects.toThrow('Database unavailable');
+    expect(f.wake).not.toHaveBeenCalled();
+  });
   it('ACKs a persisted V2 image event without download, conversation processing or send', async () => {
     const f = createFixture();
-    f.enqueueIfV2.mockResolvedValue({ queued: true, customerId: 'customer-id' });
+    f.enqueue.mockResolvedValue({ queued: true, customerId: 'customer-id' });
     await expect(
       f.service.handleWebhook(
         payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'image', image: { id: 'media-id' } }),
         'signature',
       ),
     ).resolves.toEqual({ received: true });
-    expect(f.enqueueIfV2).toHaveBeenCalledWith(
+    expect(f.enqueue).toHaveBeenCalledWith(
       MESSAGE_ID,
       expect.objectContaining({ accountId: ACCOUNT_ID }),
       CUSTOMER,
       { type: 'image', mediaId: 'media-id' },
     );
     expect(f.wake).toHaveBeenCalledWith(ACCOUNT_ID, 'customer-id');
-    expect(f.downloadImage).not.toHaveBeenCalled();
-    expect(f.handleIncoming).not.toHaveBeenCalled();
-    expect(f.sendMessage).not.toHaveBeenCalled();
-    expect(f.claim).not.toHaveBeenCalled();
-  });
-  it('resumes only pending V2 work on duplicate delivery without replaying the message', async () => {
-    const f = createFixture();
-    f.claim.mockResolvedValue(false);
-    await f.service.handleWebhook(
-      payload({
-        id: MESSAGE_ID,
-        from: CUSTOMER,
-        type: 'text',
-        text: { body: 'Respuesta anterior' },
-      }),
-      'sha256=valid',
-    );
-    expect(f.resumePendingV2Analysis).toHaveBeenCalledWith(ACCOUNT_ID, CUSTOMER);
-    expect(f.handleIncoming).not.toHaveBeenCalled();
-    expect(f.sendMessage).not.toHaveBeenCalled();
-  });
-  it('keeps a duplicate retryable if its V2 claim is still busy or recovery fails', async () => {
-    const f = createFixture();
-    f.claim.mockResolvedValue(false);
-    f.resumePendingV2Analysis.mockRejectedValue(new Error('Retry recovery'));
-    await expect(
-      f.service.handleWebhook(
-        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Anterior' } }),
-        'sha256=valid',
-      ),
-    ).rejects.toThrow('Retry recovery');
-    expect(f.release).not.toHaveBeenCalled();
-    expect(f.handleIncoming).not.toHaveBeenCalled();
-  });
-  it('routes the same sender to the account and outgoing Nita number of each receiving channel', async () => {
-    const fixture = createFixture();
-    const secondPhoneId = '3333333333';
-    const secondAccountId = '00000000-0000-4000-8000-000000000002';
-    fixture.resolve.mockImplementation((phoneNumberId: string) =>
-      Promise.resolve(
-        phoneNumberId === PHONE_NUMBER_ID
-          ? { accountId: ACCOUNT_ID, phoneNumberId: PHONE_NUMBER_ID }
-          : phoneNumberId === secondPhoneId
-            ? { accountId: secondAccountId, phoneNumberId: secondPhoneId }
-            : null,
-      ),
-    );
-    const message = { id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } };
-
-    await fixture.service.handleWebhook(payload(message), 'sha256=valid');
-    await fixture.service.handleWebhook(
-      payload({ ...message, id: 'wamid.inbound-2' }, { phoneId: secondPhoneId }),
-      'sha256=valid',
-    );
-
-    expect(fixture.handleIncoming).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ accountId: ACCOUNT_ID, customerIdentifier: CUSTOMER }),
-    );
-    expect(fixture.handleIncoming).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ accountId: secondAccountId, customerIdentifier: CUSTOMER }),
-    );
-    expect(fixture.sendMessage).toHaveBeenNthCalledWith(
-      1,
-      PHONE_NUMBER_ID,
-      CUSTOMER,
-      expect.any(Object),
-    );
-    expect(fixture.sendMessage).toHaveBeenNthCalledWith(
-      2,
-      secondPhoneId,
-      CUSTOMER,
-      expect.any(Object),
-    );
-  });
-
-  it('processes signed text and sends every structured Nita response', async () => {
-    const fixture = createFixture();
-    const rawBody = payload({
-      id: MESSAGE_ID,
-      from: CUSTOMER,
-      type: 'text',
-      text: { body: 'Hola' },
-    });
-
-    await expect(fixture.service.handleWebhook(rawBody, 'sha256=valid')).resolves.toEqual({
-      received: true,
-    });
-
-    expect(fixture.assertValidPayload).toHaveBeenCalledWith(rawBody, 'sha256=valid');
-    expect(fixture.claim).toHaveBeenCalledWith(MESSAGE_ID);
-    expect(fixture.handleIncoming).toHaveBeenCalledWith({
-      type: 'text',
-      customerIdentifier: CUSTOMER,
-      accountId: ACCOUNT_ID,
-      text: 'Hola',
-    });
-    expect(fixture.sendMessage).toHaveBeenCalledWith(PHONE_NUMBER_ID, CUSTOMER, {
-      type: 'text',
-      text: 'Respuesta de Nita',
-    });
-  });
-
-  it.each([
-    [
-      'button_reply',
-      {
-        type: 'button_reply',
-        button_reply: { id: WHATSAPP_BUTTON_IDS.SIZE_SMALL, title: 'Pequeño' },
-      },
-    ],
-    [
-      'list_reply',
-      {
-        type: 'list_reply',
-        list_reply: { id: WHATSAPP_BUTTON_IDS.DETAIL_DETAILED, title: 'Detallado' },
-      },
-    ],
-  ])('maps an interactive %s using its stable ID', async (_type, interactive) => {
-    const fixture = createFixture();
-    const expectedId =
-      'button_reply' in interactive ? interactive.button_reply.id : interactive.list_reply.id;
-
-    await fixture.service.handleWebhook(
-      payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'interactive', interactive }),
-      'sha256=valid',
-    );
-
-    expect(fixture.handleIncoming).toHaveBeenCalledWith({
-      type: 'button_reply',
-      customerIdentifier: CUSTOMER,
-      accountId: ACCOUNT_ID,
-      buttonId: expectedId,
-    });
-  });
-
-  it('downloads an image from its Meta media ID before entering the existing flow', async () => {
-    const fixture = createFixture();
-
-    await fixture.service.handleWebhook(
-      payload({
-        id: MESSAGE_ID,
-        from: CUSTOMER,
-        type: 'image',
-        image: { id: 'media-123', mime_type: 'image/png' },
-      }),
-      'sha256=valid',
-    );
-
-    expect(fixture.downloadImage).toHaveBeenCalledWith(PHONE_NUMBER_ID, 'media-123');
-    expect(fixture.handleIncoming).toHaveBeenCalledWith({
-      type: 'image',
-      customerIdentifier: CUSTOMER,
-      accountId: ACCOUNT_ID,
-      image: {
-        content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
-        mimeType: 'image/png',
-        fileName: 'whatsapp-reference.png',
-      },
-    });
-  });
-
-  it('does not process or send a duplicated WhatsApp message ID', async () => {
-    const fixture = createFixture();
-    fixture.claim.mockResolvedValue(false);
-
-    await fixture.service.handleWebhook(
-      payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } }),
-      'sha256=valid',
-    );
-
-    expect(fixture.handleIncoming).not.toHaveBeenCalled();
-    expect(fixture.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('claims the same simultaneous WhatsApp message ID only once before side effects', async () => {
-    const fixture = createFixture();
-    const claimedIds = new Set<string>();
-    fixture.claim.mockImplementation((messageId: string) => {
-      if (claimedIds.has(messageId)) {
-        return Promise.resolve(false);
-      }
-
-      claimedIds.add(messageId);
-      return Promise.resolve(true);
-    });
-    const rawBody = payload({
-      id: MESSAGE_ID,
-      from: CUSTOMER,
-      type: 'text',
-      text: { body: 'Hola' },
-    });
-
-    await Promise.all([
-      fixture.service.handleWebhook(rawBody, 'sha256=valid'),
-      fixture.service.handleWebhook(rawBody, 'sha256=valid'),
-    ]);
-
-    expect(fixture.claim).toHaveBeenCalledTimes(2);
-    expect(fixture.handleIncoming).toHaveBeenCalledOnce();
-    expect(fixture.sendMessage).toHaveBeenCalledOnce();
-  });
-
-  it('retains the message ID if delivery fails after Nita advanced the conversation', async () => {
-    const fixture = createFixture();
-    fixture.sendMessage.mockRejectedValue(new Error('provider unavailable'));
-
-    await expect(
-      fixture.service.handleWebhook(
-        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'text', text: { body: 'Hola' } }),
-        'sha256=valid',
-      ),
-    ).rejects.toThrow('provider unavailable');
-    expect(fixture.release).not.toHaveBeenCalled();
-  });
-
-  it('releases the message ID when processing fails before Nita advances the conversation', async () => {
-    const fixture = createFixture();
-    fixture.downloadImage.mockRejectedValue(new Error('media unavailable'));
-
-    await expect(
-      fixture.service.handleWebhook(
-        payload({ id: MESSAGE_ID, from: CUSTOMER, type: 'image', image: { id: 'media-123' } }),
-        'sha256=valid',
-      ),
-    ).rejects.toThrow('media unavailable');
-    expect(fixture.release).toHaveBeenCalledWith(MESSAGE_ID);
   });
 
   it.each([
@@ -371,8 +193,6 @@ describe('WhatsAppWebhookService', () => {
         'sha256=valid',
       );
 
-      expect(fixture.claim).not.toHaveBeenCalled();
-      expect(fixture.handleIncoming).not.toHaveBeenCalled();
       expect(info).toHaveBeenCalledWith('whatsapp.webhook.ignored', {
         reason,
         object: 'whatsapp_business_account',
@@ -409,9 +229,6 @@ describe('WhatsAppWebhookService', () => {
 
     await fixture.service.handleWebhook(rawBody, 'sha256=valid');
 
-    expect(fixture.claim).not.toHaveBeenCalled();
-    expect(fixture.handleIncoming).not.toHaveBeenCalled();
-    expect(fixture.sendMessage).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith('whatsapp.webhook.ignored', {
       reason: 'statuses_without_messages',
       object: 'whatsapp_business_account',

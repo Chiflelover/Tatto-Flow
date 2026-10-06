@@ -26,10 +26,13 @@ async function main(): Promise<void> {
     new ConfigService({ GEMINI_MODEL: model }),
     new GoogleGenAI({ apiKey }) as GeminiClient,
   );
-  const result = await service.analyzeTattooImage({
-    content,
-    mimeType: mimeTypeFromPath(imagePath),
-  });
+  const result = await service.analyzeTattooImageV2(
+    {
+      content,
+      mimeType: mimeTypeFromPath(imagePath),
+    },
+    [],
+  );
 
   console.info(
     JSON.stringify(

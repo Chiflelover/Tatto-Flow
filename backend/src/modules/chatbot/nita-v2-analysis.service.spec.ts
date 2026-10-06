@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import type { AiAnalysis, Conversation, Prisma } from '../../generated/prisma/client.js';
 import type { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import {
@@ -10,6 +10,7 @@ import {
 import { ImageAnalysisV2Service } from '../image-analysis/image-analysis-v2.service.js';
 import { AIProviderError } from '../image-analysis/ai-provider.error.js';
 import type { ImageAnalysisService } from '../image-analysis/image-analysis.service.js';
+import { CATALOG_AB_ALGORITHM_VERSION } from '../calibration/catalog-ab-interpolation.js';
 import { InMemoryStorageService } from '../storage/in-memory-storage.service.js';
 import {
   NitaV2AnalysisService,
@@ -31,14 +32,11 @@ async function fixture(overrides: Partial<Conversation> = {}) {
     id: crypto.randomUUID(),
     accountId,
     customerId: crypto.randomUUID(),
-    flowVersion: 'V2',
     currentState: 'READY_FOR_ANALYSIS',
     status: 'ACTIVE',
-    selectedSize: null,
-    selectedDetail: null,
     firstTattoo: false,
     sameSizeAsReference: true,
-    targetSizeCm: null,
+    targetSizeCm: 12,
     colorDeclaration: 'BLACK_ONLY',
     bodyPart: 'Antebrazo',
     v2AnalysisClaimId: null,
@@ -109,6 +107,7 @@ async function fixture(overrides: Partial<Conversation> = {}) {
     }) =>
       Promise.resolve({
         id: 'style-id',
+        modelVersions: [] as { algorithmVersion: string }[],
         artistStyles:
           select.artistStyles.where.accountId === accountId && select.artistStyles.where.isEnabled
             ? [{ accountId }]
@@ -182,6 +181,33 @@ async function fixture(overrides: Partial<Conversation> = {}) {
 }
 
 describe('Nita V2 analysis ownership and persistence', () => {
+  it('prepares declared size and persisted density for the account active A/B model without requiring area', async () => {
+    const f = await fixture();
+    const result = visionResult();
+    Object.assign(result.observations, {
+      compositionAspectRatio: null,
+      compositionFillRatio: null,
+      scaleReferenceType: 'NONE',
+      referenceMainDimensionCm: null,
+      referenceAreaCm2: null,
+      estimatedDensity: 70,
+    });
+    f.analyzeTattooImageV2.mockResolvedValue(result);
+    f.styleLookup.mockResolvedValue({
+      id: 'style-id',
+      artistStyles: [{ accountId: f.accountId }],
+      modelVersions: [{ algorithmVersion: CATALOG_AB_ALGORITHM_VERSION }],
+    });
+    expect((await f.service.process(f.accountId, f.conversationId)).currentState).toBe(
+      'READY_FOR_PRICING',
+    );
+    expect(f.current().preparation).toMatchObject({
+      targetMainDimensionCm: '12',
+      targetAreaCm2: null,
+      targetColorCoverage: 0,
+    });
+    expect(f.current().stored).toMatchObject({ estimatedDensity: 70 });
+  });
   it('atomically completes an invalid reference and stores one final delivery without review or area', async () => {
     const f = await fixture({
       sameSizeAsReference: false,
@@ -218,10 +244,10 @@ describe('Nita V2 analysis ownership and persistence', () => {
     expect(f.enqueueSize).toHaveBeenCalledOnce();
     expect(await f.storage.exists(f.image.storagePath)).toBe(true);
   });
-  it.each(['BODY_CONTEXT', 'NONE'] as const)(
+  it.each(['EXPLICIT_REFERENCE', 'BODY_CONTEXT', 'NONE'] as const)(
     'persists one size question with %s and resumes using the same analysis',
     async (scaleReferenceType) => {
-      const f = await fixture();
+      const f = await fixture({ targetSizeCm: null });
       const result = visionResult();
       Object.assign(result.observations, {
         scaleReferenceType,
@@ -252,7 +278,7 @@ describe('Nita V2 analysis ownership and persistence', () => {
     },
   );
   it('rolls back analysis, state and question together if persisting the size delivery fails', async () => {
-    const f = await fixture();
+    const f = await fixture({ targetSizeCm: null });
     const result = visionResult();
     result.observations.scaleReferenceType = 'NONE';
     f.analyzeTattooImageV2.mockResolvedValue(result);
@@ -286,7 +312,6 @@ describe('Nita V2 analysis ownership and persistence', () => {
     expect(findFirst).toHaveBeenCalledWith({
       where: {
         accountId: f.accountId,
-        flowVersion: 'V2',
         status: 'ACTIVE',
         currentState: { in: ['READY_FOR_ANALYSIS', 'ANALYZING'] },
         customer: { phoneNumber: '51900000001' },
@@ -328,7 +353,7 @@ describe('Nita V2 analysis ownership and persistence', () => {
       ...visionResult().observations,
       provider: 'gemini',
       model: 'gemini-test-model',
-      schemaVersion: 'VISION_V2_4',
+      schemaVersion: 'VISION_V2_5',
       rawResponse: visionResult().rawResponse,
     });
     expect(finished.preparation).toMatchObject({
@@ -524,15 +549,12 @@ describe('Nita V2 analysis ownership and persistence', () => {
           where: { accountId: f.accountId, isEnabled: true },
           select: { accountId: true },
         },
+        modelVersions: {
+          where: { accountId: f.accountId, status: 'ACTIVE' },
+          select: { algorithmVersion: true },
+        },
       },
     });
-  });
-  it('never starts V2 processing for V1', async () => {
-    const f = await fixture({ flowVersion: 'V1' });
-    await expect(f.service.process(f.accountId, f.conversationId)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-    expect(f.analyzeTattooImageV2).not.toHaveBeenCalled();
   });
   it('keeps abandoned conversation and image intact', async () => {
     const f = await fixture({ status: 'ABANDONED' });
@@ -541,17 +563,5 @@ describe('Nita V2 analysis ownership and persistence', () => {
     expect(f.current()).toEqual(before);
     expect(f.analyzeTattooImageV2).not.toHaveBeenCalled();
     expect(await f.storage.exists(f.image.storagePath)).toBe(true);
-  });
-  it('does not overwrite a historical V1 analysis attached to a V2 conversation', async () => {
-    const f = await fixture();
-    const original = persistedVision('V1');
-    f.setStored(original);
-    await f.service.process(f.accountId, f.conversationId);
-    expect(f.current().stored).toEqual(original);
-    expect(f.current().preparation).toMatchObject({
-      decision: 'HUMAN_REVIEW',
-      reviewReasons: ['INVALID_ANALYSIS'],
-    });
-    expect(f.upsertAnalysis).not.toHaveBeenCalled();
   });
 });

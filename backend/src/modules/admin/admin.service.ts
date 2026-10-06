@@ -1,11 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, UserRole } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import {
-  contactUrl,
-  LEGACY_ACCOUNT_ID,
-  normalizeNitaNumber,
-} from '../accounts/account.constants.js';
+import { contactUrl, normalizeNitaNumber } from '../accounts/account.constants.js';
 import { hashPassword } from '../auth/password-hasher.js';
 import type { CreateArtistAccountDto, UpdateArtistAccountDto } from './dto/admin-account.dto.js';
 
@@ -52,20 +48,6 @@ export class AdminService {
             channel: { create: { phoneNumber, phoneNumberId: dto.phoneNumberId } },
           },
         });
-        const legacyRules = await tx.pricingRule.findMany({
-          where: { accountId: LEGACY_ACCOUNT_ID, isActive: true },
-        });
-        if (legacyRules.length) {
-          await tx.pricingRule.createMany({
-            data: legacyRules.map(({ size, detail, minPrice, maxPrice }) => ({
-              accountId: account.id,
-              size,
-              detail,
-              minPrice,
-              maxPrice,
-            })),
-          });
-        }
         return account.id;
       });
       return this.getAccount(id);

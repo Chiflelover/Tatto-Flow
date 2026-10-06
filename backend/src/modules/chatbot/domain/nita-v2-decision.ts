@@ -1,6 +1,12 @@
 import { Prisma, type AiAnalysis } from '../../../generated/prisma/client.js';
-import { hasCompleteV2Intake, type V2Intake } from '../../conversations/conversation-v2-intake.js';
+import {
+  hasCompleteV2Intake,
+  hasV2IntakeAwaitingTargetSize,
+  type V2Intake,
+} from '../../conversations/conversation-v2-intake.js';
 import type { ImageAnalysisV2Observation } from '../../image-analysis/domain/image-analysis-v2.types.js';
+import { CATALOG_AB_ALGORITHM_VERSION } from '../../calibration/catalog-ab-interpolation.js';
+import { declaredTargetColorCoverage } from './nita-v2-color.js';
 
 export type V2Decision =
   | 'READY_FOR_PRICING'
@@ -25,6 +31,7 @@ export type V2ReviewReason =
   | 'MISSING_COLOR_COVERAGE'
   | 'INVALID_COLOR_COVERAGE'
   | 'INCONSISTENT_COLOR_OBSERVATIONS'
+  | 'TARGET_COLOR_NOT_DECLARED'
   | 'INVALID_PREPARATION'
   | 'PRICING_MODEL_NOT_AVAILABLE'
   | 'MODEL_NOT_APPLICABLE';
@@ -45,6 +52,7 @@ export interface V2Preparation {
 export interface V2StyleAvailability {
   exists: boolean;
   enabled: boolean;
+  pricingAlgorithmVersion?: string;
 }
 
 export function v2PreparationFromJson(value: Prisma.JsonValue | null): V2Preparation | null {
@@ -92,10 +100,9 @@ function positiveFraction(value: number | null): value is number {
 }
 
 export function isValidV2Analysis(
-  analysis: Pick<AiAnalysis, 'analysisVersion' | keyof ImageAnalysisV2Observation>,
+  analysis: Pick<AiAnalysis, keyof ImageAnalysisV2Observation>,
 ): boolean {
   return (
-    analysis.analysisVersion === 'V2' &&
     typeof analysis.validTattooReference === 'boolean' &&
     [
       analysis.referenceValidationConfidence,
@@ -137,24 +144,25 @@ export function prepareV2Case(
     targetColorCoverage: null,
     clientReferenceMatch: 'UNKNOWN',
   };
-  if (analysis?.analysisVersion === 'V2' && analysis.validTattooReference === false) {
+  if (analysis && analysis.validTattooReference === false) {
     result.decision = 'INVALID_REFERENCE';
     return result;
   }
-  if (!hasCompleteV2Intake(intake)) result.reviewReasons.push('INCOMPLETE_INTAKE');
+  const awaitingHistoricalSize = hasV2IntakeAwaitingTargetSize(intake);
+  const needsArea = style.pricingAlgorithmVersion !== CATALOG_AB_ALGORITHM_VERSION;
+  if (!hasCompleteV2Intake(intake) && !awaitingHistoricalSize)
+    result.reviewReasons.push('INCOMPLETE_INTAKE');
   if (positive(intake.targetSizeCm))
     result.targetMainDimensionCm = new Decimal(intake.targetSizeCm).toString();
+  result.targetColorCoverage = declaredTargetColorCoverage(intake.colorDeclaration);
+  if (result.targetColorCoverage === null) result.reviewReasons.push('TARGET_COLOR_NOT_DECLARED');
   if (!analysis) {
     result.reviewReasons.push(failure);
     return result;
   }
-  if (analysis.analysisVersion !== 'V2') {
-    result.reviewReasons.push('INVALID_ANALYSIS');
-    return result;
-  }
-
-  const wantsBlack = intake.colorDeclaration === 'BLACK_ONLY';
+  const wantsBlack = result.targetColorCoverage === 0;
   const wantsColor =
+    (result.targetColorCoverage !== null && result.targetColorCoverage > 0) ||
     intake.colorDeclaration === 'BLACK_WITH_SOME_COLOR' ||
     intake.colorDeclaration === 'MOSTLY_COLOR';
   if (analysis.extensiveBodyCoverage === true)
@@ -163,7 +171,6 @@ export function prepareV2Case(
     result.specialReviewTypes.push('SPECIAL_REVIEW_COLOR_MODIFICATION');
 
   if (wantsBlack) {
-    result.targetColorCoverage = 0;
     if (typeof analysis.referenceEssentiallyBlack === 'boolean')
       result.clientReferenceMatch = analysis.referenceEssentiallyBlack ? 'CONSISTENT' : 'MODIFIED';
   } else if (wantsColor && analysis.referenceEssentiallyBlack === true) {
@@ -173,8 +180,12 @@ export function prepareV2Case(
     analysis.referenceEssentiallyBlack === false &&
     fraction(analysis.colorCoverage)
   ) {
-    result.targetColorCoverage = analysis.colorCoverage;
-    result.clientReferenceMatch = 'CONSISTENT';
+    result.clientReferenceMatch =
+      result.targetColorCoverage === null
+        ? 'UNKNOWN'
+        : result.targetColorCoverage === analysis.colorCoverage
+          ? 'CONSISTENT'
+          : 'MODIFIED';
     if (analysis.colorCoverage === 0) result.reviewReasons.push('INCONSISTENT_COLOR_OBSERVATIONS');
   }
 
@@ -192,20 +203,15 @@ export function prepareV2Case(
       const area = targetDimension.mul(targetShortDimension).mul(analysis.compositionFillRatio);
       if (area.isFinite() && area.gt(0)) result.targetAreaCm2 = area.toString();
       else result.reviewReasons.push('INVALID_TARGET_MEASUREMENTS');
-    } else result.reviewReasons.push('MISSING_COMPOSITION_GEOMETRY');
-  } else if (
-    intake.sameSizeAsReference === true &&
-    intake.targetSizeCm === null &&
-    analysis.scaleReferenceType === 'EXPLICIT_REFERENCE'
-  ) {
+    } else if (needsArea) result.reviewReasons.push('MISSING_COMPOSITION_GEOMETRY');
+  } else if (awaitingHistoricalSize && !needsArea) {
+    needsClientSize = true;
+  } else if (awaitingHistoricalSize && analysis.scaleReferenceType === 'EXPLICIT_REFERENCE') {
     if (positive(analysis.referenceMainDimensionCm) && positive(analysis.referenceAreaCm2)) {
-      result.targetMainDimensionCm = new Decimal(analysis.referenceMainDimensionCm).toString();
-      result.scaleFactor = '1';
-      result.targetAreaCm2 = new Decimal(analysis.referenceAreaCm2).toString();
+      needsClientSize = true;
     } else result.reviewReasons.push('MISSING_REFERENCE_MEASUREMENTS');
   } else if (
-    intake.sameSizeAsReference === true &&
-    intake.targetSizeCm === null &&
+    awaitingHistoricalSize &&
     ['BODY_CONTEXT', 'NONE'].some((type) => type === analysis.scaleReferenceType)
   ) {
     if (
@@ -217,15 +223,23 @@ export function prepareV2Case(
   } else result.reviewReasons.push('INVALID_TARGET_MEASUREMENTS');
   if (!analysis.style || !style.exists) result.reviewReasons.push('STYLE_UNKNOWN');
   else if (!style.enabled) result.reviewReasons.push('STYLE_NOT_ENABLED');
-  if (analysis.colorCoverage === null) result.reviewReasons.push('MISSING_COLOR_COVERAGE');
-  else if (!fraction(analysis.colorCoverage)) result.reviewReasons.push('INVALID_COLOR_COVERAGE');
+  if (analysis.colorCoverage !== null && !fraction(analysis.colorCoverage))
+    result.reviewReasons.push('INVALID_COLOR_COVERAGE');
+  if (
+    !needsArea &&
+    (typeof analysis.estimatedDensity !== 'number' ||
+      !Number.isFinite(analysis.estimatedDensity) ||
+      analysis.estimatedDensity < 20 ||
+      analysis.estimatedDensity > 100)
+  )
+    result.reviewReasons.push('MODEL_NOT_APPLICABLE');
 
   result.decision = result.specialReviewTypes.length
     ? 'SPECIAL_REVIEW'
     : !result.reviewReasons.length && result.targetColorCoverage !== null && needsClientSize
       ? 'ASK_TARGET_SIZE_AFTER_ANALYSIS'
       : result.reviewReasons.length ||
-          result.targetAreaCm2 === null ||
+          (needsArea && result.targetAreaCm2 === null) ||
           result.targetColorCoverage === null
         ? 'HUMAN_REVIEW'
         : 'READY_FOR_PRICING';

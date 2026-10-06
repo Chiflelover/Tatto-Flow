@@ -3,15 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import type { AiFallbackProvider, AiMode } from '../../config/environment.validation.js';
-import { LeadScoringModule } from '../lead-scoring/lead-scoring.module.js';
-import { PricingModule } from '../pricing/pricing.module.js';
-import { ValidationModule } from '../validation/validation.module.js';
 import {
   GEMINI_CLIENT,
   GeminiImageAnalysisService,
   type GeminiClient,
 } from './gemini-image-analysis.service.js';
-import { ImageAnalysisWorkflowService } from './image-analysis-workflow.service.js';
 import { ImageAnalysisV2Service } from './image-analysis-v2.service.js';
 import { MockImageAnalysisService } from './mock-image-analysis.service.js';
 import { ImageAnalysisService } from './image-analysis.service.js';
@@ -29,12 +25,10 @@ import {
 } from './resilient-image-analysis.service.js';
 
 @Module({
-  imports: [LeadScoringModule, PricingModule, ValidationModule],
   providers: [
     GeminiImageAnalysisService,
     OpenAIImageAnalysisService,
     ResilientImageAnalysisService,
-    ImageAnalysisWorkflowService,
     ImageAnalysisV2Service,
     MockImageAnalysisService,
     { provide: AI_RETRY_SLEEP, useValue: productionRetrySleep },
@@ -77,6 +71,6 @@ import {
       ): ImageAnalysisService => (config.get<AiMode>('AI_MODE') === 'mock' ? mock : real),
     },
   ],
-  exports: [ImageAnalysisWorkflowService, ImageAnalysisV2Service, ImageAnalysisService],
+  exports: [ImageAnalysisV2Service, ImageAnalysisService],
 })
 export class ImageAnalysisModule {}

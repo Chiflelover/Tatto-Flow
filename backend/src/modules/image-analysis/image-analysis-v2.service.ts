@@ -1,9 +1,14 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AnalysisVersion, FlowVersion, type Prisma } from '../../generated/prisma/client.js';
+import { type Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { TattooImageInput } from './domain/image-analysis.types.js';
 import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysis.service.js';
-import { normalizeImageAnalysisV2Observation } from './image-analysis-v2.contract.js';
+import {
+  IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
+  isEstimatedDensity,
+  normalizeImageAnalysisV2Observation,
+} from './image-analysis-v2.contract.js';
+import { InvalidImageAnalysisResponseError } from './image-analysis-response.js';
 import type { ImageAnalysisV2Result } from './domain/image-analysis-v2.types.js';
 
 @Injectable()
@@ -21,20 +26,17 @@ export class ImageAnalysisV2Service {
       orderBy: { code: 'asc' },
     });
     const result = await this.provider.analyzeTattooImageV2(image, styles, context);
+    this.validateDensity(result);
     return { ...result, observations: normalizeImageAnalysisV2Observation(result.observations) };
   }
 
   async analyzeAndPersistLeadReference(accountId: string, leadId: string, image: TattooImageInput) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: leadId, accountId },
-      select: { conversation: { select: { flowVersion: true } }, aiAnalysis: true },
+      select: { aiAnalysis: true },
     });
     if (!lead) throw new NotFoundException('Lead no disponible para esta cuenta.');
-    if (lead.conversation?.flowVersion !== FlowVersion.V2)
-      throw new ConflictException('El análisis V2 solo se persiste para conversaciones V2.');
     if (lead.aiAnalysis) {
-      if (lead.aiAnalysis.analysisVersion !== AnalysisVersion.V2)
-        throw new ConflictException('El análisis histórico V1 debe conservarse.');
       return lead.aiAnalysis;
     }
     const result = await this.analyzeReference(image, { leadId });
@@ -49,8 +51,9 @@ export class ImageAnalysisV2Service {
     leadId: string,
     result: ImageAnalysisV2Result,
   ) {
+    this.validateDensity(result);
     const ownedLead = await tx.lead.findFirst({
-      where: { id: leadId, accountId, conversation: { flowVersion: FlowVersion.V2 } },
+      where: { id: leadId, accountId },
       select: { id: true },
     });
     if (!ownedLead) throw new ConflictException('El lead ya no admite un análisis V2.');
@@ -59,7 +62,6 @@ export class ImageAnalysisV2Service {
       update: {},
       create: {
         leadId,
-        analysisVersion: AnalysisVersion.V2,
         ...normalizeImageAnalysisV2Observation(result.observations),
         provider: result.provider,
         model: result.model,
@@ -68,8 +70,15 @@ export class ImageAnalysisV2Service {
         rawResponse: result.rawResponse,
       },
     });
-    if (analysis.analysisVersion !== AnalysisVersion.V2)
-      throw new ConflictException('El análisis histórico V1 debe conservarse.');
     return analysis;
+  }
+
+  private validateDensity(result: ImageAnalysisV2Result) {
+    const density = result.observations.estimatedDensity;
+    if (
+      (result.schemaVersion === IMAGE_ANALYSIS_V2_SCHEMA_VERSION || density !== null) &&
+      !isEstimatedDensity(density)
+    )
+      throw new InvalidImageAnalysisResponseError();
   }
 }

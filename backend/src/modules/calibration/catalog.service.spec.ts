@@ -44,4 +44,16 @@ describe('CatalogService', () => {
       ).toBeGreaterThan(0);
     }
   });
+
+  it('requires a versioned manifest to edit A/B metadata but allows deactivation', async () => {
+    const findUnique = vi.fn().mockResolvedValue({ id: 'case-1', phase: 'A' });
+    const update = vi.fn();
+    const service = new CatalogService({
+      calibrationCase: { findUnique, update },
+    } as unknown as PrismaService);
+    await expect(service.updateCase('case-1', { areaCm2: 20 })).rejects.toThrow(/manifest/);
+    expect(update).not.toHaveBeenCalled();
+    await service.updateCase('case-1', { isActive: false });
+    expect(update).toHaveBeenCalledWith({ where: { id: 'case-1' }, data: { isActive: false } });
+  });
 });

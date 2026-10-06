@@ -5,7 +5,6 @@ import styles from '@/styles/dashboard.module.css';
 
 const STATUS_CLASS: Record<LeadStatus, string> = {
   ANALYZING: styles.statusAnalyzing,
-  VERIFIED: styles.statusVerified,
   REQUIRES_REVIEW: styles.statusReview,
   HANDOFF_TO_TATTOO_ARTIST: styles.statusAttention,
   COMPLETED: styles.statusCompleted,
@@ -35,9 +34,7 @@ export function LeadCard({ lead }: { lead: LeadSummary }) {
           <StatusBadge status={lead.status} label={lead.statusLabel} />
         </div>
         <p className={styles.leadDescription}>
-          {lead.v2
-            ? `${lead.v2.style ?? 'Estilo pendiente'} · ${lead.v2.targetAreaCm2 ?? 'Área pendiente'}${lead.v2.targetAreaCm2 ? ' cm²' : ''}`
-            : `${lead.selectedSizeLabel ?? 'Tamaño pendiente'} · ${lead.selectedDetailLabel ?? 'Detalle pendiente'}`}{' '}
+          {`${lead.v2.style ?? 'Estilo pendiente'} · ${lead.v2.targetAreaCm2 ?? 'Área pendiente'}${lead.v2.targetAreaCm2 ? ' cm²' : ''}`}{' '}
           · {lead.bodyPart ?? 'Zona pendiente'}
         </p>
         {lead.v2?.bookingIntent && (

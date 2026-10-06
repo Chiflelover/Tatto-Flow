@@ -23,10 +23,13 @@ async function main(): Promise<void> {
     new ConfigService({ OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL }),
     new OpenAI({ apiKey, maxRetries: 0, timeout: OPENAI_TIMEOUT_MS }),
   );
-  const result = await service.analyzeTattooImage({
-    content,
-    mimeType: mimeTypeFromPath(imagePath),
-  });
+  const result = await service.analyzeTattooImageV2(
+    {
+      content,
+      mimeType: mimeTypeFromPath(imagePath),
+    },
+    [],
+  );
 
   console.info(JSON.stringify(result, null, 2));
 }

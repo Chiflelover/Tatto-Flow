@@ -2,13 +2,15 @@ import { ScaleReferenceType, type Prisma } from '../../generated/prisma/client.j
 import type { ImageAnalysisV2Observation, VisionStyle } from './domain/image-analysis-v2.types.js';
 import { InvalidImageAnalysisResponseError } from './image-analysis-response.js';
 
-export const IMAGE_ANALYSIS_V2_SCHEMA_VERSION = 'VISION_V2_4';
+export const IMAGE_ANALYSIS_V2_SCHEMA_VERSION = 'VISION_V2_5';
+export type ImageAnalysisV2SchemaVersion = 'VISION_V2_4' | typeof IMAGE_ANALYSIS_V2_SCHEMA_VERSION;
 
 const confidenceSchema = { type: 'number', minimum: 0, maximum: 1 } as const;
 
 export function createImageAnalysisV2Schema(
   styles: readonly VisionStyle[],
   provider: 'gemini' | 'openai',
+  schemaVersion: ImageAnalysisV2SchemaVersion = IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
 ) {
   const positiveMeasurement = {
     anyOf: [
@@ -37,6 +39,9 @@ export function createImageAnalysisV2Schema(
     reference_validation_confidence: confidenceSchema,
     composition_aspect_ratio: relativeGeometry,
     composition_fill_ratio: relativeGeometry,
+    ...(schemaVersion === 'VISION_V2_5'
+      ? { estimated_density: { type: 'number', minimum: 0, maximum: 100 } }
+      : {}),
     style: styles.length
       ? { anyOf: [{ type: 'string', enum: styles.map((style) => style.code) }, { type: 'null' }] }
       : { type: 'null' },
@@ -65,6 +70,7 @@ export function createImageAnalysisV2Schema(
 export function parseImageAnalysisV2Response(
   text: string | undefined,
   styles: readonly VisionStyle[],
+  schemaVersion: ImageAnalysisV2SchemaVersion = IMAGE_ANALYSIS_V2_SCHEMA_VERSION,
 ): ImageAnalysisV2Observation {
   let value: unknown;
   try {
@@ -75,7 +81,7 @@ export function parseImageAnalysisV2Response(
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new InvalidImageAnalysisResponseError();
   const candidate = value as Record<string, unknown>;
-  const expectedKeys = createImageAnalysisV2Schema(styles, 'openai').required;
+  const expectedKeys = createImageAnalysisV2Schema(styles, 'openai', schemaVersion).required;
   if (
     Object.keys(candidate).length !== expectedKeys.length ||
     !Object.keys(candidate).every((key) => expectedKeys.includes(key)) ||
@@ -87,6 +93,7 @@ export function parseImageAnalysisV2Response(
     !isFraction(candidate.scale_confidence) ||
     !isPositiveFractionOrNull(candidate.composition_aspect_ratio) ||
     !isPositiveFractionOrNull(candidate.composition_fill_ratio) ||
+    (schemaVersion === 'VISION_V2_5' && !isEstimatedDensity(candidate.estimated_density)) ||
     !isPositiveOrNull(candidate.reference_main_dimension_cm) ||
     !isPositiveOrNull(candidate.reference_area_cm2) ||
     !isFraction(candidate.area_confidence) ||
@@ -102,6 +109,8 @@ export function parseImageAnalysisV2Response(
     referenceValidationConfidence: candidate.reference_validation_confidence,
     compositionAspectRatio: candidate.composition_aspect_ratio,
     compositionFillRatio: candidate.composition_fill_ratio,
+    estimatedDensity:
+      schemaVersion === 'VISION_V2_5' ? (candidate.estimated_density as number) : null,
     style: candidate.style as string | null,
     styleConfidence: candidate.style_confidence,
     scaleReferenceType: candidate.scale_reference_type,
@@ -130,6 +139,10 @@ function isScaleReferenceType(value: unknown): value is ScaleReferenceType {
 
 function isFraction(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+export function isEstimatedDensity(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
 function isPositiveOrNull(value: unknown): value is number | null {

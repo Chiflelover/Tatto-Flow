@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AiFallbackProvider } from '../../config/environment.validation.js';
 import { SafeStructuredLogger } from '../../infrastructure/observability/safe-structured-logger.js';
 import { AIProviderError, toUnknownProviderError } from './ai-provider.error.js';
-import type { ImageAnalysisResult, TattooImageInput } from './domain/image-analysis.types.js';
+import type { TattooImageInput } from './domain/image-analysis.types.js';
 import type { ImageAnalysisV2Result, VisionStyle } from './domain/image-analysis-v2.types.js';
 import { GeminiImageAnalysisService } from './gemini-image-analysis.service.js';
 import { ImageAnalysisService, type ImageAnalysisContext } from './image-analysis.service.js';
@@ -34,17 +34,6 @@ export class ResilientImageAnalysisService extends ImageAnalysisService {
     @Inject(AI_RETRY_RANDOM) private readonly random: RetryRandom,
   ) {
     super();
-  }
-
-  async analyzeTattooImage(
-    image: TattooImageInput,
-    context: ImageAnalysisContext = {},
-  ): Promise<ImageAnalysisResult> {
-    return this.analyzeWithFallback(
-      () => this.geminiService.analyzeTattooImage(image),
-      () => this.openAIService.analyzeTattooImage(image),
-      context,
-    );
   }
 
   async analyzeTattooImageV2(
