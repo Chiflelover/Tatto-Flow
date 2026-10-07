@@ -22,6 +22,7 @@ export class CalibrationCatalogDto {
 }
 
 export class StartCalibrationDraftDto extends CalibrationCatalogDto {
+  // Accept requests from existing clients; restarting never replaces an open draft.
   @IsOptional()
   @IsBoolean()
   restart: boolean = false;

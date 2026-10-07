@@ -175,6 +175,7 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
   let activationCount = 0;
   const starts = [];
   let stateIndex = 0;
+  const openingDraft = { current: false };
   const dependencies = {
     react: {
       ...React,
@@ -189,16 +190,21 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
       },
       useEffect: () => {},
       useCallback: (callback) => callback,
+      useRef: () => openingDraft,
     },
-    'next/navigation': { useRouter: () => ({ replace: () => assert.fail('Unexpected redirect') }) },
+    'next/navigation': {
+      useRouter: () => ({
+        replace: (url) => assert.match(url, /^\/dashboard\/pricing\/calibrate/),
+      }),
+    },
     'next/image': ({ src, alt, width, height }) =>
       React.createElement('img', { src, alt, width, height }),
     '@/lib/dashboard-api': {
-      startCalibrationDraft: async (styleId, catalog, restart) => {
+      startCalibrationDraft: async (styleId, catalog) => {
         assert.equal(styleId, draft.styleId);
         assert.equal(catalog, 'PHASED');
-        starts.push({ catalog, restart });
-        return { ...structuredClone(draft), version: restart ? 3 : 1 };
+        starts.push({ catalog });
+        return { ...structuredClone(draft), version: activationCount ? 3 : 1 };
       },
       saveCalibrationAnswer: async (styleId, caseId, price) => {
         assert.equal(styleId, draft.styleId);
@@ -286,10 +292,7 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
   assert.match(renderToStaticMarkup(page()), /25 referencias disponibles/);
   button('Recalibrar').props.onClick();
   await flush();
-  assert.deepEqual(starts, [
-    { catalog: 'PHASED', restart: false },
-    { catalog: 'PHASED', restart: true },
-  ]);
+  assert.deepEqual(starts, [{ catalog: 'PHASED' }, { catalog: 'PHASED' }]);
   assert.equal(states[2].version, 3);
   assert.equal(states[2].answeredCount, 0);
   assert.equal(states[2].totalCount, 25);
@@ -315,4 +318,178 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
   await flush();
   assert.equal(activationCount, 2);
   assert.match(renderToStaticMarkup(page()), /Modelo de precios versión 3 activado/);
+});
+
+async function mountPage(api, browser = { location: { search: '' } }) {
+  const states = [];
+  const refs = [];
+  const effects = [];
+  let stateIndex = 0;
+  let refIndex = 0;
+  let mounted = false;
+  const router = {
+    replace: (url) => {
+      assert.match(url, /^\/dashboard\/pricing\/calibrate/);
+      browser.location.search = new URL(url, 'https://test.invalid').search;
+    },
+  };
+  const dependencies = {
+    react: {
+      ...React,
+      useState: (initial) => {
+        const index = stateIndex++;
+        if (index >= states.length) states[index] = initial;
+        return [
+          states[index],
+          (value) => {
+            states[index] = typeof value === 'function' ? value(states[index]) : value;
+          },
+        ];
+      },
+      useRef: (initial) => {
+        const index = refIndex++;
+        return (refs[index] ??= { current: initial });
+      },
+      useCallback: (callback) => callback,
+      useEffect: (effect) => {
+        if (!mounted) effects.push(effect);
+      },
+    },
+    'next/navigation': { useRouter: () => router },
+    'next/image': ({ src, alt, width, height }) =>
+      React.createElement('img', { src, alt, width, height }),
+    '@/lib/dashboard-api': {
+      getCalibrationStyles: async () =>
+        loadedStates(draftFixture())[0].map((style) => ({ ...style, activeVersion: 4 })),
+      getPricingModels: async () => [],
+      getGeneralAdjustment: async () => ({ percent: '0' }),
+      isUnauthorized: () => false,
+      dashboardErrorMessage: (error) => assert.fail(error.message),
+      ...api,
+    },
+    './calibrate.module.css': {},
+  };
+  const exports = {};
+  runInNewContext(compiled, {
+    exports,
+    require: (name) => dependencies[name] ?? require(name),
+    window: browser,
+    URLSearchParams,
+  });
+  const page = () => {
+    stateIndex = 0;
+    refIndex = 0;
+    return exports.default();
+  };
+  function find(node, matches) {
+    if (Array.isArray(node)) return node.map((item) => find(item, matches)).find(Boolean);
+    if (!React.isValidElement(node)) return null;
+    return matches(node) ? node : find(node.props.children, matches);
+  }
+  const label = (children) =>
+    Array.isArray(children)
+      ? children.map(label).join('')
+      : React.isValidElement(children)
+        ? label(children.props.children)
+        : children == null
+          ? ''
+          : String(children);
+  page();
+  mounted = true;
+  const cleanups = effects.map((effect) => effect());
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  await flush();
+  return {
+    browser,
+    flush,
+    html: () => renderToStaticMarkup(page()),
+    button: (text) =>
+      find(page(), (item) => item.type === 'button' && label(item.props.children) === text),
+    price: () => find(page(), (item) => item.props.id === 'calibration-price').props.value,
+    unmount: () => cleanups.forEach((cleanup) => cleanup?.()),
+  };
+}
+
+test('refreshing without a draft never starts a calibration', async () => {
+  let starts = 0;
+  let reads = 0;
+  const api = {
+    getCalibrationDraft: async () => {
+      reads++;
+      return null;
+    },
+    startCalibrationDraft: async () => {
+      starts++;
+      assert.fail('Reload must only read');
+    },
+  };
+  const first = await mountPage(api);
+  first.unmount();
+  const refreshed = await mountPage(api, first.browser);
+  assert.equal(reads, 2);
+  assert.equal(starts, 0);
+  assert.doesNotMatch(refreshed.html(), /id="calibration-price"/);
+});
+
+test('double click opens once and repeated recalibration and refresh keep the same draft', async () => {
+  let current = null;
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const calls = [];
+  const api = {
+    getCalibrationDraft: async () => current && structuredClone(current),
+    startCalibrationDraft: async (...args) => {
+      calls.push(args);
+      if (!current) await pending;
+      return structuredClone(current);
+    },
+  };
+  const page = await mountPage(api);
+  const click = page.button('Recalibrar').props.onClick;
+  click();
+  click();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], ['test-style', 'PHASED']);
+  current = { ...draftFixture(), version: 5 };
+  release();
+  await page.flush();
+  page.button('Recalibrar').props.onClick();
+  await page.flush();
+  assert.equal(calls.length, 2);
+  assert.equal(page.browser.location.search, '?styleId=test-style');
+  page.unmount();
+  const refreshed = await mountPage(api, page.browser);
+  assert.equal(calls.length, 2);
+  assert.match(refreshed.html(), /Referencia 1 de 2 · 0 respondidas/);
+});
+
+test('F5 reads the selected draft and restores answered prices and the first pending reference', async () => {
+  const partial = { ...draftFixture(), version: 7, answeredCount: 1 };
+  partial.cases[0].pricePen = '333.25';
+  let starts = 0;
+  const reads = [];
+  const api = {
+    getCalibrationDraft: async (styleId) => {
+      reads.push(styleId);
+      return structuredClone(partial);
+    },
+    startCalibrationDraft: async () => {
+      starts++;
+      return structuredClone(partial);
+    },
+  };
+  const first = await mountPage(api, { location: { search: '?styleId=test-style' } });
+  assert.match(first.html(), /Referencia 2 de 2 · 1 respondidas/);
+  first.button('Recalibrar').props.onClick();
+  await first.flush();
+  assert.equal(starts, 1);
+  first.unmount();
+  const refreshed = await mountPage(api, first.browser);
+  assert.deepEqual(reads, ['test-style', 'test-style']);
+  assert.equal(starts, 1);
+  assert.match(refreshed.html(), /Referencia 2 de 2 · 1 respondidas/);
+  refreshed.button('Anterior').props.onClick();
+  assert.equal(refreshed.price(), '333.25');
 });

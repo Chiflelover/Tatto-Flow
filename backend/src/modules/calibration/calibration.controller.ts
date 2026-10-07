@@ -57,12 +57,7 @@ export class CalibrationController {
     @Param('styleId', new ParseUUIDPipe({ version: '4' })) styleId: string,
     @Body() dto: StartCalibrationDraftDto,
   ) {
-    return this.calibration.startDraft(
-      req.tattooArtist.accountId!,
-      styleId,
-      dto.catalog,
-      dto.restart,
-    );
+    return this.calibration.startDraft(req.tattooArtist.accountId!, styleId, dto.catalog);
   }
 
   @Get('styles/:styleId/cases')

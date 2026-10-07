@@ -2,10 +2,11 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   activateCalibration,
   dashboardErrorMessage,
+  getCalibrationDraft,
   getCalibrationStyles,
   getGeneralAdjustment,
   getPricingModels,
@@ -34,6 +35,7 @@ export default function CalibratePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const openingDraft = useRef(false);
 
   const handleError = useCallback(
     (cause: unknown) => {
@@ -55,17 +57,47 @@ export default function CalibratePage() {
     setSavedAdjustment(adjustmentResult.percent);
   }, []);
 
+  const openDraft = useCallback((next: CalibrationDraftView) => {
+    setSelectedStyleId(next.styleId);
+    setDraft(next);
+    const first = next.cases.findIndex((item) => item.pricePen === null);
+    const nextPosition = first < 0 ? 0 : first;
+    setPosition(nextPosition);
+    setPrice(next.cases[nextPosition]?.pricePen ?? '');
+  }, []);
+
   useEffect(() => {
-    void Promise.all([getCalibrationStyles(), getPricingModels(), getGeneralAdjustment()])
-      .then(([stylesResult, modelsResult, adjustmentResult]) => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [stylesResult, modelsResult, adjustmentResult] = await Promise.all([
+          getCalibrationStyles(),
+          getPricingModels(),
+          getGeneralAdjustment(),
+        ]);
+        if (cancelled) return;
         setCatalog(stylesResult);
         setModels(modelsResult);
         setAdjustment(adjustmentResult.percent);
         setSavedAdjustment(adjustmentResult.percent);
-      })
-      .catch(handleError)
-      .finally(() => setLoading(false));
-  }, [handleError]);
+        const enabled = stylesResult.filter((style) => style.enabled);
+        const requestedId = new URLSearchParams(window.location.search).get('styleId');
+        const requested = enabled.find((style) => style.id === requestedId);
+        const pending = await Promise.all(
+          (requested ? [requested] : enabled).map((style) => getCalibrationDraft(style.id)),
+        );
+        const existing = pending.find((item) => item !== null);
+        if (!cancelled && existing) openDraft(existing);
+      } catch (cause) {
+        if (!cancelled) handleError(cause);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [handleError, openDraft]);
 
   async function toggleStyle(style: CalibrationStyleView) {
     setBusy(true);
@@ -87,25 +119,22 @@ export default function CalibratePage() {
     }
   }
 
-  async function selectStyle(
-    styleId: string,
-    catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR',
-    restart = false,
-  ) {
+  async function selectStyle(styleId: string, catalog: 'AREA_COLOR' | 'PHASED' = 'AREA_COLOR') {
+    if (openingDraft.current) return;
+    openingDraft.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const next = await startCalibrationDraft(styleId, catalog, restart);
-      setSelectedStyleId(styleId);
-      setDraft(next);
-      const first = next.cases.findIndex((item) => item.pricePen === null);
-      const nextPosition = first < 0 ? 0 : first;
-      setPosition(nextPosition);
-      setPrice(next.cases[nextPosition]?.pricePen ?? '');
+      const next = await startCalibrationDraft(styleId, catalog);
+      openDraft(next);
+      router.replace(`/dashboard/pricing/calibrate?styleId=${encodeURIComponent(styleId)}`, {
+        scroll: false,
+      });
     } catch (cause) {
       handleError(cause);
     } finally {
+      openingDraft.current = false;
       setBusy(false);
     }
   }
@@ -149,6 +178,7 @@ export default function CalibratePage() {
       const result = await activateCalibration(selectedStyleId);
       setDraft(null);
       setSelectedStyleId(null);
+      router.replace('/dashboard/pricing/calibrate', { scroll: false });
       await refresh();
       setNotice(`Modelo de precios versión ${result.version} activado.`);
     } catch (cause) {
@@ -244,7 +274,6 @@ export default function CalibratePage() {
                           void selectStyle(
                             style.id,
                             style.code === 'FINE_LINE' ? 'PHASED' : 'AREA_COLOR',
-                            style.code === 'FINE_LINE' && style.activeVersion !== null,
                           )
                         }
                       >

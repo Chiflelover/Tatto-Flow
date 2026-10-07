@@ -77,12 +77,7 @@ export class CalibrationService {
     return cases.map((item) => freezeCase(item, style.code));
   }
 
-  async startDraft(
-    accountId: string,
-    styleId: string,
-    catalog: CalibrationCatalog = 'AREA_COLOR',
-    restart = false,
-  ) {
+  async startDraft(accountId: string, styleId: string, catalog: CalibrationCatalog = 'AREA_COLOR') {
     const id = await this.prisma.$transaction(async (tx) => {
       await this.lockAccount(tx, accountId);
       const style = await this.requireEnabledStyle(tx, accountId, styleId);
@@ -91,12 +86,9 @@ export class CalibrationService {
         where: { accountId, styleId, status: PricingModelStatus.DRAFT },
         include: { answers: { select: { caseId: true, pricePen: true } } },
       });
-      const retiredDraft =
-        existing &&
-        style.code === 'FINE_LINE' &&
-        snapshotCatalog(snapshot(existing.caseSnapshot)) !== 'PHASED';
-      if (existing && !restart && !retiredDraft) {
+      if (existing) {
         const frozen = snapshot(existing.caseSnapshot);
+        this.requireCurrentCatalog(style.code, frozen);
         if (snapshotCatalog(frozen) !== catalog)
           throw new ConflictException('Ya existe un borrador de otro catálogo para este estilo.');
         if (catalog === 'PHASED' && existing.algorithmVersion === 'CATALOG_AB_PENDING') {
@@ -128,11 +120,6 @@ export class CalibrationService {
       });
       if (!cases.length)
         throw new ConflictException('Todavía no hay imágenes de calibración para este estilo.');
-      if (existing)
-        await tx.pricingModelVersion.update({
-          where: { id: existing.id },
-          data: { status: PricingModelStatus.SUPERSEDED },
-        });
       const latest = await tx.pricingModelVersion.findFirst({
         where: { accountId, styleId },
         orderBy: { version: 'desc' },
@@ -437,7 +424,7 @@ export class CalibrationService {
   private requireCurrentCatalog(styleCode: string, cases: CaseSnapshot[]) {
     if (styleCode === 'FINE_LINE' && snapshotCatalog(cases) !== 'PHASED')
       throw new ConflictException(
-        'Fine Line usa las referencias actuales. Inicia una nueva calibración.',
+        'Este borrador usa referencias retiradas. Contacta al administrador antes de iniciar otra calibración.',
       );
   }
 

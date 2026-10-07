@@ -118,14 +118,14 @@ describe('calibration routes (e2e)', () => {
       .expect(401);
   });
 
-  it('passes explicit recalibration to the backend and rejects invalid restart values', async () => {
+  it('accepts old restart requests without forwarding a draft replacement instruction', async () => {
     const route = `/api/dashboard/calibration/styles/${styleId}/draft`;
     await request(app.getHttpServer())
       .post(route)
       .set('Cookie', 'tatto_flow_session=A')
       .send({ catalog: 'PHASED', restart: true })
       .expect(201);
-    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'PHASED', true);
+    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'PHASED');
     for (const restart of ['true', 1])
       await request(app.getHttpServer())
         .post(route)
@@ -139,13 +139,13 @@ describe('calibration routes (e2e)', () => {
       .post(`/api/dashboard/calibration/styles/${styleId}/draft`)
       .set('Cookie', 'tatto_flow_session=A')
       .expect(201);
-    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'AREA_COLOR', false);
+    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'AREA_COLOR');
     await request(app.getHttpServer())
       .post(`/api/dashboard/calibration/styles/${styleId}/draft`)
       .set('Cookie', 'tatto_flow_session=A')
       .send({ catalog: 'PHASED' })
       .expect(201);
-    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'PHASED', false);
+    expect(startDraft).toHaveBeenLastCalledWith(accountA, styleId, 'PHASED');
     await request(app.getHttpServer())
       .get(`/api/dashboard/calibration/styles/${styleId}/cases?catalog=PHASED`)
       .set('Cookie', 'tatto_flow_session=B')

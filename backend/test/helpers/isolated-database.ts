@@ -8,6 +8,7 @@ import { PrismaClient } from '../../src/generated/prisma/client.js';
 /** Runs the real migrations in a disposable schema; never migrates the application schema. */
 export async function isolatedDatabase(
   beforeMigration?: (name: string, client: pg.Client) => Promise<void>,
+  options: { maxConnections?: number } = {},
 ) {
   const local = parse(readFileSync('.env', 'utf8'));
   const configuredUrl = local.DIRECT_URL ?? local.DATABASE_URL;
@@ -50,7 +51,7 @@ export async function isolatedDatabase(
     }
     prisma = new PrismaClient({
       adapter: new PrismaPg(
-        { connectionString, max: 1, options: `-c search_path=${schema}` },
+        { connectionString, max: options.maxConnections ?? 1, options: `-c search_path=${schema}` },
         { schema },
       ),
     });

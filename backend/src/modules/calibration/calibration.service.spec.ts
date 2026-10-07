@@ -154,32 +154,18 @@ describe('CalibrationService', () => {
     expect(await service.listCases(accountA, styleId)).toHaveLength(25);
   });
 
-  it('archives an obsolete Fine Line draft and starts a fresh A/B version without changing the active model', async () => {
+  it('refuses to replace an obsolete Fine Line draft without changing any version', async () => {
     const { tx, service } = fineLineDatabase();
     const existing = { id: 'old-draft', version: 3, caseSnapshot: cases, answers };
     tx.pricingModelVersion.findFirst.mockImplementation(({ where, orderBy }) =>
       orderBy ? existing : where.status === 'DRAFT' ? existing : { id: 'active-ab', version: 2 },
     );
-    const next = await service.startDraft(accountA, styleId);
-    expect(next).toMatchObject({ totalCount: 25, answeredCount: 0 });
-    expect(next!.cases.every((item) => item.pricePen === null)).toBe(true);
-    expect(tx.pricingModelVersion.update).toHaveBeenCalledExactlyOnceWith({
-      where: { id: existing.id },
-      data: { status: 'SUPERSEDED' },
-    });
-    expect(tx.pricingModelVersion.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        accountId: accountA,
-        styleId,
-        version: 4,
-        sourceVersionId: 'active-ab',
-        algorithmVersion: 'CATALOG_AB_PENDING',
-      }),
-    });
-    expect(tx.pricingModelVersion.create.mock.calls[0][0].data.answers).toBeUndefined();
+    await expect(service.startDraft(accountA, styleId)).rejects.toThrow(/referencias retiradas/);
+    expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
+    expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
   });
 
-  it('recalibrates A/B from zero while reopening the existing draft preserves its answers', async () => {
+  it('always reopens the existing A/B draft and preserves its answers', async () => {
     const { tx, prisma, service, points } = fineLineDatabase();
     const existing = {
       id: 'partial',
@@ -192,28 +178,34 @@ describe('CalibrationService', () => {
     tx.pricingModelVersion.findFirst.mockImplementation(({ where, orderBy }) =>
       orderBy ? existing : where.status === 'DRAFT' ? existing : { id: 'active', version: 2 },
     );
-    prisma.pricingModelVersion.findFirst.mockResolvedValueOnce(existing);
-    expect(await service.startDraft(accountA, styleId, 'PHASED')).toMatchObject({
-      id: existing.id,
-      answeredCount: 1,
-    });
+    prisma.pricingModelVersion.findFirst.mockResolvedValue(existing);
+    for (const catalog of ['PHASED', 'AREA_COLOR', 'PHASED'] as const) {
+      const resumed = await service.startDraft(accountA, styleId, catalog);
+      expect(resumed).toMatchObject({ id: existing.id, version: 3, answeredCount: 1 });
+      expect(resumed!.cases[0].pricePen).toBe('123.00');
+    }
     expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
-    expect(await service.startDraft(accountA, styleId, 'PHASED', true)).toMatchObject({
-      id: 'new-draft',
-      totalCount: 25,
-      answeredCount: 0,
-    });
-    expect(tx.pricingModelVersion.update).toHaveBeenCalledExactlyOnceWith({
-      where: { id: existing.id },
-      data: { status: 'SUPERSEDED' },
-    });
+    expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
+    expect(tx.calibrationCase.findMany).not.toHaveBeenCalled();
   });
 
-  it('does not discard a previous draft when no current A/B catalog is available', async () => {
-    const { tx, service } = fineLineDatabase();
-    tx.pricingModelVersion.findFirst.mockResolvedValue({ id: 'old-draft', caseSnapshot: cases });
+  it('continues a frozen A/B draft even when the current catalog has no images', async () => {
+    const { tx, prisma, service, points } = fineLineDatabase();
+    const existing = {
+      id: 'current-draft',
+      version: 3,
+      caseSnapshot: points,
+      answers: [],
+      style: { name: 'Fine Line', code: 'FINE_LINE' },
+    };
+    tx.pricingModelVersion.findFirst.mockResolvedValue(existing);
+    prisma.pricingModelVersion.findFirst.mockResolvedValue(existing);
     tx.calibrationCase.findMany.mockResolvedValue([]);
-    await expect(service.startDraft(accountA, styleId)).rejects.toThrow(/no hay imágenes/);
+    expect(await service.startDraft(accountA, styleId)).toMatchObject({
+      id: existing.id,
+      totalCount: 25,
+    });
+    expect(tx.calibrationCase.findMany).not.toHaveBeenCalled();
     expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
     expect(tx.pricingModelVersion.create).not.toHaveBeenCalled();
   });
@@ -225,9 +217,9 @@ describe('CalibrationService', () => {
     tx.pricingModelVersion.findFirst.mockResolvedValue(obsolete);
     expect(await service.getDraft(accountA, styleId)).toBeNull();
     await expect(service.saveAnswer(accountA, styleId, 'a', 100)).rejects.toThrow(
-      /referencias actuales/,
+      /referencias retiradas/,
     );
-    await expect(service.activate(accountA, styleId)).rejects.toThrow(/referencias actuales/);
+    await expect(service.activate(accountA, styleId)).rejects.toThrow(/referencias retiradas/);
     expect(tx.calibrationAnswer.upsert).not.toHaveBeenCalled();
     expect(tx.pricingModelVersion.update).not.toHaveBeenCalled();
   });

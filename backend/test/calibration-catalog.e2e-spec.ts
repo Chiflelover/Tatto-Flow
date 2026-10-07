@@ -982,7 +982,7 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       ).toMatchObject({ pricePen: '701.50' });
     }, 120_000);
 
-    it('recalibrates Fine Line from zero with the same 25 references and supersedes only its account and style', async () => {
+    it('continues Fine Line recalibration until activation and preserves other accounts and history', async () => {
       const previous = await database.prisma.pricingModelVersion.findFirstOrThrow({
         where: { accountId: accountA, styleId: fineLineId, status: 'ACTIVE' },
       });
@@ -1005,15 +1005,11 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       expect(response.body).toMatchObject({
         catalogFormat: 'PHASED',
         totalCount: 25,
-        answeredCount: 0,
+        answeredCount: 1,
         canActivate: false,
       });
-      expect(response.body.id).not.toBe(partial.id);
-      expect(
-        (response.body.cases as { pricePen: string | null }[]).every(
-          (item) => item.pricePen === null,
-        ),
-      ).toBe(true);
+      expect(response.body.id).toBe(partial.id);
+      expect(response.body.cases[0].pricePen).toBe('333.00');
       const draft = await database.prisma.pricingModelVersion.findUniqueOrThrow({
         where: { id: response.body.id as string },
       });
@@ -1022,7 +1018,7 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
       expect(draft.modelParameters).toBeNull();
       expect(
         await database.prisma.pricingModelVersion.findUniqueOrThrow({ where: { id: partial.id } }),
-      ).toMatchObject({ status: 'SUPERSEDED' });
+      ).toMatchObject({ status: 'DRAFT' });
       expect(
         await database.prisma.calibrationAnswer.findUniqueOrThrow({
           where: {
@@ -1035,11 +1031,17 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
         .set('Cookie', 'tatto_flow_session=A')
         .expect(409);
       const prices = catalogABPricingFixture(fineLineId, 3);
+      await service.saveAnswer(
+        accountA,
+        fineLineId,
+        partial.cases[0].id,
+        Number(prices[0].pricePen),
+      );
       await database.prisma.calibrationAnswer.createMany({
-        data: partial.cases.map((item, index) => ({
+        data: partial.cases.slice(1).map((item, index) => ({
           modelVersionId: draft.id,
           caseId: item.id,
-          pricePen: prices[index].pricePen,
+          pricePen: prices[index + 1].pricePen,
         })),
       });
       const ready = await api()
@@ -1059,6 +1061,17 @@ describe.runIf(process.env.RUN_CALIBRATION_DB_TESTS === '1')(
         sourceVersionId: previous.id,
       });
       expect(activated.body.version).toBeGreaterThan(previous.version);
+      const next = await api()
+        .post(`${fineLineRoute}/draft`)
+        .set('Cookie', 'tatto_flow_session=A')
+        .send({ catalog: 'PHASED' })
+        .expect(201);
+      expect(next.body).toMatchObject({
+        version: (activated.body.version as number) + 1,
+        totalCount: 25,
+        answeredCount: 0,
+      });
+      expect(next.body.id).not.toBe(draft.id);
       expect(
         await database.prisma.pricingModelVersion.findUniqueOrThrow({ where: { id: previous.id } }),
       ).toMatchObject({
