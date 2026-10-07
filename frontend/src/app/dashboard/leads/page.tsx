@@ -18,6 +18,7 @@ import {
   DashboardLoading,
   EmptyState,
 } from '@/components/dashboard/feedback-state';
+import { ActionLabel } from '@/components/dashboard/action-label';
 import { StatusBadge } from '@/components/dashboard/lead-card';
 import { bookingIntentLabel } from '@/lib/v2-lead';
 import {
@@ -191,12 +192,15 @@ function LeadsWorkspace() {
   const currentRequestKey = `${requestKey}:${refreshKey}`;
   const [requestState, setRequestState] = useState<{
     key: string;
+    resultKey: string;
     result: LeadListResult | null;
     error: string | null;
   } | null>(null);
   const currentState = requestState?.key === currentRequestKey ? requestState : null;
-  const result = currentState?.result ?? null;
+  const result = requestState?.result ?? null;
   const error = currentState?.error ?? null;
+  const updating = currentState === null;
+  const stale = Boolean(result && (requestState?.resultKey !== currentRequestKey || error));
 
   const navigate = useCallback(
     (updates: QueryUpdate, resetPage = true) => {
@@ -223,6 +227,10 @@ function LeadsWorkspace() {
   useEffect(() => {
     let active = true;
 
+    void Promise.resolve().then(() => {
+      if (active) setRequestState((previous) => (previous ? { ...previous, key: '' } : previous));
+    });
+
     void listLeads({
       status,
       archived,
@@ -234,7 +242,12 @@ function LeadsWorkspace() {
     })
       .then((data) => {
         if (active) {
-          setRequestState({ key: currentRequestKey, result: data, error: null });
+          setRequestState({
+            key: currentRequestKey,
+            resultKey: currentRequestKey,
+            result: data,
+            error: null,
+          });
         }
       })
       .catch((requestError: unknown) => {
@@ -247,11 +260,12 @@ function LeadsWorkspace() {
           return;
         }
 
-        setRequestState({
+        setRequestState((previous) => ({
           key: currentRequestKey,
-          result: null,
+          resultKey: previous?.resultKey ?? '',
+          result: previous?.result ?? null,
           error: dashboardErrorMessage(requestError),
-        });
+        }));
       });
 
     return () => {
@@ -301,6 +315,7 @@ function LeadsWorkspace() {
   }
 
   async function runAction(leadId: string, action: () => Promise<unknown>): Promise<void> {
+    if (stale || updating) return;
     await runSingleFlight(async () => {
       setPendingLeadId(leadId);
       setActionError(null);
@@ -328,7 +343,7 @@ function LeadsWorkspace() {
         className={styles.deleteAction}
         type="button"
         onClick={() => setDeleteCandidate(lead)}
-        disabled={pendingLeadId !== null}
+        disabled={pendingLeadId !== null || stale || updating}
       >
         Eliminar
       </button>
@@ -339,14 +354,19 @@ function LeadsWorkspace() {
       <Link className={styles.viewAction} href={`/dashboard/leads/${lead.id}`}>
         Ver
       </Link>
-      {archived ? (
+      {lead.archivedAt !== null ? (
         <>
           <button
             type="button"
             onClick={() => void runAction(lead.id, () => restoreLead(lead.id))}
-            disabled={pendingLeadId !== null}
+            disabled={pendingLeadId !== null || stale || updating}
+            aria-busy={pendingLeadId === lead.id}
           >
-            {pendingLeadId === lead.id ? 'Restaurando…' : 'Restaurar'}
+            <ActionLabel
+              label="Restaurar"
+              pendingLabel="Restaurando..."
+              pending={pendingLeadId === lead.id}
+            />
           </button>
           {renderDeleteAction(lead)}
         </>
@@ -356,9 +376,14 @@ function LeadsWorkspace() {
             <button
               type="button"
               onClick={() => void runAction(lead.id, () => archiveLead(lead.id))}
-              disabled={pendingLeadId !== null}
+              disabled={pendingLeadId !== null || stale || updating}
+              aria-busy={pendingLeadId === lead.id}
             >
-              {pendingLeadId === lead.id ? 'Archivando…' : 'Archivar'}
+              <ActionLabel
+                label="Archivar"
+                pendingLabel="Archivando..."
+                pending={pendingLeadId === lead.id}
+              />
             </button>
           )}
           {renderDeleteAction(lead)}
@@ -442,206 +467,231 @@ function LeadsWorkspace() {
         </p>
       )}
 
-      {error && (
-        <DashboardError message={error} retry={() => setRefreshKey((current) => current + 1)} />
-      )}
-      {!error && !result && <LeadsLoading />}
-      {result && result.leads.length === 0 && <EmptyState>{EMPTY_MESSAGES[activeTab]}</EmptyState>}
+      <p className={styles.resultsStatus} role="status" aria-live="polite">
+        {updating && result
+          ? 'Actualizando...'
+          : error && result
+            ? 'Se muestran los últimos pedidos cargados.'
+            : null}
+      </p>
+      <section className={styles.leadResults} aria-label="Resultados de leads" aria-busy={updating}>
+        {error && result ? (
+          <div className={styles.inlineError} role="alert">
+            <p>No pudimos actualizar los pedidos. {error}</p>
+            <button type="button" onClick={() => setRefreshKey((current) => current + 1)}>
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          error && (
+            <DashboardError message={error} retry={() => setRefreshKey((current) => current + 1)} />
+          )
+        )}
+        {!error && !result && <LeadsLoading />}
+        {result && result.leads.length === 0 && (
+          <EmptyState>
+            {stale ? 'No había leads en la última carga.' : EMPTY_MESSAGES[activeTab]}
+          </EmptyState>
+        )}
 
-      {result && result.leads.length > 0 && (
-        <>
-          <div className={styles.leadTableShell}>
-            <table className={styles.leadTable}>
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th
-                    aria-sort={
-                      sortBy === 'price'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('price', 'Precio')}
-                  </th>
-                  <th
-                    aria-sort={
-                      sortBy === 'targetSizeCm'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('targetSizeCm', 'Tamaño objetivo')}
-                  </th>
-                  <th>Estilo</th>
-                  <th
-                    aria-sort={
-                      sortBy === 'status'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('status', 'Estado')}
-                  </th>
-                  <th
-                    aria-sort={
-                      sortBy === 'createdAt'
-                        ? sortOrder === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    {sortableHeading('createdAt', 'Fecha')}
-                  </th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.leads.map((lead) => (
-                  <tr
-                    key={lead.id}
-                    className={styles.clickableLeadRow}
-                    tabIndex={0}
-                    role="link"
-                    aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
-                    onClick={(event) => openLead(lead.id, event)}
-                    onKeyDown={(event) => openLead(lead.id, event)}
-                  >
-                    <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
-                    <td className={styles.priceCell}>{leadPriceLabel(lead)}</td>
-                    <td>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</td>
-                    <td>
-                      {
-                        <>
-                          {lead.v2.style ?? '—'}
-                          <small>
-                            {lead.v2.targetColorCoverage === null
-                              ? 'Color pendiente'
-                              : `${Math.round(lead.v2.targetColorCoverage * 100)}% color`}
-                          </small>
-                        </>
+        {result && result.leads.length > 0 && (
+          <>
+            <div className={styles.leadTableShell}>
+              <table className={styles.leadTable}>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th
+                      aria-sort={
+                        sortBy === 'price'
+                          ? sortOrder === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
                       }
-                    </td>
-                    <td>
-                      {
-                        <>
-                          <StatusBadge status={lead.status} label={lead.statusLabel} />
-                          <small>{bookingIntentLabel(lead.v2.bookingIntent)}</small>
-                        </>
+                    >
+                      {sortableHeading('price', 'Precio')}
+                    </th>
+                    <th
+                      aria-sort={
+                        sortBy === 'targetSizeCm'
+                          ? sortOrder === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
                       }
-                    </td>
-                    <td className={styles.dateCell}>{dateLabel(lead.createdAt)}</td>
-                    <td>{renderActions(lead)}</td>
+                    >
+                      {sortableHeading('targetSizeCm', 'Tamaño objetivo')}
+                    </th>
+                    <th>Estilo</th>
+                    <th
+                      aria-sort={
+                        sortBy === 'status'
+                          ? sortOrder === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      {sortableHeading('status', 'Estado')}
+                    </th>
+                    <th
+                      aria-sort={
+                        sortBy === 'createdAt'
+                          ? sortOrder === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      {sortableHeading('createdAt', 'Fecha')}
+                    </th>
+                    <th>Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {result.leads.map((lead) => (
+                    <tr
+                      key={lead.id}
+                      className={styles.clickableLeadRow}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
+                      onClick={(event) => openLead(lead.id, event)}
+                      onKeyDown={(event) => openLead(lead.id, event)}
+                    >
+                      <td className={styles.customerCell}>{lead.customerPhoneNumber}</td>
+                      <td className={styles.priceCell}>{leadPriceLabel(lead)}</td>
+                      <td>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</td>
+                      <td>
+                        {
+                          <>
+                            {lead.v2.style ?? '—'}
+                            <small>
+                              {lead.v2.targetColorCoverage === null
+                                ? 'Color pendiente'
+                                : `${Math.round(lead.v2.targetColorCoverage * 100)}% color`}
+                            </small>
+                          </>
+                        }
+                      </td>
+                      <td>
+                        {
+                          <>
+                            <StatusBadge status={lead.status} label={lead.statusLabel} />
+                            <small>{bookingIntentLabel(lead.v2.bookingIntent)}</small>
+                          </>
+                        }
+                      </td>
+                      <td className={styles.dateCell}>{dateLabel(lead.createdAt)}</td>
+                      <td>{renderActions(lead)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          <div className={styles.mobileLeadTable}>
-            {result.leads.map((lead) => (
-              <article
-                key={lead.id}
-                className={`${styles.mobileLeadRow} ${styles.clickableLeadRow}`}
-                tabIndex={0}
-                role="link"
-                aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
-                onClick={(event) => openLead(lead.id, event)}
-                onKeyDown={(event) => openLead(lead.id, event)}
-              >
-                <div className={styles.mobileLeadTopline}>
-                  <strong>{lead.customerPhoneNumber}</strong>
-                  <StatusBadge status={lead.status} label={lead.statusLabel} />
-                </div>
-                <dl>
-                  <div>
-                    <dt>Tamaño objetivo</dt>
-                    <dd>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</dd>
+            <div className={styles.mobileLeadTable}>
+              {result.leads.map((lead) => (
+                <article
+                  key={lead.id}
+                  className={`${styles.mobileLeadRow} ${styles.clickableLeadRow}`}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`Ver lead de ${lead.customerPhoneNumber}`}
+                  onClick={(event) => openLead(lead.id, event)}
+                  onKeyDown={(event) => openLead(lead.id, event)}
+                >
+                  <div className={styles.mobileLeadTopline}>
+                    <strong>{lead.customerPhoneNumber}</strong>
+                    <StatusBadge status={lead.status} label={lead.statusLabel} />
                   </div>
-                  <div>
-                    <dt>Estilo</dt>
-                    <dd>{lead.v2.style ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Precio</dt>
-                    <dd>{leadPriceLabel(lead)}</dd>
-                  </div>
-                  {lead.v2 && (
-                    <>
-                      <div>
-                        <dt>Color objetivo</dt>
-                        <dd>
-                          {lead.v2.targetColorCoverage === null
-                            ? 'Pendiente'
-                            : `${Math.round(lead.v2.targetColorCoverage * 100)}%`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Intención</dt>
-                        <dd>{bookingIntentLabel(lead.v2.bookingIntent)}</dd>
-                      </div>
-                    </>
-                  )}
-                  <div>
-                    <dt>Fecha</dt>
-                    <dd>{dateLabel(lead.createdAt)}</dd>
-                  </div>
-                </dl>
-                {renderActions(lead)}
-              </article>
-            ))}
-          </div>
+                  <dl>
+                    <div>
+                      <dt>Tamaño objetivo</dt>
+                      <dd>{lead.targetSizeCm !== null ? `${lead.targetSizeCm} cm` : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Estilo</dt>
+                      <dd>{lead.v2.style ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Precio</dt>
+                      <dd>{leadPriceLabel(lead)}</dd>
+                    </div>
+                    {lead.v2 && (
+                      <>
+                        <div>
+                          <dt>Color objetivo</dt>
+                          <dd>
+                            {lead.v2.targetColorCoverage === null
+                              ? 'Pendiente'
+                              : `${Math.round(lead.v2.targetColorCoverage * 100)}%`}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Intención</dt>
+                          <dd>{bookingIntentLabel(lead.v2.bookingIntent)}</dd>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <dt>Fecha</dt>
+                      <dd>{dateLabel(lead.createdAt)}</dd>
+                    </div>
+                  </dl>
+                  {renderActions(lead)}
+                </article>
+              ))}
+            </div>
 
-          <footer className={styles.paginationBar}>
-            <p>
-              Mostrando {(result.pagination.page - 1) * result.pagination.pageSize + 1}–
-              {Math.min(
-                result.pagination.page * result.pagination.pageSize,
-                result.pagination.total,
-              )}{' '}
-              de {result.pagination.total}
-            </p>
-            <nav aria-label="Paginación de leads">
-              <button
-                type="button"
-                disabled={result.pagination.page <= 1}
-                onClick={() => navigate({ page: String(result.pagination.page - 1) }, false)}
-              >
-                Anterior
-              </button>
-              {pageItems.map((item) =>
-                typeof item === 'number' ? (
-                  <button
-                    key={item}
-                    type="button"
-                    className={item === result.pagination.page ? styles.currentPage : ''}
-                    aria-current={item === result.pagination.page ? 'page' : undefined}
-                    onClick={() => navigate({ page: String(item) }, false)}
-                  >
-                    {item}
-                  </button>
-                ) : (
-                  <span key={item}>…</span>
-                ),
-              )}
-              <button
-                type="button"
-                disabled={result.pagination.page >= result.pagination.totalPages}
-                onClick={() => navigate({ page: String(result.pagination.page + 1) }, false)}
-              >
-                Siguiente
-              </button>
-            </nav>
-          </footer>
-        </>
-      )}
+            <footer className={styles.paginationBar}>
+              <p>
+                Mostrando {(result.pagination.page - 1) * result.pagination.pageSize + 1}–
+                {Math.min(
+                  result.pagination.page * result.pagination.pageSize,
+                  result.pagination.total,
+                )}{' '}
+                de {result.pagination.total}
+              </p>
+              <nav aria-label="Paginación de leads">
+                <button
+                  type="button"
+                  disabled={stale || updating || result.pagination.page <= 1}
+                  onClick={() => navigate({ page: String(result.pagination.page - 1) }, false)}
+                >
+                  Anterior
+                </button>
+                {pageItems.map((item) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={item}
+                      type="button"
+                      className={item === result.pagination.page ? styles.currentPage : ''}
+                      aria-current={item === result.pagination.page ? 'page' : undefined}
+                      disabled={stale || updating}
+                      onClick={() => navigate({ page: String(item) }, false)}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={item}>…</span>
+                  ),
+                )}
+                <button
+                  type="button"
+                  disabled={
+                    stale || updating || result.pagination.page >= result.pagination.totalPages
+                  }
+                  onClick={() => navigate({ page: String(result.pagination.page + 1) }, false)}
+                >
+                  Siguiente
+                </button>
+              </nav>
+            </footer>
+          </>
+        )}
+      </section>
 
       {deleteCandidate && (
         <div className={styles.modalBackdrop} role="presentation">
@@ -669,9 +719,14 @@ function LeadsWorkspace() {
                 onClick={() =>
                   void runAction(deleteCandidate.id, () => deleteLead(deleteCandidate.id))
                 }
-                disabled={pendingLeadId !== null}
+                disabled={pendingLeadId !== null || stale || updating}
+                aria-busy={pendingLeadId === deleteCandidate.id}
               >
-                {pendingLeadId === deleteCandidate.id ? 'Eliminando...' : 'Eliminar'}
+                <ActionLabel
+                  label="Eliminar"
+                  pendingLabel="Eliminando..."
+                  pending={pendingLeadId === deleteCandidate.id}
+                />
               </button>
             </div>
           </section>

@@ -19,6 +19,7 @@
   background: transparent;
   color: inherit;
   padding: 0.6rem 1rem;
+  min-height: 2.8rem;
 }
 .page button:disabled {
   cursor: not-allowed;
@@ -36,10 +37,12 @@
 }
 .styleGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   gap: 0.8rem;
 }
 .styleCard {
+  min-width: 0;
+  min-height: 3.75rem;
   border: 1px solid currentColor;
   border-radius: 0.7rem;
   padding: 1rem;
@@ -60,6 +63,7 @@
 }
 .imageWrap {
   max-width: 32rem;
+  aspect-ratio: 1;
   background: #eee;
   border-radius: 0.6rem;
   overflow: hidden;
@@ -67,8 +71,7 @@
 .imageWrap img {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 32rem;
+  height: 100%;
   object-fit: contain;
 }
 .answerForm,
@@ -111,4 +114,47 @@
   padding: 0.8rem;
   border: 1px solid currentColor;
   border-radius: 0.5rem;
+}
+
+.statusSlot {
+  min-height: 1.4em;
+  line-height: 1.4;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.stylesPanel {
+  min-height: 18rem;
+}
+
+.adjustmentPanel {
+  min-height: 19rem;
+}
+
+.modelsPanel {
+  min-height: 8rem;
+}
+
+.skeletonCard {
+  background: var(--surface-soft);
+}
+
+.enabledStyleCard {
+  min-height: 14.1rem;
+}
+
+@media (max-width: 30rem) {
+  .page {
+    padding: 1rem 0;
+  }
+
+  .panel {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 22rem) {
+  .enabledStyleCard {
+    min-height: 15.7rem;
+  }
 }

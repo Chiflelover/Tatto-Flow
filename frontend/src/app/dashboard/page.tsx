@@ -90,15 +90,19 @@ export default function DashboardPage() {
           }}
         />
       )}
-      {!error && !data && <DashboardLoading label="Preparando tu resumen…" />}
-
-      {data && (
+      {!error && (
         <>
-          <section className={styles.metricsGrid} aria-label="Resumen de pedidos">
+          <section className={styles.metricsGrid} aria-label="Resumen de pedidos" aria-busy={!data}>
             {METRICS.map((metric) => (
               <article key={metric.key} className={styles.metricCard}>
                 <span>{metric.label}</span>
-                <strong>{data.totals[metric.key]}</strong>
+                <strong>
+                  {data ? (
+                    data.totals[metric.key]
+                  ) : (
+                    <span className={styles.metricSkeleton} aria-hidden="true" />
+                  )}
+                </strong>
               </article>
             ))}
           </section>
@@ -108,15 +112,19 @@ export default function DashboardPage() {
               <h2>Pedidos recientes</h2>
               <Link href="/dashboard/leads">Ver todos</Link>
             </div>
-            {data.recentLeads.length > 0 ? (
-              <div className={styles.leadList}>
-                {data.recentLeads.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState>Todavía no hay pedidos completos para mostrar.</EmptyState>
-            )}
+            <div className={styles.recentResults}>
+              {!data ? (
+                <DashboardLoading label="Preparando tu resumen…" />
+              ) : data.recentLeads.length > 0 ? (
+                <div className={styles.leadList}>
+                  {data.recentLeads.map((lead) => (
+                    <LeadCard key={lead.id} lead={lead} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState>Todavía no hay pedidos completos para mostrar.</EmptyState>
+              )}
+            </div>
           </section>
         </>
       )}

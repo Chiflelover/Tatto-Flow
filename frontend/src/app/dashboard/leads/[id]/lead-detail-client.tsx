@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { ActionLabel } from '@/components/dashboard/action-label';
 import { DashboardError, DashboardLoading } from '@/components/dashboard/feedback-state';
 import { StatusBadge } from '@/components/dashboard/lead-card';
 import { bookingIntentLabel, v2ReviewLabel } from '@/lib/v2-lead';
@@ -30,6 +31,8 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [manualPriceInput, setManualPriceInput] = useState('');
   const [pendingAction, setPendingAction] = useState<'complete' | 'save-price' | null>(null);
+  const actionPending = useRef(false);
+  const downloadPending = useRef(false);
 
   const loadLead = useCallback(async () => {
     try {
@@ -104,10 +107,11 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   }, [leadId, router]);
 
   async function handleCompleteLead(): Promise<void> {
-    if (pendingAction) {
+    if (actionPending.current) {
       return;
     }
 
+    actionPending.current = true;
     setPendingAction('complete');
     setActionError(null);
     setConfirmation(null);
@@ -124,6 +128,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
 
       setActionError(dashboardErrorMessage(requestError));
     } finally {
+      actionPending.current = false;
       setPendingAction(null);
     }
   }
@@ -131,7 +136,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   async function handleSaveManualPrice(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
-    if (pendingAction) {
+    if (actionPending.current) {
       return;
     }
 
@@ -149,6 +154,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       return;
     }
 
+    actionPending.current = true;
     setPendingAction('save-price');
     setActionError(null);
     setConfirmation(null);
@@ -166,12 +172,14 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
 
       setActionError(dashboardErrorMessage(requestError));
     } finally {
+      actionPending.current = false;
       setPendingAction(null);
     }
   }
 
   async function downloadImage(): Promise<void> {
-    if (!reference?.imageId || downloading) return;
+    if (!reference?.imageId || downloadPending.current) return;
+    downloadPending.current = true;
     setDownloading(true);
     setReferenceError(null);
     try {
@@ -187,6 +195,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
       if (isUnauthorized(requestError)) router.replace('/login');
       else setReferenceError(dashboardErrorMessage(requestError));
     } finally {
+      downloadPending.current = false;
       setDownloading(false);
     }
   }
@@ -361,9 +370,14 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                 className={styles.secondaryButton}
                 type="button"
                 disabled={downloading}
+                aria-busy={downloading}
                 onClick={() => void downloadImage()}
               >
-                {downloading ? 'Preparando descarga…' : 'Descargar imagen'}
+                <ActionLabel
+                  label="Descargar imagen"
+                  pendingLabel="Preparando descarga..."
+                  pending={downloading}
+                />
               </button>
             )}
           </section>
@@ -411,8 +425,13 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                   className={styles.primaryButton}
                   type="submit"
                   disabled={pendingAction !== null}
+                  aria-busy={pendingAction === 'save-price'}
                 >
-                  {pendingAction === 'save-price' ? 'Guardando…' : 'Guardar precio'}
+                  <ActionLabel
+                    label="Guardar precio"
+                    pendingLabel="Guardando..."
+                    pending={pendingAction === 'save-price'}
+                  />
                 </button>
               </form>
             )}
@@ -434,8 +453,13 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
                   type="button"
                   onClick={() => void handleCompleteLead()}
                   disabled={pendingAction !== null}
+                  aria-busy={pendingAction === 'complete'}
                 >
-                  {pendingAction === 'complete' ? 'Finalizando…' : 'Marcar como finalizado'}
+                  <ActionLabel
+                    label="Marcar como finalizado"
+                    pendingLabel="Finalizando..."
+                    pending={pendingAction === 'complete'}
+                  />
                 </button>
               )}
             </div>

@@ -63,6 +63,27 @@ describe('calibration routes (e2e)', () => {
     await app.close();
   });
 
+  it('returns JSON null when the account has no open draft', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/dashboard/calibration/styles/${styleId}/draft`)
+      .set('Cookie', 'tatto_flow_session=A')
+      .expect(200)
+      .expect('Content-Type', /json/);
+    expect(response.text).toBe('null');
+    expect(JSON.parse(response.text)).toBeNull();
+  });
+
+  it('preserves the existing draft response when a draft is present', async () => {
+    const draft = { id: 'draft', styleId, answeredCount: 4, totalCount: 25 };
+    getDraft.mockResolvedValueOnce(draft);
+    const response = await request(app.getHttpServer())
+      .get(`/api/dashboard/calibration/styles/${styleId}/draft`)
+      .set('Cookie', 'tatto_flow_session=A')
+      .expect(200)
+      .expect('Content-Type', /json/);
+    expect(response.body).toEqual(draft);
+  });
+
   it('scopes reads and answers to the session account, never to a request body account', async () => {
     await request(app.getHttpServer())
       .get(`/api/dashboard/calibration/styles/${styleId}/draft`)

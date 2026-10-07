@@ -326,6 +326,18 @@
   line-height: 1;
 }
 
+.metricSkeleton {
+  display: inline-block;
+  vertical-align: top;
+  width: 3rem;
+  height: 2.55rem;
+  background: var(--surface-soft);
+}
+
+.recentResults {
+  min-height: 13rem;
+}
+
 .section {
   margin-top: 2.35rem;
 }
@@ -771,6 +783,36 @@
   display: grid;
   gap: 0.55rem;
   margin-top: 0.85rem;
+}
+
+.actionLabel {
+  display: inline-grid;
+  vertical-align: middle;
+  max-width: 100%;
+}
+
+.actionLabel > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.hiddenLabel {
+  visibility: hidden;
+}
+
+.resultsStatus {
+  min-height: 1.4rem;
+  margin: 0 0 0.5rem;
+  color: var(--muted-strong);
+  font-size: 0.72rem;
+}
+
+.leadResults {
+  min-height: 23rem;
+}
+
+.leadResults > div:only-child {
+  min-height: 23rem;
 }
 
 .confirmation {

@@ -13,10 +13,29 @@ const compiled = ts.transpileModule(source, {
   fileName: 'page.tsx',
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2020,
     jsx: ts.JsxEmit.ReactJSX,
     esModuleInterop: true,
   },
 }).outputText;
+
+const actionLabel = {};
+runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL('../../../../components/dashboard/action-label.tsx', import.meta.url),
+      'utf8',
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        jsx: ts.JsxEmit.ReactJSX,
+        esModuleInterop: true,
+      },
+    },
+  ).outputText,
+  { exports: actionLabel, require: (name) => (name.endsWith('.css') ? {} : require(name)) },
+);
 
 function loadedStates(draft) {
   // Seed the existing page's loaded state; no browser or API calls are needed.
@@ -43,6 +62,9 @@ function loadedStates(draft) {
     false,
     null,
     null,
+    null,
+    ['styles', 'models', 'adjustment', 'drafts'],
+    {},
   ];
 }
 
@@ -60,6 +82,7 @@ function render(draft, styleOverrides = {}) {
     'next/image': ({ src, alt, width, height }) =>
       React.createElement('img', { src, alt, width, height }),
     '@/lib/dashboard-api': {},
+    '@/components/dashboard/action-label': actionLabel,
     './calibrate.module.css': {},
   };
   const exports = {};
@@ -175,7 +198,8 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
   let activationCount = 0;
   const starts = [];
   let stateIndex = 0;
-  const openingDraft = { current: false };
+  let refIndex = 0;
+  const refs = [];
   const dependencies = {
     react: {
       ...React,
@@ -190,7 +214,7 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
       },
       useEffect: () => {},
       useCallback: (callback) => callback,
-      useRef: () => openingDraft,
+      useRef: (initial) => (refs[refIndex++] ??= { current: initial }),
     },
     'next/navigation': {
       useRouter: () => ({
@@ -224,12 +248,14 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
       getPricingModels: async () => [],
       getGeneralAdjustment: async () => ({ percent: '0' }),
     },
+    '@/components/dashboard/action-label': actionLabel,
     './calibrate.module.css': {},
   };
   const exports = {};
   runInNewContext(compiled, { exports, require: (name) => dependencies[name] ?? require(name) });
   const page = () => {
     stateIndex = 0;
+    refIndex = 0;
     return exports.default();
   };
   function find(node, matches) {
@@ -241,7 +267,13 @@ test('the artist can start, price and navigate through all 25 real Fine Line ref
     Array.isArray(children)
       ? children.map(label).join('')
       : React.isValidElement(children)
-        ? label(children.props.children)
+        ? children.props['aria-hidden'] === true
+          ? ''
+          : label(
+              typeof children.type === 'function'
+                ? children.type(children.props)
+                : children.props.children,
+            )
         : children == null
           ? ''
           : String(children);
@@ -363,10 +395,12 @@ async function mountPage(api, browser = { location: { search: '' } }) {
         loadedStates(draftFixture())[0].map((style) => ({ ...style, activeVersion: 4 })),
       getPricingModels: async () => [],
       getGeneralAdjustment: async () => ({ percent: '0' }),
+      getCalibrationDraft: async () => null,
       isUnauthorized: () => false,
       dashboardErrorMessage: (error) => assert.fail(error.message),
       ...api,
     },
+    '@/components/dashboard/action-label': actionLabel,
     './calibrate.module.css': {},
   };
   const exports = {};
@@ -390,7 +424,13 @@ async function mountPage(api, browser = { location: { search: '' } }) {
     Array.isArray(children)
       ? children.map(label).join('')
       : React.isValidElement(children)
-        ? label(children.props.children)
+        ? children.props['aria-hidden'] === true
+          ? ''
+          : label(
+              typeof children.type === 'function'
+                ? children.type(children.props)
+                : children.props.children,
+            )
         : children == null
           ? ''
           : String(children);
@@ -405,6 +445,7 @@ async function mountPage(api, browser = { location: { search: '' } }) {
     html: () => renderToStaticMarkup(page()),
     button: (text) =>
       find(page(), (item) => item.type === 'button' && label(item.props.children) === text),
+    find: (matches) => find(page(), matches),
     price: () => find(page(), (item) => item.props.id === 'calibration-price').props.value,
     unmount: () => cleanups.forEach((cleanup) => cleanup?.()),
   };
@@ -492,4 +533,150 @@ test('F5 reads the selected draft and restores answered prices and the first pen
   assert.match(refreshed.html(), /Referencia 2 de 2 · 1 respondidas/);
   refreshed.button('Anterior').props.onClick();
   assert.equal(refreshed.price(), '333.25');
+});
+
+test('a failed section preserves loaded data and retries only that section', async () => {
+  const calls = { styles: 0, models: 0, adjustment: 0 };
+  const page = await mountPage({
+    getCalibrationStyles: async () => {
+      calls.styles++;
+      return loadedStates(draftFixture())[0];
+    },
+    getPricingModels: async () => {
+      if (++calls.models === 1) throw new Error('No pudimos cargar las versiones.');
+      return [];
+    },
+    getGeneralAdjustment: async () => {
+      calls.adjustment++;
+      return { percent: '2.5' };
+    },
+    dashboardErrorMessage: (error) => error.message,
+  });
+  assert.match(page.html(), /Algunas secciones no pudieron actualizarse/);
+  assert.match(page.html(), /Fine Line/);
+  assert.match(page.html(), /Ajuste actual: 2.5/);
+  page.button('Reintentar carga').props.onClick();
+  assert.equal(page.button('Reintentando...').props.disabled, true);
+  await page.flush();
+  assert.deepEqual(calls, { styles: 1, models: 2, adjustment: 1 });
+  assert.doesNotMatch(page.html(), /role="alert"/);
+});
+
+test('a complete loading failure never displays a fabricated zero adjustment and can recover', async () => {
+  let failing = true;
+  const get = async (value) => {
+    if (failing) throw new Error('Conexión interrumpida.');
+    return value;
+  };
+  const page = await mountPage({
+    getCalibrationStyles: () => get(loadedStates(draftFixture())[0]),
+    getPricingModels: () => get([]),
+    getGeneralAdjustment: () => get({ percent: '6.25' }),
+    dashboardErrorMessage: (error) => error.message,
+  });
+  assert.match(page.html(), /No pudimos cargar Precios/);
+  assert.doesNotMatch(page.html(), /Ajuste actual: 0|id="adjustment"/);
+  failing = false;
+  page.button('Reintentar carga').props.onClick();
+  await page.flush();
+  assert.doesNotMatch(page.html(), /role="alert"/);
+  assert.match(page.html(), /Ajuste actual: 6.25/);
+});
+
+test('a draft loading failure is partial and a successful null draft is not an error', async () => {
+  let reads = 0;
+  const page = await mountPage({
+    getCalibrationDraft: async () => {
+      if (++reads === 1) throw new Error('Borrador no disponible.');
+      return null;
+    },
+    dashboardErrorMessage: (error) => error.message,
+  });
+  assert.match(page.html(), /Borradores de calibración: Fine Line: Borrador no disponible/);
+  assert.match(page.html(), /Algunas secciones/);
+  page.button('Reintentar carga').props.onClick();
+  await page.flush();
+  assert.equal(reads, 2);
+  assert.doesNotMatch(page.html(), /role="alert"|id="calibration-price"/);
+});
+
+test('opening and saving show busy feedback and block duplicate requests synchronously', async () => {
+  let releaseOpen;
+  let releaseSave;
+  let openings = 0;
+  let saves = 0;
+  const page = await mountPage({
+    startCalibrationDraft: () => {
+      openings++;
+      return new Promise((resolve) => {
+        releaseOpen = resolve;
+      });
+    },
+    saveCalibrationAnswer: () => {
+      saves++;
+      return new Promise((resolve) => {
+        releaseSave = resolve;
+      });
+    },
+  });
+  const click = page.button('Recalibrar').props.onClick;
+  click();
+  click();
+  assert.equal(openings, 1);
+  assert.match(page.html(), /aria-busy="true"/);
+  assert.equal(page.button('Abriendo...').props.disabled, true);
+  releaseOpen(draftFixture());
+  await page.flush();
+  page
+    .find((node) => node.props.id === 'calibration-price')
+    .props.onChange({ target: { value: '321.25' } });
+  const submit = page.find(
+    (node) =>
+      node.type === 'form' &&
+      node.props.className === undefined &&
+      node.props['aria-busy'] === false,
+  ).props.onSubmit;
+  submit({ preventDefault() {} });
+  submit({ preventDefault() {} });
+  assert.equal(saves, 1);
+  assert.equal(page.button('Guardando...').props.disabled, true);
+  const saved = draftFixture();
+  saved.cases[0].pricePen = '321.25';
+  saved.answeredCount = 1;
+  releaseSave(saved);
+  await page.flush();
+  assert.match(page.html(), /Referencia 2 de 2 · 1 respondidas/);
+  assert.equal(page.button('Guardar respuesta').props.disabled, false);
+});
+
+test('a failed save preserves the entered price and releases the action for retry', async () => {
+  let calls = 0;
+  const page = await mountPage({
+    getCalibrationDraft: async () => draftFixture(),
+    saveCalibrationAnswer: async () => {
+      if (++calls === 1) throw new Error('No se pudo guardar.');
+      const saved = draftFixture();
+      saved.cases[0].pricePen = '321.25';
+      saved.answeredCount = 1;
+      return saved;
+    },
+    dashboardErrorMessage: (error) => error.message,
+  });
+  page
+    .find((node) => node.props.id === 'calibration-price')
+    .props.onChange({ target: { value: '321.25' } });
+  const submit = () =>
+    page
+      .find((node) => node.type === 'form' && node.props['aria-busy'] === false)
+      .props.onSubmit({ preventDefault() {} });
+  submit();
+  await page.flush();
+  assert.match(page.html(), /No se pudo guardar/);
+  assert.equal(page.price(), '321.25');
+  assert.equal(page.button('Guardar respuesta').props.disabled, false);
+  submit();
+  await page.flush();
+  assert.equal(calls, 2);
+  assert.doesNotMatch(page.html(), /role="alert"/);
+  assert.match(page.html(), /Referencia 2 de 2 · 1 respondidas/);
 });

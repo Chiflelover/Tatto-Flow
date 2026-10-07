@@ -10,8 +10,10 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { TattooArtistGuard } from '../auth/role.guard.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
@@ -44,11 +46,14 @@ export class CalibrationController {
   }
 
   @Get('styles/:styleId/draft')
-  getDraft(
+  async getDraft(
     @Req() req: AuthenticatedRequest,
     @Param('styleId', new ParseUUIDPipe({ version: '4' })) styleId: string,
+    @Res() response: Response,
   ) {
-    return this.calibration.getDraft(req.tattooArtist.accountId!, styleId);
+    const draft = await this.calibration.getDraft(req.tattooArtist.accountId!, styleId);
+    // Nest sends an empty body for null; the client contract requires JSON null.
+    response.json(draft);
   }
 
   @Post('styles/:styleId/draft')
