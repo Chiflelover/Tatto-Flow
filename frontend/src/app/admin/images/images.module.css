@@ -1,72 +1,119 @@
 .page {
-  max-width: 85rem;
-  margin: 0 auto;
-  padding: 2rem;
   display: grid;
-  gap: 1.5rem;
-}
-.header h1 {
-  font-size: clamp(2rem, 4vw, 3rem);
-  margin: 0.5rem 0;
+  gap: 1.25rem;
+  min-width: 0;
 }
 .filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.8rem;
+  grid-template-columns:
+    minmax(10rem, 1.15fr) repeat(2, minmax(9rem, 1fr)) minmax(11rem, 1.2fr)
+    auto;
+  gap: 1rem;
   align-items: end;
+  padding: 1.25rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 9px;
+  background: var(--admin-surface);
+  box-shadow: 0 2px 5px var(--admin-shadow);
 }
 .filters label {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--admin-secondary);
+  font-size: 0.79rem;
+  font-weight: 500;
 }
 .filters input,
-.filters select,
-.page button {
-  border: 1px solid currentColor;
-  border-radius: 0.5rem;
-  padding: 0.6rem;
-  background: transparent;
-  color: inherit;
+.filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  background: var(--admin-surface);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 160ms ease;
 }
-.page button {
-  cursor: pointer;
+.filters input:focus,
+.filters select:focus {
+  border-color: #4875af;
 }
-.page button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.filters .filterButton {
+  min-height: 2.65rem;
+  padding-inline: 1.25rem;
+  border-color: var(--admin-accent-text);
+  background: var(--admin-accent);
+  color: #fff;
+}
+.filters .filterButton:hover:not(:disabled) {
+  border-color: #102744;
+  background: #102744;
+  color: #fff;
 }
 .toolbar,
 .pages {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.toolbar {
+  color: var(--admin-secondary);
+  font-size: 0.84rem;
+}
+.toolbar button {
+  color: var(--admin-danger);
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  align-items: start;
+  gap: 1.25rem;
 }
 .card {
-  border: 1px solid currentColor;
-  border-radius: 0.75rem;
-  padding: 0.8rem;
+  min-width: 0;
+  padding: 1rem;
   display: grid;
-  gap: 0.8rem;
+  gap: 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 9px;
+  background: var(--admin-surface);
+  box-shadow: 0 2px 5px var(--admin-shadow);
+  transition: border-color 160ms ease;
+}
+.selectedCard {
+  border-color: var(--admin-accent-text);
 }
 .select {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
   align-items: center;
+  min-height: 1.5rem;
+  color: var(--admin-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.select input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--admin-accent);
 }
 .preview {
   aspect-ratio: 1;
+  min-width: 0;
   display: grid;
   place-items: center;
-  background: #ddd;
-  border-radius: 0.4rem;
+  background: var(--admin-background);
+  color: var(--admin-muted);
+  border: 1px solid var(--admin-line);
+  border-radius: 6px;
   overflow: hidden;
   text-align: center;
+  font-size: 0.8rem;
 }
 .preview img {
   width: 100%;
@@ -75,20 +122,73 @@
 }
 .card dl {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.3rem 0.6rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--admin-line);
   margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .card dt {
-  font-weight: 700;
+  color: var(--admin-secondary);
+  font-weight: 600;
 }
 .card dd {
   margin: 0;
+  color: var(--admin-muted);
+}
+.pages {
+  padding-top: 1rem;
+  border-top: 1px solid var(--admin-line);
+  color: var(--admin-muted);
+  font-size: 0.8rem;
 }
 .error,
+.notice,
+.emptyState {
+  padding: 1rem;
+  border: 1px solid;
+  border-radius: 7px;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+.error {
+  color: var(--admin-danger);
+  background: var(--admin-danger-background);
+  border-color: var(--admin-danger-border);
+}
 .notice {
-  padding: 0.7rem;
-  border: 1px solid currentColor;
-  border-radius: 0.5rem;
+  color: var(--admin-active-text);
+  background: var(--admin-active-background);
+  border-color: var(--admin-notice-border);
+}
+.emptyState {
+  padding: 3rem 1rem;
+  color: var(--admin-muted);
+  background: var(--admin-surface);
+  border-color: var(--admin-border);
+  text-align: center;
+}
+@media (max-width: 1250px) {
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .filters .filterButton {
+    justify-self: start;
+  }
+}
+@media (max-width: 700px) {
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem;
+  }
+  .filters .filterButton {
+    justify-self: stretch;
+  }
+  .toolbar button,
+  .pages button {
+    min-height: 2.75rem;
+  }
 }

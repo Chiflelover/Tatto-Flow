@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   dashboardErrorMessage,
@@ -115,15 +114,8 @@ export default function AdminImagesPage() {
   }
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <div>
-          <Link href="/admin">← Cuentas</Link>
-          <h1>Imágenes</h1>
-          <p>Referencias enviadas por clientes de todas las cuentas.</p>
-        </div>
-      </header>
-      <form className={styles.filters} onSubmit={(event) => void search(event)}>
+    <section className={styles.page} aria-label="Gestión de imágenes">
+      <form className={styles.filters} onSubmit={(event) => void search(event)} aria-busy={busy}>
         <label>
           Tatuador
           <select
@@ -163,7 +155,7 @@ export default function AdminImagesPage() {
             onChange={(event) => setFilters({ ...filters, phone: event.target.value })}
           />
         </label>
-        <button type="submit" disabled={busy}>
+        <button className={styles.filterButton} type="submit" disabled={busy}>
           Filtrar
         </button>
       </form>
@@ -178,7 +170,9 @@ export default function AdminImagesPage() {
         </p>
       )}
       <div className={styles.toolbar}>
-        <span>{total} imágenes</span>
+        <span>
+          {total} {total === 1 ? 'imagen' : 'imágenes'}
+        </span>
         <button
           type="button"
           disabled={busy || selected.length === 0}
@@ -189,7 +183,10 @@ export default function AdminImagesPage() {
       </div>
       <div className={styles.grid}>
         {images.map((image) => (
-          <article className={styles.card} key={image.id}>
+          <article
+            className={`${styles.card} ${selected.includes(image.id) ? styles.selectedCard : ''}`}
+            key={image.id}
+          >
             <label className={styles.select}>
               <input
                 type="checkbox"
@@ -223,7 +220,9 @@ export default function AdminImagesPage() {
           </article>
         ))}
       </div>
-      {images.length === 0 && <p>No hay imágenes para estos filtros.</p>}
+      {images.length === 0 && (
+        <p className={styles.emptyState}>No hay imágenes para estos filtros.</p>
+      )}
       <nav className={styles.pages} aria-label="Páginas de imágenes">
         <button
           type="button"
@@ -243,6 +242,6 @@ export default function AdminImagesPage() {
           Siguiente
         </button>
       </nav>
-    </main>
+    </section>
   );
 }

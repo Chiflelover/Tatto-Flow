@@ -75,7 +75,7 @@
   opacity: 0.55;
   cursor: default;
 }
-.page :is(a, button, input):focus-visible {
+.page :is(a, button, input, select):focus-visible {
   outline: 3px solid #4875af;
   outline-offset: 3px;
 }
